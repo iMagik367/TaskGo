@@ -1,0 +1,173 @@
+openapi: 3.1.0
+info:
+  title: TaskGo API
+  version: 0.2.0
+servers:
+  - url: http://localhost:8080/v1
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
+paths:
+  /auth/signup:
+    post:
+      summary: Criar conta (retorna JWT)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6 }
+      responses:
+        '200': { description: OK }
+  /auth/login:
+    post:
+      summary: Login (retorna JWT)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6 }
+      responses:
+        '200': { description: OK }
+  /me:
+    get:
+      summary: Perfil do usuário
+      responses:
+        '200': { description: OK }
+    put:
+      summary: Atualizar perfil (nome/senha)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                password: { type: string, minLength: 6 }
+      responses:
+        '200': { description: OK }
+  /products:
+    get:
+      summary: Listar produtos
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200': { description: OK }
+  /products/{id}:
+    get:
+      summary: Obter produto por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: OK }
+  /cart:
+    get:
+      summary: Ver carrinho
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Adicionar item ao carrinho
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                productId: { type: integer }
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: OK }
+  /cart/{productId}:
+    delete:
+      summary: Remover item do carrinho
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: OK }
+  /cart/checkout:
+    post:
+      summary: Finalizar compra
+      responses:
+        '200': { description: OK }
+  /orders:
+    get:
+      summary: Listar pedidos do usuário
+      responses:
+        '200': { description: OK }
+  /chats:
+    get:
+      summary: Listar conversas
+      responses:
+        '200': { description: OK }
+  /messages:
+    post:
+      summary: Enviar mensagem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                peerEmail: { type: string, format: email }
+                content: { type: string }
+      responses:
+        '200': { description: OK }
+  /messages/{chatId}:
+    get:
+      summary: Listar mensagens do chat
+      parameters:
+        - in: path
+          name: chatId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: OK }
+  /notifications:
+    get:
+      summary: Listar notificações
+      responses:
+        '200': { description: OK }
+  /notifications/{id}/read:
+    post:
+      summary: Marcar notificação como lida
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: OK }

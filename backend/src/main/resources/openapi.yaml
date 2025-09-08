@@ -1,0 +1,40 @@
+openapi: 3.1.0
+info:
+  title: TaskGo API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080/v1
+paths:
+  /products:
+    get:
+      summary: Listar produtos do marketplace
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: OK
+  /products/{id}:
+    get:
+      summary: Obter produto por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+
+
+

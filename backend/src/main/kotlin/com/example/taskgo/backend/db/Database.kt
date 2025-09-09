@@ -22,7 +22,7 @@ object Database {
     private fun initializeDataSource(): HikariDataSource {
         val enable = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
         if (!enable) {
-            return HikariDataSource(HikariConfig()).also { dataSourceInternal = it }
+            throw IllegalStateException("Database is disabled. Use in-memory repositories instead.")
         }
 
         val jdbcUrl = System.getenv("DB_URL") ?: error("DB_URL not set")

@@ -84,11 +84,14 @@ fun main() {
                 // Debug endpoint para testar produtos
                 get("/debug/products") {
                     try {
-                        val products = productRepository.list(null, null, 1, 10)
-                        call.respond(mapOf("success" to true, "count" to products.size, "products" to products))
+                        call.respond(mapOf("success" to true, "message" to "Debug endpoint working"))
                     } catch (e: Exception) {
                         call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
                     }
+                }
+                
+                get("/debug/simple") {
+                    call.respond(mapOf("status" to "ok", "message" to "Simple debug working"))
                 }
 
                 // Rotas reais

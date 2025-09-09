@@ -51,19 +51,26 @@ fun main() {
         
         // Initialize repositories (toggle DB via env DB_ENABLE=true)
         val useDb = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
-        
-        val userRepository: UserRepository = if (useDb) {
-            val ds = Database.init()
-            UserRepositoryJdbc(ds)
-        } else {
-            InMemoryUserRepository()
+
+        var dataSourceOrNull: javax.sql.DataSource? = null
+        if (useDb) {
+            try {
+                dataSourceOrNull = Database.init()
+            } catch (t: Throwable) {
+                // Fallback gracioso para repositórios em memória quando DB não está configurado
+                this.log.error("Failed to initialize database. Falling back to in-memory repositories.", t)
+                dataSourceOrNull = null
+            }
         }
-        
-        val productRepository = if (useDb) {
-            val ds = Database.init()
-            ProductRepositoryJdbc(ds)
-        } else {
-            InMemoryProductRepository()
+
+        val userRepository: UserRepository = when (val ds = dataSourceOrNull) {
+            null -> InMemoryUserRepository()
+            else -> UserRepositoryJdbc(ds)
+        }
+
+        val productRepository = when (val ds = dataSourceOrNull) {
+            null -> InMemoryProductRepository()
+            else -> ProductRepositoryJdbc(ds)
         }
         
         val cartRepository = InMemoryCartRepository()

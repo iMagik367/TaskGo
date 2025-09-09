@@ -62,19 +62,14 @@ fun main() {
                 
                 // Simple products route without JWT
                 get("/products") {
-                    val products = listOf(
-                        ProductResponse(1, "Produto 1", 29.99),
-                        ProductResponse(2, "Produto 2", 49.99)
-                    )
-                    call.respond(products)
+                    call.respond(ProductResponse(1, "Produto 1", 29.99))
                 }
                 
                 // Simple login route without JWT
                 post("/login") {
-                    val body = call.receive<LoginRequest>()
                     call.respond(LoginResponse(
                         token = "mock-token",
-                        user = UserResponse(1, body.email)
+                        user = UserResponse(1, "test@example.com")
                     ))
                 }
             }

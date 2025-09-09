@@ -25,12 +25,6 @@ data class HealthResponse(val status: String)
 data class ReadyResponse(val ready: Boolean)
 
 @Serializable
-data class ApiInfo(val title: String, val version: String, val description: String)
-
-@Serializable
-data class SpecResponse(val openapi: String, val info: ApiInfo)
-
-@Serializable
 data class TestResponse(val message: String)
 
 @Serializable
@@ -61,17 +55,6 @@ fun main() {
             get("/health") { call.respond(HealthResponse("ok")) }
             get("/ready") { call.respond(ReadyResponse(true)) }
             route("/v1") {
-                get("/spec") { 
-                    call.respond(SpecResponse(
-                        openapi = "3.1.0",
-                        info = ApiInfo(
-                            title = "TaskGo API",
-                            version = "0.1.0",
-                            description = "API for TaskGo marketplace app"
-                        )
-                    ))
-                }
-                
                 // Simple test route
                 get("/test") {
                     call.respond(TestResponse("API is working"))

@@ -78,36 +78,26 @@ fun main() {
         routing {
             get("/health") { call.respond(HealthResponse("ok")) }
             get("/ready") { call.respond(ReadyResponse(true)) }
-            route("/v1") {
-                get("/test") { call.respond(TestResponse("API is working")) }
-                
-                // Debug endpoint para testar produtos
-                get("/debug/products") {
-                    try {
-                        call.respond(mapOf("success" to true, "message" to "Debug endpoint working"))
-                    } catch (e: Exception) {
-                        call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
-                    }
-                }
-                
-                get("/debug/simple") {
-                    call.respond(mapOf("status" to "ok", "message" to "Simple debug working"))
-                }
-                
-                get("/debug/db") {
-                    try {
-                        val ds = Database.init()
-                        call.respond(mapOf("success" to true, "message" to "Database initialized successfully"))
-                    } catch (e: Exception) {
-                        call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
-                    }
-                }
-
-                // Rotas reais
-                productRoutes(productRepository)
-                authRoutes(userRepository)
-                // cartRoutes(cartRepository) // habilitar quando JWT estiver ativo
+            get("/test") { call.respond(TestResponse("API is working")) }
+            
+            // Debug endpoints
+            get("/debug/simple") {
+                call.respond(mapOf("status" to "ok", "message" to "Simple debug working"))
             }
+            
+            get("/debug/db") {
+                try {
+                    val ds = Database.init()
+                    call.respond(mapOf("success" to true, "message" to "Database initialized successfully"))
+                } catch (e: Exception) {
+                    call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
+                }
+            }
+
+            // Rotas principais
+            productRoutes(productRepository)
+            authRoutes(userRepository)
+            // cartRoutes(cartRepository) // habilitar quando JWT estiver ativo
         }
     }.start(wait = true)
 }

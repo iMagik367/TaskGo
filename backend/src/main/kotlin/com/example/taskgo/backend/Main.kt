@@ -58,7 +58,7 @@ fun main() {
                 dataSourceOrNull = Database.init()
             } catch (t: Throwable) {
                 // Fallback gracioso para repositórios em memória quando DB não está configurado
-                this.log.error("Failed to initialize database. Falling back to in-memory repositories.", t)
+                println("Failed to initialize database. Falling back to in-memory repositories: ${t.message}")
                 dataSourceOrNull = null
             }
         }

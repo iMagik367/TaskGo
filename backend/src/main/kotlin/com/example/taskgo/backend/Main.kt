@@ -5,6 +5,8 @@ import com.example.taskgo.backend.domain.InMemoryCartRepository
 import com.example.taskgo.backend.domain.InMemoryProductRepository
 import com.example.taskgo.backend.domain.UserRepository
 import com.example.taskgo.backend.repository.InMemoryUserRepository
+import com.example.taskgo.backend.repository.UserRepositoryJdbc
+import com.example.taskgo.backend.db.Database
 import com.example.taskgo.backend.routes.authRoutes
 import com.example.taskgo.backend.routes.cartRoutes
 import com.example.taskgo.backend.routes.productRoutes
@@ -46,8 +48,14 @@ fun main() {
         install(CallLogging)
         install(ContentNegotiation) { json() }
         
-        // Initialize repositories
-        val userRepository: UserRepository = InMemoryUserRepository()
+        // Initialize repositories (toggle DB via env DB_ENABLE=true)
+        val useDb = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
+        val userRepository: UserRepository = if (useDb) {
+            val ds = Database.init()
+            UserRepositoryJdbc(ds)
+        } else {
+            InMemoryUserRepository()
+        }
         val productRepository = InMemoryProductRepository()
         val cartRepository = InMemoryCartRepository()
 
@@ -55,23 +63,12 @@ fun main() {
             get("/health") { call.respond(HealthResponse("ok")) }
             get("/ready") { call.respond(ReadyResponse(true)) }
             route("/v1") {
-                // Simple test route
-                get("/test") {
-                    call.respond(TestResponse("API is working"))
-                }
-                
-                // Simple products route without JWT
-                get("/products") {
-                    call.respond(ProductResponse(1, "Produto 1", 29.99))
-                }
-                
-                // Simple login route without JWT
-                post("/login") {
-                    call.respond(LoginResponse(
-                        token = "mock-token",
-                        user = UserResponse(1, "test@example.com")
-                    ))
-                }
+                get("/test") { call.respond(TestResponse("API is working")) }
+
+                // Rotas reais
+                productRoutes()
+                authRoutes(userRepository)
+                // cartRoutes(cartRepository) // habilitar quando JWT estiver ativo
             }
         }
     }.start(wait = true)

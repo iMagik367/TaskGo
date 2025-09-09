@@ -33,3 +33,9 @@ kotlin {
 }
 
 
+// Desabilita tarefas de teste temporariamente (sem testes definidos)
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    enabled = false
+}
+
+

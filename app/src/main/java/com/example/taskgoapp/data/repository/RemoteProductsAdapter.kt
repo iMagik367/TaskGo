@@ -23,6 +23,7 @@ class RemoteProductsAdapter @Inject constructor(
             title = dto.name,
             description = dto.description,
             price = dto.price,
+            sellerName = null,
             imageUris = emptyList()
         )
     }
@@ -34,6 +35,7 @@ class RemoteProductsAdapter @Inject constructor(
                 title = dto.name,
                 description = dto.description,
                 price = dto.price,
+                sellerName = null,
                 imageUris = emptyList()
             )
         }

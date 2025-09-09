@@ -24,9 +24,6 @@ fun main() {
         install(CallLogging)
         install(ContentNegotiation) { json() }
         
-        // Configure JWT
-        JwtConfig.configure(this)
-        
         // Initialize repositories
         val userRepository: UserRepository = InMemoryUserRepository()
         val productRepository = InMemoryProductRepository()
@@ -52,9 +49,23 @@ fun main() {
                     call.respond(mapOf("message" to "API is working"))
                 }
                 
-                authRoutes(userRepository)
-                productRoutes(productRepository)
-                cartRoutes(cartRepository)
+                // Simple products route without JWT
+                get("/products") {
+                    val products = listOf(
+                        mapOf("id" to 1, "name" to "Produto 1", "price" to 29.99),
+                        mapOf("id" to 2, "name" to "Produto 2", "price" to 49.99)
+                    )
+                    call.respond(products)
+                }
+                
+                // Simple login route without JWT
+                post("/login") {
+                    val body = call.receive<Map<String, String>>()
+                    call.respond(mapOf(
+                        "token" to "mock-token",
+                        "user" to mapOf("id" to 1, "email" to body["email"])
+                    ))
+                }
             }
         }
     }.start(wait = true)

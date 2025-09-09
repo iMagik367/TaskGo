@@ -93,6 +93,15 @@ fun main() {
                 get("/debug/simple") {
                     call.respond(mapOf("status" to "ok", "message" to "Simple debug working"))
                 }
+                
+                get("/debug/db") {
+                    try {
+                        val ds = Database.init()
+                        call.respond(mapOf("success" to true, "message" to "Database initialized successfully"))
+                    } catch (e: Exception) {
+                        call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
+                    }
+                }
 
                 // Rotas reais
                 productRoutes(productRepository)

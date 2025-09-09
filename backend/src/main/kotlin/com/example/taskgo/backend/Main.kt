@@ -46,6 +46,12 @@ fun main() {
                         )
                     )) 
                 }
+                
+                // Simple test route
+                get("/test") {
+                    call.respond(mapOf("message" to "API is working"))
+                }
+                
                 authRoutes(userRepository)
                 productRoutes(productRepository)
                 cartRoutes(cartRepository)

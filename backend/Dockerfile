@@ -1,6 +1,7 @@
 FROM gradle:8.7-jdk17 AS build
 WORKDIR /workspace
 COPY . /workspace
+RUN chmod +x ./gradlew
 RUN ./gradlew :backend:installDist --no-daemon
 
 FROM eclipse-temurin:17-jre

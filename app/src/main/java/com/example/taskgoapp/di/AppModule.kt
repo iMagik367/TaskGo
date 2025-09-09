@@ -86,8 +86,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideMarketplaceRepository(): MarketplaceRepository {
-        return MarketplaceRepositoryImpl()
+    fun provideMarketplaceRepository(productsApi: ProductsApi): MarketplaceRepository {
+        return MarketplaceRepositoryImpl(productsApi)
     }
 
     @Provides

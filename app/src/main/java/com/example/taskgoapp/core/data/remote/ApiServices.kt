@@ -15,6 +15,12 @@ data class ProductDto(
     val bannerUrl: String?
 )
 
+data class ProductsResponse(
+    val items: List<ProductDto>,
+    val page: Int,
+    val size: Int
+)
+
 data class AddCartItemRequest(val productId: Long, val quantity: Int)
 data class CartItemDto(val productId: Long, val quantity: Int)
 data class CartDto(val userEmail: String, val items: List<CartItemDto>)
@@ -25,7 +31,7 @@ interface AuthApi {
 }
 
 interface ProductsApi {
-    @GET("products") suspend fun list(@Query("search") search: String? = null, @Query("category") category: String? = null, @Query("page") page: Int = 1, @Query("size") size: Int = 20): List<ProductDto>
+    @GET("products") suspend fun list(@Query("search") search: String? = null, @Query("category") category: String? = null, @Query("page") page: Int = 1, @Query("size") size: Int = 20): ProductsResponse
     @GET("products/{id}") suspend fun getById(@Path("id") id: Long): ProductDto
 }
 

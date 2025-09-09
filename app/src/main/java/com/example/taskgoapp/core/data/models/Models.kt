@@ -97,7 +97,7 @@ data class Product(
     val name: String,
     val description: String,
     val price: Double,
-    val seller: User,
+    val seller: User? = null,
     val imageUrl: String? = null,
     val category: String,
     val inStock: Boolean = true

@@ -29,7 +29,7 @@ class RemoteProductsAdapter @Inject constructor(
     }
 
     override suspend fun getMyProducts(): List<Product> {
-        return productsApi.list().map { dto ->
+        return productsApi.list().items.map { dto ->
             Product(
                 id = dto.id.toString(),
                 title = dto.name,

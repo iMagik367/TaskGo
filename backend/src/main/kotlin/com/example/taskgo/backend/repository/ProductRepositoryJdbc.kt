@@ -69,7 +69,7 @@ class ProductRepositoryJdbc(private val dataSource: DataSource) : ProductReposit
             conn.prepareStatement(sql).use { ps ->
                 ps.setLong(1, id)
                 ps.executeQuery().use { rs ->
-                    return if (rs.next()) {
+                    if (rs.next()) {
                         Product(
                             id = rs.getLong("id"),
                             name = rs.getString("name"),

@@ -160,7 +160,7 @@ private fun ProductDetailContent(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = product.seller.name,
+                    text = product.seller?.name ?: "Vendedor não informado",
                     style = MaterialTheme.typography.bodyLarge
                 )
             }

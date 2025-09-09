@@ -10,7 +10,8 @@ data class Product(
     val price: Double,
     val category: String,
     val bannerUrl: String? = null,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val seller: User? = null
 )
 
 interface ProductRepository {

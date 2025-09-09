@@ -25,4 +25,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "TaskGo App"
 include(":app")
+include(":backend")
  

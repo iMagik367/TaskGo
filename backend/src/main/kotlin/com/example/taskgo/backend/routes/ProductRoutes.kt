@@ -13,7 +13,16 @@ fun Route.productRoutes(repo: ProductRepository? = null) {
     val resolvedRepo: ProductRepository = repo
         ?: run {
             val useDb = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
-            if (useDb) ProductRepositoryJdbc(Database.init()) else InMemoryProductRepository()
+            if (useDb) {
+                val dataSource = try {
+                    Database.dataSource
+                } catch (e: Exception) {
+                    Database.init()
+                }
+                ProductRepositoryJdbc(dataSource)
+            } else {
+                InMemoryProductRepository()
+            }
         }
     route("/products") {
         get {

@@ -6,6 +6,7 @@ import com.example.taskgo.backend.domain.InMemoryProductRepository
 import com.example.taskgo.backend.domain.UserRepository
 import com.example.taskgo.backend.repository.InMemoryUserRepository
 import com.example.taskgo.backend.repository.UserRepositoryJdbc
+import com.example.taskgo.backend.repository.ProductRepositoryJdbc
 import com.example.taskgo.backend.db.Database
 import com.example.taskgo.backend.routes.authRoutes
 import com.example.taskgo.backend.routes.cartRoutes
@@ -50,13 +51,18 @@ fun main() {
         
         // Initialize repositories (toggle DB via env DB_ENABLE=true)
         val useDb = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
-        val userRepository: UserRepository = if (useDb) {
-            val ds = Database.init()
-            UserRepositoryJdbc(ds)
+        val dataSource = if (useDb) Database.init() else null
+        
+        val userRepository: UserRepository = if (useDb && dataSource != null) {
+            UserRepositoryJdbc(dataSource)
         } else {
             InMemoryUserRepository()
         }
-        val productRepository = InMemoryProductRepository()
+        val productRepository = if (useDb && dataSource != null) {
+            ProductRepositoryJdbc(dataSource)
+        } else {
+            InMemoryProductRepository()
+        }
         val cartRepository = InMemoryCartRepository()
 
         routing {
@@ -66,7 +72,7 @@ fun main() {
                 get("/test") { call.respond(TestResponse("API is working")) }
 
                 // Rotas reais
-                productRoutes()
+                productRoutes(productRepository)
                 authRoutes(userRepository)
                 // cartRoutes(cartRepository) // habilitar quando JWT estiver ativo
             }

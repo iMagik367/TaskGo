@@ -80,6 +80,16 @@ fun main() {
             get("/ready") { call.respond(ReadyResponse(true)) }
             route("/v1") {
                 get("/test") { call.respond(TestResponse("API is working")) }
+                
+                // Debug endpoint para testar produtos
+                get("/debug/products") {
+                    try {
+                        val products = productRepository.list(null, null, 1, 10)
+                        call.respond(mapOf("success" to true, "count" to products.size, "products" to products))
+                    } catch (e: Exception) {
+                        call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
+                    }
+                }
 
                 // Rotas reais
                 productRoutes(productRepository)

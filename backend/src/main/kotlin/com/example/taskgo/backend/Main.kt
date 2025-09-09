@@ -16,6 +16,34 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class HealthResponse(val status: String)
+
+@Serializable
+data class ReadyResponse(val ready: Boolean)
+
+@Serializable
+data class ApiInfo(val title: String, val version: String, val description: String)
+
+@Serializable
+data class SpecResponse(val openapi: String, val info: ApiInfo)
+
+@Serializable
+data class TestResponse(val message: String)
+
+@Serializable
+data class ProductResponse(val id: Int, val name: String, val price: Double)
+
+@Serializable
+data class LoginRequest(val email: String, val password: String)
+
+@Serializable
+data class UserResponse(val id: Int, val email: String)
+
+@Serializable
+data class LoginResponse(val token: String, val user: UserResponse)
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
@@ -30,40 +58,40 @@ fun main() {
         val cartRepository = InMemoryCartRepository()
 
         routing {
-            get("/health") { call.respond(mapOf("status" to "ok")) }
-            get("/ready") { call.respond(mapOf("ready" to true)) }
+            get("/health") { call.respond(HealthResponse("ok")) }
+            get("/ready") { call.respond(ReadyResponse(true)) }
             route("/v1") {
                 get("/spec") { 
-                    call.respond(mapOf(
-                        "openapi" to "3.1.0", 
-                        "info" to mapOf(
-                            "title" to "TaskGo API", 
-                            "version" to "0.1.0",
-                            "description" to "API for TaskGo marketplace app"
+                    call.respond(SpecResponse(
+                        openapi = "3.1.0",
+                        info = ApiInfo(
+                            title = "TaskGo API",
+                            version = "0.1.0",
+                            description = "API for TaskGo marketplace app"
                         )
-                    )) 
+                    ))
                 }
                 
                 // Simple test route
                 get("/test") {
-                    call.respond(mapOf("message" to "API is working"))
+                    call.respond(TestResponse("API is working"))
                 }
                 
                 // Simple products route without JWT
                 get("/products") {
                     val products = listOf(
-                        mapOf("id" to 1, "name" to "Produto 1", "price" to 29.99),
-                        mapOf("id" to 2, "name" to "Produto 2", "price" to 49.99)
+                        ProductResponse(1, "Produto 1", 29.99),
+                        ProductResponse(2, "Produto 2", 49.99)
                     )
                     call.respond(products)
                 }
                 
                 // Simple login route without JWT
                 post("/login") {
-                    val body = call.receive<Map<String, String>>()
-                    call.respond(mapOf(
-                        "token" to "mock-token",
-                        "user" to mapOf("id" to 1, "email" to body["email"])
+                    val body = call.receive<LoginRequest>()
+                    call.respond(LoginResponse(
+                        token = "mock-token",
+                        user = UserResponse(1, body.email)
                     ))
                 }
             }

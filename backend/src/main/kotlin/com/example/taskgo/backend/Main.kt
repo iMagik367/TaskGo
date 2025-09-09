@@ -51,18 +51,21 @@ fun main() {
         
         // Initialize repositories (toggle DB via env DB_ENABLE=true)
         val useDb = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
-        val dataSource = if (useDb) Database.init() else null
         
-        val userRepository: UserRepository = if (useDb && dataSource != null) {
-            UserRepositoryJdbc(dataSource)
+        val userRepository: UserRepository = if (useDb) {
+            val ds = Database.init()
+            UserRepositoryJdbc(ds)
         } else {
             InMemoryUserRepository()
         }
-        val productRepository = if (useDb && dataSource != null) {
-            ProductRepositoryJdbc(dataSource)
+        
+        val productRepository = if (useDb) {
+            val ds = Database.init()
+            ProductRepositoryJdbc(ds)
         } else {
             InMemoryProductRepository()
         }
+        
         val cartRepository = InMemoryCartRepository()
 
         routing {

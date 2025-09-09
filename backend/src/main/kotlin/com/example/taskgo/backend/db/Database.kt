@@ -8,14 +8,21 @@ import javax.sql.DataSource
 object Database {
     @Volatile
     private var dataSourceInternal: HikariDataSource? = null
+    private val initLock = Any()
 
     val dataSource: DataSource
         get() = requireNotNull(dataSourceInternal) { "Database not initialized. Call Database.init() first." }
 
     fun init(): DataSource {
+        return dataSourceInternal ?: synchronized(initLock) {
+            dataSourceInternal ?: initializeDataSource()
+        }
+    }
+
+    private fun initializeDataSource(): HikariDataSource {
         val enable = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
         if (!enable) {
-            return dataSourceInternal ?: HikariDataSource(HikariConfig()).also { dataSourceInternal = it }
+            return HikariDataSource(HikariConfig()).also { dataSourceInternal = it }
         }
 
         val jdbcUrl = System.getenv("DB_URL") ?: error("DB_URL not set")

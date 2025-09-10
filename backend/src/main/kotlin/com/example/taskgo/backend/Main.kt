@@ -116,6 +116,22 @@ fun main() {
                     call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
                 }
             }
+            
+            get("/debug/test-query") {
+                try {
+                    val ds = Database.init()
+                    val connection = ds.connection
+                    val statement = connection.createStatement()
+                    val resultSet = statement.executeQuery("SELECT COUNT(*) as count FROM products")
+                    val count = if (resultSet.next()) resultSet.getInt("count") else 0
+                    resultSet.close()
+                    statement.close()
+                    connection.close()
+                    call.respond(mapOf("success" to true, "product_count" to count))
+                } catch (e: Exception) {
+                    call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
+                }
+            }
 
             // Rotas principais
             productRoutes(productRepository)

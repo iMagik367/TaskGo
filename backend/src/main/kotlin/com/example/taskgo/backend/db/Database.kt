@@ -7,21 +7,12 @@ import javax.sql.DataSource
 
 object Database {
     @Volatile
-    private var dataSourceInternal: HikariDataSource? = null
-    private val initLock = Any()
-
-    val dataSource: DataSource
-        get() = requireNotNull(dataSourceInternal) { "Database not initialized. Call Database.init() first." }
+    private var dataSource: DataSource? = null
 
     fun init(): DataSource {
-        if (dataSourceInternal == null) {
-            synchronized(initLock) {
-                if (dataSourceInternal == null) {
-                    dataSourceInternal = initializeDataSource()
-                }
-            }
+        return dataSource ?: synchronized(this) {
+            dataSource ?: initializeDataSource().also { dataSource = it }
         }
-        return dataSourceInternal!!
     }
 
     private fun initializeDataSource(): HikariDataSource {
@@ -54,13 +45,12 @@ object Database {
             .load()
             .migrate()
 
-        dataSourceInternal = ds
         return ds
     }
 
     fun shutdown() {
-        dataSourceInternal?.close()
-        dataSourceInternal = null
+        (dataSource as? HikariDataSource)?.close()
+        dataSource = null
     }
 }
 

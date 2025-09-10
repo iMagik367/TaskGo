@@ -14,9 +14,14 @@ object Database {
         get() = requireNotNull(dataSourceInternal) { "Database not initialized. Call Database.init() first." }
 
     fun init(): DataSource {
-        return dataSourceInternal ?: synchronized(initLock) {
-            dataSourceInternal ?: initializeDataSource()
+        if (dataSourceInternal == null) {
+            synchronized(initLock) {
+                if (dataSourceInternal == null) {
+                    dataSourceInternal = initializeDataSource()
+                }
+            }
         }
+        return dataSourceInternal!!
     }
 
     private fun initializeDataSource(): HikariDataSource {

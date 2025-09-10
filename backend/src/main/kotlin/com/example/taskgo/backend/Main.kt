@@ -76,67 +76,69 @@ fun main() {
         val cartRepository = InMemoryCartRepository()
 
         routing {
-            get("/health") { call.respond(HealthResponse("ok")) }
-            get("/ready") { call.respond(ReadyResponse(true)) }
-            get("/test") { call.respond(TestResponse("API is working")) }
-            
-            // Debug endpoints
-            get("/debug/simple") {
-                call.respond(mapOf("status" to "ok", "message" to "Simple debug working"))
-            }
-            
-            get("/debug/db") {
-                try {
-                    val ds = Database.init()
-                    call.respond(mapOf("success" to true, "message" to "Database initialized successfully", "ds_class" to ds.javaClass.simpleName))
-                } catch (e: Exception) {
-                    call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
-                }
-            }
-            
-            get("/debug/env") {
-                val env = mapOf(
-                    "DB_ENABLE" to System.getenv("DB_ENABLE"),
-                    "DB_URL" to System.getenv("DB_URL")?.take(50) + "...",
-                    "DB_USER" to System.getenv("DB_USER"),
-                    "DB_PASS" to System.getenv("DB_PASS")?.take(5) + "...",
-                    "PORT" to System.getenv("PORT")
-                )
-                call.respond(mapOf("env" to env))
-            }
-            
-            get("/debug/test-connection") {
-                try {
-                    val ds = Database.init()
-                    val connection = ds.connection
-                    val isValid = connection.isValid(5)
-                    connection.close()
-                    call.respond(mapOf("success" to true, "connection_valid" to isValid))
-                } catch (e: Exception) {
-                    call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
-                }
-            }
-            
-            get("/debug/test-query") {
-                try {
-                    val ds = Database.init()
-                    val connection = ds.connection
-                    val statement = connection.createStatement()
-                    val resultSet = statement.executeQuery("SELECT COUNT(*) as count FROM products")
-                    val count = if (resultSet.next()) resultSet.getInt("count") else 0
-                    resultSet.close()
-                    statement.close()
-                    connection.close()
-                    call.respond(mapOf("success" to true, "product_count" to count))
-                } catch (e: Exception) {
-                    call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
-                }
-            }
+            route("/v1") {
+                get("/health") { call.respond(HealthResponse("ok")) }
+                get("/ready") { call.respond(ReadyResponse(true)) }
+                get("/test") { call.respond(TestResponse("API is working")) }
 
-            // Rotas principais
-            productRoutes(productRepository)
-            authRoutes(userRepository)
-            // cartRoutes(cartRepository) // habilitar quando JWT estiver ativo
+                // Debug endpoints
+                get("/debug/simple") {
+                    call.respond(mapOf("status" to "ok", "message" to "Simple debug working"))
+                }
+
+                get("/debug/db") {
+                    try {
+                        val ds = Database.init()
+                        call.respond(mapOf("success" to true, "message" to "Database initialized successfully", "ds_class" to ds.javaClass.simpleName))
+                    } catch (e: Exception) {
+                        call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
+                    }
+                }
+
+                get("/debug/env") {
+                    val env = mapOf(
+                        "DB_ENABLE" to System.getenv("DB_ENABLE"),
+                        "DB_URL" to System.getenv("DB_URL")?.take(50) + "...",
+                        "DB_USER" to System.getenv("DB_USER"),
+                        "DB_PASS" to System.getenv("DB_PASS")?.take(5) + "...",
+                        "PORT" to System.getenv("PORT")
+                    )
+                    call.respond(mapOf("env" to env))
+                }
+
+                get("/debug/test-connection") {
+                    try {
+                        val ds = Database.init()
+                        val connection = ds.connection
+                        val isValid = connection.isValid(5)
+                        connection.close()
+                        call.respond(mapOf("success" to true, "connection_valid" to isValid))
+                    } catch (e: Exception) {
+                        call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
+                    }
+                }
+
+                get("/debug/test-query") {
+                    try {
+                        val ds = Database.init()
+                        val connection = ds.connection
+                        val statement = connection.createStatement()
+                        val resultSet = statement.executeQuery("SELECT COUNT(*) as count FROM products")
+                        val count = if (resultSet.next()) resultSet.getInt("count") else 0
+                        resultSet.close()
+                        statement.close()
+                        connection.close()
+                        call.respond(mapOf("success" to true, "product_count" to count))
+                    } catch (e: Exception) {
+                        call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
+                    }
+                }
+
+                // Rotas principais
+                productRoutes(productRepository)
+                authRoutes(userRepository)
+                // cartRoutes(cartRepository) // habilitar quando JWT estiver ativo
+            }
         }
     }.start(wait = true)
 }

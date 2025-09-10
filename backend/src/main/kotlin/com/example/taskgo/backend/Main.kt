@@ -93,6 +93,29 @@ fun main() {
                     call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
                 }
             }
+            
+            get("/debug/env") {
+                val env = mapOf(
+                    "DB_ENABLE" to System.getenv("DB_ENABLE"),
+                    "DB_URL" to System.getenv("DB_URL")?.take(50) + "...",
+                    "DB_USER" to System.getenv("DB_USER"),
+                    "DB_PASS" to System.getenv("DB_PASS")?.take(5) + "...",
+                    "PORT" to System.getenv("PORT")
+                )
+                call.respond(mapOf("env" to env))
+            }
+            
+            get("/debug/test-connection") {
+                try {
+                    val ds = Database.init()
+                    val connection = ds.connection
+                    val isValid = connection.isValid(5)
+                    connection.close()
+                    call.respond(mapOf("success" to true, "connection_valid" to isValid))
+                } catch (e: Exception) {
+                    call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
+                }
+            }
 
             // Rotas principais
             productRoutes(productRepository)

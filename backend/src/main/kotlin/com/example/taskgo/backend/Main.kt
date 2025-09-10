@@ -88,9 +88,9 @@ fun main() {
             get("/debug/db") {
                 try {
                     val ds = Database.init()
-                    call.respond(mapOf("success" to true, "message" to "Database initialized successfully"))
+                    call.respond(mapOf("success" to true, "message" to "Database initialized successfully", "ds_class" to ds.javaClass.simpleName))
                 } catch (e: Exception) {
-                    call.respond(mapOf("success" to false, "error" to e.message, "stack" to e.stackTraceToString()))
+                    call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
                 }
             }
             

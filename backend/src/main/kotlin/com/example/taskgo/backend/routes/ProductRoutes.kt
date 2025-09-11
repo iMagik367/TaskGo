@@ -12,12 +12,16 @@ import io.ktor.server.routing.*
 fun Route.productRoutes(repo: ProductRepository) {
     route("/products") {
         get {
-            val search = call.request.queryParameters["search"]
-            val category = call.request.queryParameters["category"]
-            val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
-            val size = call.request.queryParameters["size"]?.toIntOrNull() ?: 20
-            val items = repo.list(search, category, page, size)
-            call.respond(mapOf("items" to items, "page" to page, "size" to size))
+            try {
+                val search = call.request.queryParameters["search"]
+                val category = call.request.queryParameters["category"]
+                val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
+                val size = call.request.queryParameters["size"]?.toIntOrNull() ?: 20
+                val items = repo.list(search, category, page, size)
+                call.respond(mapOf("items" to items, "page" to page, "size" to size))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
         }
         get("/{id}") {
             val id = call.parameters["id"]?.toLongOrNull()

@@ -4,15 +4,8 @@ FROM openjdk:17-jdk-slim
 # Set working directory
 WORKDIR /app
 
-# Copy gradle files
-COPY gradle/ gradle/
-COPY gradlew .
-COPY gradle.properties .
-COPY settings.gradle.kts .
-COPY build.gradle.kts .
-
-# Copy backend source
-COPY backend/ backend/
+# Copy everything at once to avoid file not found issues
+COPY . .
 
 # Make gradlew executable
 RUN chmod +x gradlew

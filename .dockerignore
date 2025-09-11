@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.iml
+
+# Build outputs
+build/
+out/
+target/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Documentation
+README.md
+*.md
+
+# Test files
+test/
+tests/
+*Test.kt
+*Test.java
+
+# Android specific
+app/build/
+app/src/androidTest/
+app/src/test/

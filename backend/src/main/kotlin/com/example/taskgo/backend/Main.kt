@@ -44,6 +44,8 @@ data class LoginResponse(val token: String, val user: UserResponse)
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
+    println("🚀 Starting TaskGo server on port $port")
+    println("🌍 Environment: ${System.getenv("RAILWAY_ENVIRONMENT") ?: "local"}")
     
     embeddedServer(Netty, port = port, host = "0.0.0.0") {
         install(CallLogging)
@@ -53,14 +55,21 @@ fun main() {
         val useDb = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
 
         var dataSourceOrNull: javax.sql.DataSource? = null
+        var dbInitialized = false
+        
         if (useDb) {
             try {
                 dataSourceOrNull = Database.init()
+                dbInitialized = true
+                println("✅ Database initialized successfully")
             } catch (t: Throwable) {
                 // Fallback gracioso para repositórios em memória quando DB não está configurado
-                println("Failed to initialize database. Falling back to in-memory repositories: ${t.message}")
+                println("❌ Failed to initialize database. Falling back to in-memory repositories: ${t.message}")
                 dataSourceOrNull = null
+                dbInitialized = false
             }
+        } else {
+            println("ℹ️ Database disabled via DB_ENABLE=false, using in-memory repositories")
         }
 
         val userRepository: UserRepository = when (val ds = dataSourceOrNull) {
@@ -89,9 +98,17 @@ fun main() {
                 get("/debug/db") {
                     try {
                         val ds = Database.init()
-                        call.respond(mapOf("success" to true, "message" to "Database initialized successfully", "ds_class" to ds.javaClass.simpleName))
+                        call.respond(mapOf(
+                            "success" to true, 
+                            "message" to "Database initialized successfully", 
+                            "ds_class" to ds.javaClass.simpleName
+                        ))
                     } catch (e: Exception) {
-                        call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
+                        call.respond(mapOf(
+                            "success" to false, 
+                            "error" to e.message, 
+                            "type" to e.javaClass.simpleName
+                        ))
                     }
                 }
 
@@ -132,6 +149,16 @@ fun main() {
                     } catch (e: Exception) {
                         call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
                     }
+                }
+
+                get("/debug/repositories") {
+                    call.respond(mapOf(
+                        "database_enabled" to useDb,
+                        "database_initialized" to dbInitialized,
+                        "user_repository_type" to userRepository.javaClass.simpleName,
+                        "product_repository_type" to productRepository.javaClass.simpleName,
+                        "cart_repository_type" to cartRepository.javaClass.simpleName
+                    ))
                 }
 
                 // Rotas principais

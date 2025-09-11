@@ -1,13 +1,31 @@
-FROM gradle:8.7-jdk17 AS build
-WORKDIR /workspace
-COPY . /workspace
-RUN chmod +x ./gradlew
-RUN ./gradlew :backend:installDist --no-daemon
+# Use OpenJDK 17
+FROM openjdk:17-jdk-slim
 
-FROM eclipse-temurin:17-jre
-ENV JAVA_OPTS="-Xms128m -Xmx512m"
+# Set working directory
 WORKDIR /app
-COPY --from=build /workspace/backend/build/install/backend /app
-EXPOSE 8080
-CMD ["sh","-c","/app/bin/backend $JAVA_OPTS"]
 
+# Copy gradle files
+COPY gradle/ gradle/
+COPY gradlew .
+COPY gradle.properties .
+COPY settings.gradle.kts .
+COPY build.gradle.kts .
+
+# Copy backend source
+COPY backend/ backend/
+
+# Make gradlew executable
+RUN chmod +x gradlew
+
+# Build the application
+RUN ./gradlew :backend:build --no-daemon
+
+# Expose port
+EXPOSE 8080
+
+# Set environment variables
+ENV PORT=8080
+ENV DB_ENABLE=true
+
+# Run the application
+CMD ["./gradlew", ":backend:run", "--no-daemon"]

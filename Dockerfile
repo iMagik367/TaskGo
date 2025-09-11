@@ -11,8 +11,8 @@ COPY gradle.properties .
 COPY settings.gradle.kts .
 COPY build.gradle.kts .
 
-# Copy backend source (since we're already in backend/ context)
-COPY . .
+# Copy backend source
+COPY backend/ backend/
 
 # Make gradlew executable
 RUN chmod +x gradlew

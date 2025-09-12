@@ -35,6 +35,9 @@ tests/
 *Test.java
 
 # Android specific
-app/build/
-app/src/androidTest/
-app/src/test/
+app/
+core/
+feature/
+
+# Railway specific
+railway.json

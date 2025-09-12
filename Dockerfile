@@ -16,9 +16,5 @@ RUN ./gradlew :backend:build --no-daemon
 # Expose port
 EXPOSE 8080
 
-# Set environment variables
-ENV PORT=8080
-ENV DB_ENABLE=true
-
 # Run the application
 CMD ["./gradlew", ":backend:run", "--no-daemon"]

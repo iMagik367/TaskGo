@@ -3,7 +3,8 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile",
-    "context": "."
+    "context": ".",
+    "nixpacks": false
   },
   "deploy": {
     "startCommand": "./gradlew :backend:run --no-daemon",

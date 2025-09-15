@@ -1,0 +1,42 @@
+# Hide Gradle files from Railway detection
+build.gradle.kts
+settings.gradle.kts
+gradle/
+.gradle/
+
+# Android specific
+app/
+core/
+feature/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Build outputs
+build/
+out/
+target/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Documentation
+README.md
+*.md
+
+# Test files
+test/
+tests/
+*Test.kt
+*Test.java

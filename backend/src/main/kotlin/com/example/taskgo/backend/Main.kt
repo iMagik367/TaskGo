@@ -1,13 +1,8 @@
 package com.example.taskgo.backend
 
-import com.example.taskgo.backend.auth.JwtConfig
 import com.example.taskgo.backend.domain.InMemoryCartRepository
 import com.example.taskgo.backend.domain.InMemoryProductRepository
-import com.example.taskgo.backend.domain.UserRepository
 import com.example.taskgo.backend.repository.InMemoryUserRepository
-import com.example.taskgo.backend.repository.UserRepositoryJdbc
-import com.example.taskgo.backend.repository.ProductRepositoryJdbc
-import com.example.taskgo.backend.db.Database
 import com.example.taskgo.backend.routes.authRoutes
 import com.example.taskgo.backend.routes.cartRoutes
 import com.example.taskgo.backend.routes.productRoutes
@@ -42,46 +37,34 @@ data class UserResponse(val id: Int, val email: String)
 @Serializable
 data class LoginResponse(val token: String, val user: UserResponse)
 
+@Serializable
+data class ProductListResponse(val items: List<com.example.taskgo.backend.domain.Product>, val page: Int, val size: Int)
+
+@Serializable
+data class ErrorResponse(val error: String)
+
+@Serializable
+data class DebugRepositoriesResponse(
+    val database_enabled: Boolean,
+    val user_repository_type: String,
+    val product_repository_type: String,
+    val cart_repository_type: String,
+    val message: String
+)
+
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     println("🚀 Starting TaskGo server on port $port")
     println("🌍 Environment: ${System.getenv("RAILWAY_ENVIRONMENT") ?: "local"}")
+    println("💾 Using in-memory repositories (no database)")
     
     embeddedServer(Netty, port = port, host = "0.0.0.0") {
         install(CallLogging)
         install(ContentNegotiation) { json() }
         
-        // Initialize repositories (toggle DB via env DB_ENABLE=true)
-        val useDb = System.getenv("DB_ENABLE")?.equals("true", ignoreCase = true) == true
-
-        var dataSourceOrNull: javax.sql.DataSource? = null
-        var dbInitialized = false
-        
-        if (useDb) {
-            try {
-                dataSourceOrNull = Database.init()
-                dbInitialized = true
-                println("✅ Database initialized successfully")
-            } catch (t: Throwable) {
-                // Fallback gracioso para repositórios em memória quando DB não está configurado
-                println("❌ Failed to initialize database. Falling back to in-memory repositories: ${t.message}")
-                dataSourceOrNull = null
-                dbInitialized = false
-            }
-        } else {
-            println("ℹ️ Database disabled via DB_ENABLE=false, using in-memory repositories")
-        }
-
-        val userRepository: UserRepository = when (val ds = dataSourceOrNull) {
-            null -> InMemoryUserRepository()
-            else -> UserRepositoryJdbc(ds)
-        }
-
-        val productRepository = when (val ds = dataSourceOrNull) {
-            null -> InMemoryProductRepository()
-            else -> ProductRepositoryJdbc(ds)
-        }
-        
+        // Initialize in-memory repositories only
+        val userRepository = InMemoryUserRepository()
+        val productRepository = InMemoryProductRepository()
         val cartRepository = InMemoryCartRepository()
 
         routing {
@@ -95,76 +78,20 @@ fun main() {
                     call.respond(mapOf("status" to "ok", "message" to "Simple debug working"))
                 }
 
-                get("/debug/db") {
-                    try {
-                        val ds = Database.init()
-                        call.respond(mapOf(
-                            "success" to true, 
-                            "message" to "Database initialized successfully", 
-                            "ds_class" to ds.javaClass.simpleName
-                        ))
-                    } catch (e: Exception) {
-                        call.respond(mapOf(
-                            "success" to false, 
-                            "error" to e.message, 
-                            "type" to e.javaClass.simpleName
-                        ))
-                    }
-                }
-
-                get("/debug/env") {
-                    val env = mapOf(
-                        "DB_ENABLE" to System.getenv("DB_ENABLE"),
-                        "DB_URL" to System.getenv("DB_URL")?.take(50) + "...",
-                        "DB_USER" to System.getenv("DB_USER"),
-                        "DB_PASS" to System.getenv("DB_PASS")?.take(5) + "...",
-                        "PORT" to System.getenv("PORT")
-                    )
-                    call.respond(mapOf("env" to env))
-                }
-
-                get("/debug/test-connection") {
-                    try {
-                        val ds = Database.init()
-                        val connection = ds.connection
-                        val isValid = connection.isValid(5)
-                        connection.close()
-                        call.respond(mapOf("success" to true, "connection_valid" to isValid))
-                    } catch (e: Exception) {
-                        call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
-                    }
-                }
-
-                get("/debug/test-query") {
-                    try {
-                        val ds = Database.init()
-                        val connection = ds.connection
-                        val statement = connection.createStatement()
-                        val resultSet = statement.executeQuery("SELECT COUNT(*) as count FROM products")
-                        val count = if (resultSet.next()) resultSet.getInt("count") else 0
-                        resultSet.close()
-                        statement.close()
-                        connection.close()
-                        call.respond(mapOf("success" to true, "product_count" to count))
-                    } catch (e: Exception) {
-                        call.respond(mapOf("success" to false, "error" to e.message, "type" to e.javaClass.simpleName))
-                    }
-                }
-
-                get("/debug/repositories") {
-                    call.respond(mapOf(
-                        "database_enabled" to useDb,
-                        "database_initialized" to dbInitialized,
-                        "user_repository_type" to userRepository.javaClass.simpleName,
-                        "product_repository_type" to productRepository.javaClass.simpleName,
-                        "cart_repository_type" to cartRepository.javaClass.simpleName
-                    ))
-                }
+                       get("/debug/repositories") {
+                           call.respond(DebugRepositoriesResponse(
+                               database_enabled = false,
+                               user_repository_type = userRepository.javaClass.simpleName,
+                               product_repository_type = productRepository.javaClass.simpleName,
+                               cart_repository_type = cartRepository.javaClass.simpleName,
+                               message = "Using in-memory repositories only"
+                           ))
+                       }
 
                 // Rotas principais
                 productRoutes(productRepository)
                 authRoutes(userRepository)
-                // cartRoutes(cartRepository) // habilitar quando JWT estiver ativo
+                cartRoutes(cartRepository)
             }
         }
     }.start(wait = true)

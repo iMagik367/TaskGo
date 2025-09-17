@@ -19,7 +19,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         buildConfigField("boolean", "USE_FIREBASE", "false")
-        buildConfigField("String", "API_BASE_URL", "\"https://taskgo-server.onrender.com/v1/\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://eastern-murielle-imagikstudios-213aeb91.koyeb.app/v1/\"")
         buildConfigField("boolean", "USE_REMOTE_API", "true")
     }
 

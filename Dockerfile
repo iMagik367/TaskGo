@@ -1,20 +1,19 @@
-# Use OpenJDK 17
-FROM openjdk:17-jdk-slim
-
-# Set working directory
+# Build stage
+FROM gradle:7-jdk17 AS build
 WORKDIR /app
-
-# Copy everything at once to avoid file not found issues
 COPY . .
-
-# Make gradlew executable
 RUN chmod +x gradlew
-
-# Build the application
 RUN ./gradlew :backend:build --no-daemon
 
-# Expose port
-EXPOSE 8080
+# Run stage
+FROM openjdk:17-jdk-slim
+WORKDIR /app
+COPY --from=build /app/backend/build/libs/*.jar app.jar
+COPY --from=build /app/backend/src/main/resources/db/migration /app/db/migration
 
-# Run the application
-CMD ["./gradlew", ":backend:run", "--no-daemon"]
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+EXPOSE 8080
+CMD ["java", "-jar", "app.jar"]

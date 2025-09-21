@@ -21,7 +21,7 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.callloging.*
 import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.server.plugins.cors.routing.*
+            import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.plugins.compression.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.response.*
@@ -30,8 +30,7 @@ import io.ktor.server.http.content.*
 import kotlinx.serialization.Serializable
 import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
-
-@Serializable
+import io.ktor.http.*@Serializable
 data class HealthResponse(val status: String)
 
 @Serializable
@@ -92,6 +91,12 @@ fun main() {
             deflate { priority = 10.0 }
         }
         JwtConfig.configure(this)
+
+        routing {
+            get("/health") {
+                call.respond(HttpStatusCode.OK, HealthResponse("OK"))
+            }
+        }
         
         // Initialize repositories
         val userRepository: com.example.taskgo.backend.repository.InMemoryUserRepository

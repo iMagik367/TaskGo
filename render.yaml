@@ -4,10 +4,36 @@ services:
     env: docker
     plan: free
     autoDeploy: true
-    dockerfilePath: backend/Dockerfile
+    dockerfilePath: Dockerfile
+    healthCheckPath: /health
+    buildCommand: ./gradlew :backend:build
+    startCommand: java -jar backend/build/libs/*.jar
     envVars:
       - key: PORT
         value: 8080
       - key: JWT_SECRET
         generateValue: true
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase:
+          name: taskgo-db
+          property: connectionString
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+databases:
+  - name: taskgo-db
+    plan: free
+    ipAllowList: []
 

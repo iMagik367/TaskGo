@@ -20,11 +20,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.TaskGoApp"
-        android:name=".TaskGoApp"
+        android:name="br.com.taskgo.TaskGoApp"
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
         <activity
-            android:name=".MainActivity"
+            android:name="br.com.taskgo.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.TaskGoApp">

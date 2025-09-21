@@ -15,11 +15,11 @@ val localProps = Properties().apply {
 val apiBaseUrl = (localProps.getProperty("apiBaseUrl") ?: "http://10.0.2.2:8091/v1/").trim()
 
 android {
-    namespace = "com.example.taskgoapp"
+    namespace = "br.com.taskgo"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.taskgoapp"
+        applicationId = "br.com.taskgo"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

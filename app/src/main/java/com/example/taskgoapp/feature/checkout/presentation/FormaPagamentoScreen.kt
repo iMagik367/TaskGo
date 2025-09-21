@@ -64,7 +64,7 @@ fun FormaPagamentoScreen(
                         )
                     }
                     
-                    Divider()
+                    HorizontalDivider()
                     
                     // Cartão de Crédito
                     Row(
@@ -87,7 +87,7 @@ fun FormaPagamentoScreen(
                         )
                     }
                     
-                    Divider()
+                    HorizontalDivider()
                     
                     // Cartão de Débito
                     Row(

@@ -71,6 +71,17 @@ class PreferencesManager(context: Context) {
     }
     fun getAuthToken(): String? = prefs.getString("auth_token", null)
 
+    fun getAuthRole(): String? {
+        val token = getAuthToken() ?: return null
+        val parts = token.split('.')
+        if (parts.size < 2) return null
+        return try {
+            val payloadBytes = android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+            val json = org.json.JSONObject(String(payloadBytes))
+            json.optString("role").ifBlank { null }
+        } catch (_: Exception) { null }
+    }
+
     // Clear all data
     fun clearAll() = prefs.edit().clear().apply()
 }

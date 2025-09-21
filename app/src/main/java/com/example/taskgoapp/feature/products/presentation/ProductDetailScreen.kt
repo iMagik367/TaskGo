@@ -33,7 +33,6 @@ fun ProductDetailScreen(
     viewModel: ProductDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     
     LaunchedEffect(productId) {
         viewModel.loadProduct(productId)

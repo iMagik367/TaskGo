@@ -27,17 +27,7 @@ fun AiSupportScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     
-    // Mensagens iniciais mockadas
-    LaunchedEffect(Unit) {
-        messages = listOf(
-            AiMessage(
-                id = 1,
-                text = "Olá! Sou o assistente virtual do TaskGo. Como posso ajudar você hoje?",
-                isFromAi = true,
-                timestamp = System.currentTimeMillis()
-            )
-        )
-    }
+    // Sem mensagens mockadas iniciais
     
     fun sendMessage() {
         if (messageText.isBlank()) return
@@ -52,13 +42,7 @@ fun AiSupportScreen(
         messages = messages + userMessage
         messageText = ""
         
-        // Simular resposta da IA
-        coroutineScope.launch {
-            kotlinx.coroutines.delay(1000)
-            val aiResponse = generateAiResponse(userMessage.text)
-            messages = messages + aiResponse
-            listState.animateScrollToItem(messages.size - 1)
-        }
+        // TODO: Integrar com backend/serviço real de IA se aplicável
     }
     
     Scaffold(

@@ -34,13 +34,7 @@ fun CartScreen(
     onNavigateToProductDetail: (Long) -> Unit,
     onNavigateBack: () -> Unit
 ) {
-    val productsRepository = remember { 
-        object : com.example.taskgoapp.core.data.repositories.MarketplaceRepository {
-            override fun getProducts(): Flow<List<com.example.taskgoapp.core.data.models.Product>> = flow { emit(emptyList()) }
-            override fun getProductById(id: Long): Flow<com.example.taskgoapp.core.data.models.Product?> = flow { emit(null) }
-        }
-    }
-    
+
     fun getCartItems(): Flow<List<com.example.taskgoapp.core.data.models.CartItem>> = flow {
         delay(200)
         emit(emptyList())

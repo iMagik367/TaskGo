@@ -45,17 +45,13 @@ fun MeusPedidosScreen(
                 subtotal = 750.0,
                 deliveryFee = 25.0,
                 status = OrderStatus.EM_ANDAMENTO,
-                items = listOf(
-                    OrderItem(
-                        id = "1",
-                        productId = "prod1",
-                        productName = "Guarda Roupa",
-                        productImage = null,
-                        price = 750.0,
-                        quantity = 1,
-                        deliveryDate = "05/08/2025"
-                    )
-                ),
+            items = listOf(
+                OrderItem(
+                    productId = "prod1",
+                    price = 750.0,
+                    quantity = 1
+                )
+            ),
                 paymentMethod = "Crédito",
                 trackingCode = "LP123456789BR",
                 deliveryAddress = "Rua das Flores, 123 - Centro"
@@ -70,13 +66,9 @@ fun MeusPedidosScreen(
                 status = OrderStatus.CONCLUIDO,
                 items = listOf(
                     OrderItem(
-                        id = "2",
                         productId = "prod2",
-                        productName = "Cadeira de Escritório",
-                        productImage = null,
                         price = 450.0,
-                        quantity = 1,
-                        deliveryDate = "30/07/2025"
+                        quantity = 1
                     )
                 ),
                 paymentMethod = "Pix",
@@ -93,13 +85,9 @@ fun MeusPedidosScreen(
                 status = OrderStatus.CANCELADO,
                 items = listOf(
                     OrderItem(
-                        id = "3",
                         productId = "prod3",
-                        productName = "Martelo",
-                        productImage = null,
                         price = 35.0,
-                        quantity = 1,
-                        deliveryDate = "22/02/2025"
+                        quantity = 1
                     )
                 ),
                 paymentMethod = "Débito",
@@ -238,7 +226,7 @@ private fun OrderCard(
                 
                 if (order.items.isNotEmpty()) {
                     Text(
-                        text = order.items.first().productName,
+                        text = order.items.first().productName ?: "Produto não identificado",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -43,13 +43,9 @@ fun ResumoPedidoScreen(
             status = OrderStatus.CONCLUIDO,
             items = listOf(
                 OrderItem(
-                    id = "1",
                     productId = "prod1",
-                    productName = "Guarda Roupa",
-                    productImage = null,
                     price = 750.0,
-                    quantity = 1,
-                    deliveryDate = "05/08/2025"
+                    quantity = 1
                 )
             ),
             paymentMethod = "Crédito",

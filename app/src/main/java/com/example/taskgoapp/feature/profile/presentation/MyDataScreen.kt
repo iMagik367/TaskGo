@@ -65,67 +65,55 @@ fun MyDataScreen(
             )
         }
     ) { paddingValues ->
-        if (user != null) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                // Profile Photo Section
-                ProfilePhotoSection(
-                    onChangePhoto = { showChangePhotoDialog = true }
-                )
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Personal Information
-                PersonalInfoSection(
-                    user = user!!,
-                    isEditing = isEditing,
-                    editedName = editedName,
-                    editedEmail = editedEmail,
-                    editedPhone = editedPhone,
-                    onNameChange = { editedName = it },
-                    onEmailChange = { editedEmail = it },
-                    onPhoneChange = { editedPhone = it }
-                )
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Account Information
-                AccountInfoSection(user = user!!)
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Action Buttons
-                ActionButtonsSection(
-                    isEditing = isEditing,
-                    onEditClick = { isEditing = true },
-                    onSaveClick = {
-                        // TODO: Implement save changes
-                        isEditing = false
-                        showSaveSuccess = true
-                    },
-                    onCancelClick = {
-                        isEditing = false
-                        editedName = user.name
-                        editedEmail = user.email
-                        editedPhone = user.phone
-                    },
-                    onChangePassword = { showChangePasswordDialog = true }
-                )
-            }
-        } else {
-            // Loading state
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Profile Photo Section
+            ProfilePhotoSection(
+                onChangePhoto = { showChangePhotoDialog = true }
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Personal Information
+            PersonalInfoSection(
+                user = user,
+                isEditing = isEditing,
+                editedName = editedName,
+                editedEmail = editedEmail,
+                editedPhone = editedPhone,
+                onNameChange = { editedName = it },
+                onEmailChange = { editedEmail = it },
+                onPhoneChange = { editedPhone = it }
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Account Information
+            AccountInfoSection(user = user)
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Action Buttons
+            ActionButtonsSection(
+                isEditing = isEditing,
+                onEditClick = { isEditing = true },
+                onSaveClick = {
+                    // TODO: Implement save changes
+                    isEditing = false
+                    showSaveSuccess = true
+                },
+                onCancelClick = {
+                    isEditing = false
+                    editedName = user.name
+                    editedEmail = user.email
+                    editedPhone = user.phone
+                },
+                onChangePassword = { showChangePasswordDialog = true }
+            )
         }
     }
     
@@ -148,8 +136,7 @@ fun MyDataScreen(
     // Change Password Dialog
     if (showChangePasswordDialog) {
         ChangePasswordDialog(
-            onDismiss = { showChangePasswordDialog = false },
-            onConfirm = { /* TODO: Implement password change */ }
+            onDismiss = { showChangePasswordDialog = false }
         )
     }
     
@@ -442,12 +429,13 @@ private fun InfoRow(
 @Composable
 private fun ChangePasswordDialog(
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    viewModel: com.example.taskgoapp.feature.auth.presentation.AuthViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    
+    val changeState = viewModel.changePasswordState.collectAsState().value
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.profile_change_password_title)) },
@@ -459,34 +447,44 @@ private fun ChangePasswordDialog(
                     label = { Text(stringResource(R.string.profile_current_password)) },
                     modifier = Modifier.fillMaxWidth()
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 OutlinedTextField(
                     value = newPassword,
                     onValueChange = { newPassword = it },
                     label = { Text(stringResource(R.string.profile_new_password)) },
                     modifier = Modifier.fillMaxWidth()
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
                     label = { Text(stringResource(R.string.profile_confirm_password)) },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                if (changeState.error != null) {
+                    Text(changeState.error, color = MaterialTheme.colorScheme.error)
+                }
+                if (changeState.success) {
+                    Text("Senha alterada com sucesso!", color = MaterialTheme.colorScheme.primary)
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    onConfirm()
-                    onDismiss()
-                }
+                    if (newPassword == confirmPassword && newPassword.isNotBlank() && currentPassword.isNotBlank()) {
+                        viewModel.changePassword(currentPassword, newPassword)
+                    }
+                },
+                enabled = !changeState.isLoading && newPassword == confirmPassword && newPassword.isNotBlank() && currentPassword.isNotBlank()
             ) {
-                Text(stringResource(R.string.profile_change_password_confirm))
+                if (changeState.isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                else Text(stringResource(R.string.profile_change_password_confirm))
             }
         },
         dismissButton = {

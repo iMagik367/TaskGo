@@ -1,9 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
-    kotlin("kapt")
+    id("com.google.devtools.ksp")
 }
+
+// Load apiBaseUrl from local.properties for physical devices; fallback to 10.0.2.2
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val apiBaseUrl = (localProps.getProperty("apiBaseUrl") ?: "http://10.0.2.2:8091/v1/").trim()
 
 android {
     namespace = "com.example.taskgoapp"
@@ -19,7 +28,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         buildConfigField("boolean", "USE_FIREBASE", "false")
-        buildConfigField("String", "API_BASE_URL", "\"https://eastern-murielle-imagikstudios-213aeb91.koyeb.app/v1/\"")
+        // Use 10.0.2.2 for Android emulator to reach host localhost
+        buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl}\"")
         buildConfigField("boolean", "USE_REMOTE_API", "true")
     }
 
@@ -30,11 +40,23 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            isTestCoverageEnabled = false
+        }
+        debug {
+            isTestCoverageEnabled = false
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+    
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
+    java {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -64,6 +86,10 @@ kotlin {
 }
 
 dependencies {
+    // Google Sign-In
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
+    // Facebook Login
+    implementation("com.facebook.android:facebook-login:16.3.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
@@ -79,11 +105,11 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    kapt(libs.androidx.room.compiler)
+    ksp(libs.androidx.room.compiler)
     
     // Hilt dependencies
     implementation(libs.hilt.android)
-    kapt(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
     
     // DataStore
@@ -92,7 +118,7 @@ dependencies {
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.hilt:hilt-work:1.1.0")
-    kapt("androidx.hilt:hilt-compiler:1.1.0")
+    ksp("androidx.hilt:hilt-compiler:1.1.0")
     
     // ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")

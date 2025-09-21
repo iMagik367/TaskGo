@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -98,7 +99,7 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             AppTopBar(
-                title = thread?.title ?: stringResource(R.string.chat_title),
+                title = thread.title,
                 onBackClick = onNavigateBack
             )
         },
@@ -108,46 +109,31 @@ fun ChatScreen(
                 onValueChange = { messageText = it },
                 onSend = {
                     if (messageText.isNotBlank()) {
-                        // TODO: Implement send message
                         messageText = ""
                     }
                 }
             )
         }
     ) { paddingValues ->
-        if (thread != null) {
-            LazyColumn(
-                state = listState,
+        LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                    .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Typing indicator
-                if (isTyping) {
-                    item {
-                        TypingIndicator()
-                    }
-                }
-                
-                // Messages
-                items(messages) { message ->
-                    ChatBubble(
-                        message = message,
-                        isMine = message.isMine
-                    )
+                .padding(paddingValues),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (isTyping) {
+                item {
+                    TypingIndicator()
                 }
             }
-        } else {
-            // Loading state
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+            
+            items(messages) { message ->
+                ChatBubble(
+                    message = message,
+                    isMine = message.isMine
+                )
             }
         }
     }
@@ -270,7 +256,7 @@ private fun TypingIndicator() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                repeat(3) { index ->
+                repeat(3) { _ ->
                     Box(
                         modifier = Modifier
                             .size(8.dp)
@@ -319,9 +305,9 @@ private fun ChatInput(
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(
-                    imageVector = Icons.Default.Send,
+                    imageVector = Icons.AutoMirrored.Filled.Send,
                     contentDescription = stringResource(R.string.messages_send),
-                    tint = MaterialTheme.colorScheme.onPrimary
+                    tint = Color.White
                 )
             }
         }

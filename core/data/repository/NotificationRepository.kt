@@ -9,13 +9,13 @@ class NotificationRepository {
     }
     
     fun markAsRead(notificationId: Long) {
-        // Em uma implementação real, isso seria salvo no banco de dados
-        // Por enquanto, apenas simulamos a marcação como lida
+        // TODO: Marcar a notificação específica como lida no banco de dados
+        // notificationId: identificador único da notificação a ser marcada
     }
     
     fun deleteNotification(notificationId: Long) {
-        // Em uma implementação real, isso seria removido do banco de dados
-        // Por enquanto, apenas simulamos a remoção
+        // TODO: Remover a notificação específica do banco de dados
+        // notificationId: identificador único da notificação a ser removida
     }
 }
 

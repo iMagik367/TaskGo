@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.delay
 import com.example.taskgoapp.core.data.models.ServiceCategory
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,57 +47,7 @@ fun HomeScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<ServiceCategory?>(null) }
-    val productsRepository = remember { 
-        object : com.example.taskgoapp.core.data.repositories.MarketplaceRepository {
-            override fun getProducts(): Flow<List<com.example.taskgoapp.core.data.models.Product>> = flow {
-                delay(500)
-                emit(listOf(
-                    com.example.taskgoapp.core.data.models.Product(
-                        id = 1L,
-                        name = "Guarda Roupa 6 Portas",
-                        description = "Guarda roupa 6 portas com espelho, acabamento em MDF, cor branca. Perfeito para quartos modernos.",
-                        price = 899.90,
-                        seller = com.example.taskgoapp.core.data.models.User(
-                            id = 1L,
-                            name = "João Silva",
-                            email = "joao@email.com",
-                            phone = "(11) 99999-9999",
-                            accountType = com.example.taskgoapp.core.data.models.AccountType.SELLER,
-                            rating = 4.8,
-                            reviewCount = 156,
-                            city = "São Paulo",
-                            timeOnTaskGo = "2 anos"
-                        ),
-                        category = "Móveis"
-                    ),
-                    com.example.taskgoapp.core.data.models.Product(
-                        id = 2L,
-                        name = "Furadeira sem fio 18V",
-                        description = "Furadeira 18V com 2 baterias, ideal para trabalhos domésticos e profissionais.",
-                        price = 299.90,
-                        seller = com.example.taskgoapp.core.data.models.User(
-                            id = 2L,
-                            name = "Maria Santos",
-                            email = "maria@email.com",
-                            phone = "(11) 88888-8888",
-                            accountType = com.example.taskgoapp.core.data.models.AccountType.SELLER,
-                            rating = 4.6,
-                            reviewCount = 89,
-                            city = "Rio de Janeiro",
-                            timeOnTaskGo = "1 ano"
-                        ),
-                        category = "Ferramentas"
-                    )
-                ))
-            }
-            
-            override fun getProductById(id: Long): Flow<com.example.taskgoapp.core.data.models.Product?> = flow {
-                delay(300)
-                emit(null)
-            }
-        }
-    }
-    val products by productsRepository.getProducts().collectAsStateWithLifecycle(initialValue = emptyList())
+    val products = remember { emptyList<Product>() }
     val categories = remember { 
         listOf(
             ServiceCategory(
@@ -132,21 +83,8 @@ fun HomeScreen(
         )
     }
     
-    val filteredProducts = if (selectedCategory != null) {
-        products.filter { it.category == selectedCategory?.name }
-    } else {
-        products
-    }
-    
-    val searchFilteredProducts = if (searchQuery.isNotEmpty()) {
-        filteredProducts.filter { 
-            it.name.contains(searchQuery, ignoreCase = true) || 
-            it.description.contains(searchQuery, ignoreCase = true) ||
-            it.category.contains(searchQuery, ignoreCase = true)
-        }
-    } else {
-        filteredProducts
-    }
+    val filteredProducts = products
+    val searchFilteredProducts = products
     
     Scaffold(
         topBar = {

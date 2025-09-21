@@ -65,13 +65,20 @@ enum class OrderStatus {
 }
 
 data class OrderItem(
-    val id: String,
     val productId: String,
-    val productName: String,
-    val productImage: String?,
     val price: Double,
     val quantity: Int,
-    val deliveryDate: String? = null
+    val productImage: String? = null,
+    val productName: String? = null,
+    val deliveryDate: Long? = null
+)
+
+data class Order(
+    val id: Long,
+    val items: List<OrderItem>,
+    val total: Double,
+    val status: String,
+    val createdAt: String
 )
 
 data class PurchaseOrder(

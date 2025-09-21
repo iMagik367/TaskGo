@@ -13,7 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.taskgoapp.core.design.*
-import com.example.taskgoapp.core.data.*
+import com.example.taskgoapp.core.model.Order
+import com.example.taskgoapp.core.model.OrderItem
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.taskgoapp.domain.repository.OrderRepository
+import javax.inject.Inject
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -23,73 +28,16 @@ fun MyOrdersScreen(
     onBackClick: () -> Unit,
     onOrderClick: (Long) -> Unit
 ) {
+    val viewModel: MyOrdersViewModel = hiltViewModel()
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Em andamento", "Concluído", "Cancelado")
     
-    val orders = listOf(
-        Order(
-            id = 1,
-            items = listOf(
-                CartItem(
-                    Product(
-                        id = 1,
-                        title = "Furadeira sem fio",
-                        price = 299.99,
-                        description = "Furadeira de impacto 20V",
-                        seller = mockProviders[0],
-                        category = "Ferramentas",
-                        inStock = true
-                    ),
-                    1
-                )
-            ),
-            total = 299.99,
-            status = OrderStatus.IN_TRANSIT
-        ),
-        Order(
-            id = 2,
-            items = listOf(
-                CartItem(
-                    Product(
-                        id = 2,
-                        title = "Guarda Roupa 6 Portas",
-                        price = 899.99,
-                        description = "Guarda roupa com espelho",
-                        seller = mockProviders[1],
-                        category = "Móveis",
-                        inStock = true
-                    ),
-                    1
-                )
-            ),
-            total = 899.99,
-            status = OrderStatus.DELIVERED
-        ),
-        Order(
-            id = 3,
-            items = listOf(
-                CartItem(
-                    Product(
-                        id = 3,
-                        title = "Smartphone Galaxy A54",
-                        price = 1899.99,
-                        description = "Smartphone Samsung Galaxy A54 5G",
-                        seller = mockProviders[2],
-                        category = "Eletrônicos",
-                        inStock = true
-                    ),
-                    1
-                )
-            ),
-            total = 1899.99,
-            status = OrderStatus.CANCELLED
-        )
-    )
+    val orders by viewModel.orderRepository.observeOrders().collectAsStateWithLifecycle(initialValue = emptyList())
     
     val filteredOrders = when (selectedTabIndex) {
-        0 -> orders.filter { it.status in listOf(OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.IN_TRANSIT, OrderStatus.OUT_FOR_DELIVERY) }
-        1 -> orders.filter { it.status == OrderStatus.DELIVERED }
-        2 -> orders.filter { it.status == OrderStatus.CANCELLED }
+        0 -> orders.filter { it.status in listOf("CONFIRMED", "IN_TRANSIT", "OUT_FOR_DELIVERY") }
+        1 -> orders.filter { it.status == "DELIVERED" }
+        2 -> orders.filter { it.status == "CANCELLED" }
         else -> emptyList()
     }
     
@@ -155,21 +103,23 @@ fun OrderCard(
     modifier: Modifier = Modifier
 ) {
     val statusText = when (order.status) {
-        OrderStatus.PENDING -> "Pendente"
-        OrderStatus.CONFIRMED -> "Confirmado"
-        OrderStatus.IN_TRANSIT -> "Em trânsito"
-        OrderStatus.OUT_FOR_DELIVERY -> "Saiu para entrega"
-        OrderStatus.DELIVERED -> "Entregue"
-        OrderStatus.CANCELLED -> "Cancelado"
+        "PENDING" -> "Pendente"
+        "CONFIRMED" -> "Confirmado"
+        "IN_TRANSIT" -> "Em trânsito"
+        "OUT_FOR_DELIVERY" -> "Saiu para entrega"
+        "DELIVERED" -> "Entregue"
+        "CANCELLED" -> "Cancelado"
+        else -> order.status
     }
     
     val statusColor = when (order.status) {
-        OrderStatus.PENDING -> MaterialTheme.colorScheme.tertiary
-        OrderStatus.CONFIRMED -> MaterialTheme.colorScheme.primary
-        OrderStatus.IN_TRANSIT -> MaterialTheme.colorScheme.secondary
-        OrderStatus.OUT_FOR_DELIVERY -> MaterialTheme.colorScheme.secondary
-        OrderStatus.DELIVERED -> MaterialTheme.colorScheme.secondary
-        OrderStatus.CANCELLED -> MaterialTheme.colorScheme.error
+        "PENDING" -> MaterialTheme.colorScheme.tertiary
+        "CONFIRMED" -> MaterialTheme.colorScheme.primary
+        "IN_TRANSIT" -> MaterialTheme.colorScheme.secondary
+        "OUT_FOR_DELIVERY" -> MaterialTheme.colorScheme.secondary
+        "DELIVERED" -> MaterialTheme.colorScheme.secondary
+        "CANCELLED" -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.primary
     }
     
     Card(
@@ -210,11 +160,11 @@ fun OrderCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${item.quantity}x ${item.product.title}",
+                        text = "${item.quantity}x Produto #${item.productId}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = "R$ %.2f".format(item.product.price * item.quantity),
+                        text = "R$ %.2f".format(item.price * item.quantity),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -244,7 +194,7 @@ fun OrderCard(
                 )
             }
             
-            if (order.status == OrderStatus.IN_TRANSIT || order.status == OrderStatus.OUT_FOR_DELIVERY) {
+            if (order.status == "IN_TRANSIT" || order.status == "OUT_FOR_DELIVERY") {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),

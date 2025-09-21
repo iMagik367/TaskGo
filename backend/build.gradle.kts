@@ -21,6 +21,8 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.1")
     implementation("com.zaxxer:HikariCP:5.0.1")
     implementation("org.flywaydb:flyway-core:9.22.3")
+    // SQLite for local persistent storage
+    implementation("org.xerial:sqlite-jdbc:3.46.0.0")
 
 }
 

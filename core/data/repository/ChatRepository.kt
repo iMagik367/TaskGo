@@ -9,12 +9,13 @@ class ChatRepository {
     }
     
     fun getMessagesForThread(threadId: Long): Flow<List<Any>> {
+        // TODO: Usar threadId para filtrar mensagens do thread específico
         return flowOf(emptyList())
     }
     
     fun sendMessage(message: Any) {
-        // Em uma implementação real, isso seria enviado para um servidor
-        // Por enquanto, apenas simulamos o envio
+        // TODO: Enviar a mensagem para o servidor em uma implementação real
+        // message: contém o conteúdo e metadados da mensagem a ser enviada
     }
 }
 

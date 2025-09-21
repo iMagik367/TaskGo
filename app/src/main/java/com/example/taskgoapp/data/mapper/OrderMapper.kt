@@ -46,13 +46,9 @@ object OrderMapper {
     
     fun PurchaseOrderItemEntity.toModel(): OrderItem {
         return OrderItem(
-            id = this.productId, // Using productId as id for simplicity
             productId = this.productId,
-            productName = this.productName ?: "",
-            productImage = this.productImage,
             price = this.price,
-            quantity = this.qty,
-            deliveryDate = this.deliveryDate
+            quantity = this.qty
         )
     }
     
@@ -60,11 +56,11 @@ object OrderMapper {
         return PurchaseOrderItemEntity(
             orderId = orderId,
             productId = this.productId,
-            productName = this.productName,
-            productImage = this.productImage,
+            productName = null,
+            productImage = null,
             price = this.price,
             qty = this.quantity,
-            deliveryDate = this.deliveryDate
+            deliveryDate = null
         )
     }
 }

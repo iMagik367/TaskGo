@@ -516,9 +516,9 @@ fun PrivacyScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     LinearProgressIndicator(
-                        progress = privacyScore / 100f,
                         modifier = Modifier.fillMaxWidth(),
-                        color = getPrivacyColor(privacyScore)
+                        color = getPrivacyColor(privacyScore),
+                        progress = { privacyScore / 100f }
                     )
                     
                     Spacer(modifier = Modifier.height(8.dp))

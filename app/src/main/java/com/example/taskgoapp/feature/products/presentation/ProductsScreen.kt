@@ -30,15 +30,11 @@ import com.example.taskgoapp.core.data.models.Product
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductsScreen(
-    onBackClick: () -> Unit,
     onNavigateToProductDetail: (String) -> Unit,
     onNavigateToCart: () -> Unit,
-    onNavigateToCreateWorkOrder: () -> Unit,
     onNavigateToNotifications: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     onNavigateToMessages: () -> Unit,
-    onNavigateToCreateProduct: () -> Unit,
-    onNavigateToEditProduct: (String) -> Unit
+    onNavigateToCreateProduct: () -> Unit
 ) {
     val viewModel: MarketplaceViewModel = hiltViewModel()
     val products by viewModel.products.collectAsStateWithLifecycle()
@@ -52,7 +48,7 @@ fun ProductsScreen(
         val matchesSearch = product.name.contains(searchQuery, ignoreCase = true) ||
                            (product.description?.contains(searchQuery, ignoreCase = true) == true)
         val matchesCategory = selectedCategory == null || selectedCategory == "Todos" || 
-                             product.category.contains(selectedCategory ?: "", ignoreCase = true)
+                             selectedCategory?.let { product.category.contains(it, ignoreCase = true) } ?: true
         matchesSearch && matchesCategory
     }
 
@@ -60,7 +56,7 @@ fun ProductsScreen(
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.products_title),
-                onBackClick = null, // Removido botão de voltar
+                onBackClick = null, // Removido botão de voltar pois é tela principal
                 actions = {
                     IconButton(
                         onClick = onNavigateToNotifications,

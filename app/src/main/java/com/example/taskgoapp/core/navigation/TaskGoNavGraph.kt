@@ -1,6 +1,9 @@
 package com.example.taskgoapp.core.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -9,8 +12,9 @@ import androidx.navigation.navArgument
 import com.example.taskgoapp.feature.ads.presentation.AnunciosScreen
 import com.example.taskgoapp.feature.auth.presentation.CadastroFinalizadoScreen
 import com.example.taskgoapp.feature.auth.presentation.CadastroScreen
-import com.example.taskgoapp.feature.auth.presentation.LoginScreen
-import com.example.taskgoapp.feature.auth.presentation.SignupScreen
+import com.example.taskgoapp.feature.auth.presentation.LoginStoreScreen
+import com.example.taskgoapp.feature.auth.presentation.ForgotPasswordScreen
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.taskgoapp.feature.checkout.presentation.CadastrarEnderecoScreen
 import com.example.taskgoapp.feature.checkout.presentation.CartaoCreditoScreen
 import com.example.taskgoapp.feature.checkout.presentation.CartaoDebitoScreen
@@ -65,9 +69,14 @@ import com.example.taskgoapp.feature.chatai.presentation.AiSupportScreen
 fun TaskGoNavGraph(
     navController: NavHostController
 ) {
+    val context = LocalContext.current
+    val prefs = remember { com.example.taskgoapp.core.data.PreferencesManager(context) }
+    val hasToken = prefs.getAuthToken()?.isNotBlank() == true
+    val role = prefs.getAuthRole()
+    val isProviderOrAdmin = role == "PROVIDER" || role == "ADMIN"
     NavHost(
         navController = navController,
-        startDestination = TaskGoDestinations.HOME_ROUTE
+        startDestination = if (hasToken) TaskGoDestinations.HOME_ROUTE else TaskGoDestinations.LOGIN_ROUTE
     ) {
         // Home
         composable(TaskGoDestinations.HOME_ROUTE) {
@@ -80,11 +89,7 @@ fun TaskGoNavGraph(
                 },
                 onNavigateToCreateWorkOrder = { navController.navigate(TaskGoDestinations.CREATE_WORK_ORDER_ROUTE) },
                 onNavigateToProposals = { navController.navigate(TaskGoDestinations.PROPOSALS_INBOX_ROUTE) },
-                onNavigateToBuyBanner = { navController.navigate(TaskGoDestinations.ANUNCIOS_ROUTE) },
-                onNavigateToNotifications = { navController.navigate(TaskGoDestinations.NOTIFICATIONS_ROUTE) },
-                onNavigateToSettings = { navController.navigate(TaskGoDestinations.CONFIGURACOES_ROUTE) },
-                onNavigateToMessages = { navController.navigate(TaskGoDestinations.MESSAGES_ROUTE) },
-                onNavigateToCart = { navController.navigate(TaskGoDestinations.CART_ROUTE) }
+                onNavigateToBuyBanner = { navController.navigate(TaskGoDestinations.ANUNCIOS_ROUTE) }
             )
         }
 
@@ -119,7 +124,7 @@ fun TaskGoNavGraph(
             ProposalDetailScreen(
                 proposalId = proposalId,
                 onBackClick = { navController.popBackStack() },
-                onProposalAccepted = { proposalId -> navController.navigate(TaskGoDestinations.CONFIRMAR_PROPOSTA_ROUTE) }
+                onProposalAccepted = { _ -> navController.navigate(TaskGoDestinations.CONFIRMAR_PROPOSTA_ROUTE) }
             )
         }
 
@@ -172,17 +177,13 @@ fun TaskGoNavGraph(
         // Products
         composable(TaskGoDestinations.PRODUCTS_ROUTE) {
             ProductsScreen(
-                onBackClick = { navController.popBackStack() },
                 onNavigateToProductDetail = { productId -> 
                     navController.navigate("${TaskGoDestinations.PRODUCT_DETAIL_ROUTE}/$productId")
                 },
                 onNavigateToCart = { navController.navigate(TaskGoDestinations.CART_ROUTE) },
-                onNavigateToCreateWorkOrder = { navController.navigate(TaskGoDestinations.CREATE_WORK_ORDER_ROUTE) },
                 onNavigateToNotifications = { navController.navigate(TaskGoDestinations.NOTIFICATIONS_ROUTE) },
-                onNavigateToSettings = { navController.navigate(TaskGoDestinations.CONFIGURACOES_ROUTE) },
                 onNavigateToMessages = { navController.navigate(TaskGoDestinations.MESSAGES_ROUTE) },
-                onNavigateToCreateProduct = { navController.navigate(TaskGoDestinations.CRIAR_PRODUTO_ROUTE) },
-                onNavigateToEditProduct = { productId -> navController.navigate("${TaskGoDestinations.EDITAR_PRODUTO_ROUTE}/$productId") }
+                onNavigateToCreateProduct = { navController.navigate(TaskGoDestinations.CRIAR_PRODUTO_ROUTE) }
             )
         }
 
@@ -257,11 +258,11 @@ fun TaskGoNavGraph(
             DetalhesPedidoScreen(
                 orderId = orderId,
                 onBackClick = { navController.popBackStack() },
-                onRastrearPedido = { orderId -> 
-                    navController.navigate("${TaskGoDestinations.RASTREAMENTO_PEDIDO_ROUTE}/$orderId")
+                onRastrearPedido = { id -> 
+                    navController.navigate("${TaskGoDestinations.RASTREAMENTO_PEDIDO_ROUTE}/$id")
                 },
-                onVerResumo = { orderId -> 
-                    navController.navigate("${TaskGoDestinations.RESUMO_PEDIDO_ROUTE}/$orderId")
+                onVerResumo = { id -> 
+                    navController.navigate("${TaskGoDestinations.RESUMO_PEDIDO_ROUTE}/$id")
                 }
             )
         }
@@ -273,8 +274,8 @@ fun TaskGoNavGraph(
             RastreamentoPedidoScreen(
                 orderId = orderId,
                 onBackClick = { navController.popBackStack() },
-                onVerDetalhes = { orderId -> 
-                    navController.navigate("${TaskGoDestinations.RESUMO_PEDIDO_ROUTE}/$orderId")
+                onVerDetalhes = { id -> 
+                    navController.navigate("${TaskGoDestinations.RESUMO_PEDIDO_ROUTE}/$id")
                 }
             )
         }
@@ -308,29 +309,31 @@ fun TaskGoNavGraph(
             )
         }
 
-        composable(TaskGoDestinations.GERENCIAR_PRODUTOS_ROUTE) {
-            GerenciarProdutosScreen(
-                onBackClick = { navController.popBackStack() },
-                onCriarProduto = { navController.navigate(TaskGoDestinations.CRIAR_PRODUTO_ROUTE) },
-                onEditarProduto = { productId -> navController.navigate("${TaskGoDestinations.EDITAR_PRODUTO_ROUTE}/$productId") }
-            )
+        if (isProviderOrAdmin) {
+            composable(TaskGoDestinations.GERENCIAR_PRODUTOS_ROUTE) {
+                GerenciarProdutosScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onCriarProduto = { navController.navigate(TaskGoDestinations.CRIAR_PRODUTO_ROUTE) },
+                    onEditarProduto = { productId -> navController.navigate("${TaskGoDestinations.EDITAR_PRODUTO_ROUTE}/$productId") }
+                )
+            }
         }
 
-        composable("${TaskGoDestinations.EDITAR_PRODUTO_ROUTE}/{productId}") { backStackEntry ->
-            val productId = backStackEntry.arguments?.getString("productId")
-            com.example.taskgoapp.feature.products.presentation.ProductFormScreen(
-                productId = productId,
-                onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() }
-            )
+        if (isProviderOrAdmin) {
+            composable("${TaskGoDestinations.EDITAR_PRODUTO_ROUTE}/{productId}") { backStackEntry ->
+                EditarProdutoScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
         }
 
-        composable(TaskGoDestinations.CRIAR_PRODUTO_ROUTE) {
-            com.example.taskgoapp.feature.products.presentation.ProductFormScreen(
-                productId = null,
-                onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() }
-            )
+        if (isProviderOrAdmin) {
+            composable(TaskGoDestinations.CRIAR_PRODUTO_ROUTE) {
+                CriarProdutoScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onProductCreated = { navController.popBackStack() }
+                )
+            }
         }
 
         // Messages
@@ -401,7 +404,7 @@ fun TaskGoNavGraph(
         composable(TaskGoDestinations.GERENCIAR_PROPOSTAS_ROUTE) {
             GerenciarPropostasScreen(
                 onBackClick = { navController.popBackStack() },
-                onVerProposta = { proposalId -> navController.navigate(TaskGoDestinations.DETALHES_PROPOSTA_ROUTE) }
+                onVerProposta = { _ -> navController.navigate(TaskGoDestinations.DETALHES_PROPOSTA_ROUTE) }
             )
         }
 
@@ -498,16 +501,25 @@ fun TaskGoNavGraph(
 
         // Auth
         composable(TaskGoDestinations.LOGIN_ROUTE) {
-            LoginScreen(
-                onNavigateToSignup = { navController.navigate(TaskGoDestinations.SIGNUP_ROUTE) },
-                onLoginSuccess = { navController.navigate(TaskGoDestinations.HOME_ROUTE) }
+            val viewModel: com.example.taskgoapp.feature.auth.presentation.AuthViewModel = hiltViewModel()
+            LoginStoreScreen(
+                onLoginSuccess = { navController.navigate(TaskGoDestinations.HOME_ROUTE) },
+                onNavigateToSignup = { navController.navigate(TaskGoDestinations.CADASTRO_ROUTE) },
+                onSwitchToPersonLogin = { /* TODO: Implementar se necessário */ },
+                onForgotPassword = { navController.navigate(TaskGoDestinations.FORGOT_PASSWORD_ROUTE) },
+                viewModel = viewModel
             )
         }
 
-        composable(TaskGoDestinations.SIGNUP_ROUTE) {
-            SignupScreen(
-                onNavigateToLogin = { navController.navigate(TaskGoDestinations.LOGIN_ROUTE) },
-                onSignupSuccess = { navController.navigate(TaskGoDestinations.CADASTRO_ROUTE) }
+        composable(TaskGoDestinations.FORGOT_PASSWORD_ROUTE) {
+            val viewModel: com.example.taskgoapp.feature.auth.presentation.AuthViewModel = hiltViewModel()
+            val forgotState = viewModel.forgotPasswordState.collectAsState().value
+            ForgotPasswordScreen(
+                onBackClick = { navController.popBackStack() },
+                onSendClick = { email -> viewModel.forgotPassword(email) },
+                isLoading = forgotState.isLoading,
+                error = forgotState.error,
+                success = forgotState.success
             )
         }
 
@@ -534,7 +546,7 @@ fun TaskGoNavGraph(
         composable(TaskGoDestinations.REVIEWS_ROUTE) {
             ReviewsScreen(
                 onBackClick = { navController.popBackStack() },
-                onProposalAccepted = { proposalId -> navController.navigate(TaskGoDestinations.CONFIRMAR_PROPOSTA_ROUTE) }
+                onProposalAccepted = { _ -> navController.navigate(TaskGoDestinations.CONFIRMAR_PROPOSTA_ROUTE) }
             )
         }
 

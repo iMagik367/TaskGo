@@ -1,6 +1,9 @@
 package com.example.taskgoapp.core.navigation
 
 object TaskGoDestinations {
+    // Auth routes
+    const val FORGOT_PASSWORD_ROUTE = "forgot_password"
+    
     // Main tabs
     const val HOME_ROUTE = "home"
     const val SERVICES_ROUTE = "services"

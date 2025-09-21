@@ -70,13 +70,9 @@ class OrdersRepositoryImpl @Inject constructor(
         // Create order items
         val orderItems = cart.map { cartItem ->
             com.example.taskgoapp.core.model.OrderItem(
-                id = cartItem.productId,
                 productId = cartItem.productId,
-                productName = "Product Name", // Will be loaded from product
-                productImage = null,
                 price = 0.0, // Will be loaded from product
-                quantity = cartItem.qty,
-                deliveryDate = null
+                quantity = cartItem.qty
             ).toEntity(orderId)
         }
         purchaseOrderDao.upsertItems(orderItems)

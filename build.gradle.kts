@@ -5,10 +5,11 @@ plugins {
     alias(libs.plugins.hilt.android) apply false
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.ksp) apply false
 }
 
 // Enforce Java Toolchain 17 for all subprojects
-allprojects {
+subprojects {
     extensions.findByName("java")?.let {
         (it as org.gradle.api.plugins.JavaPluginExtension).toolchain {
             languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(17))

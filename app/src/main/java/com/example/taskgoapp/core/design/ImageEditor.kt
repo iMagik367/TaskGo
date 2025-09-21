@@ -52,14 +52,6 @@ fun ImageEditor(
         onImagesChanged(newImages.take(maxImages))
     }
 
-    // Launcher para câmera
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success) {
-            // A URI da câmera será definida quando o launcher for criado
-        }
-    }
 
     // Launcher para edição de imagem
     val cropImageLauncher = rememberLauncherForActivityResult(

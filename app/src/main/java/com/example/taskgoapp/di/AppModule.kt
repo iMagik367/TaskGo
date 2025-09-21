@@ -214,4 +214,13 @@ object AppModule {
     @Provides
     @Singleton
     fun provideCartApi(retrofit: Retrofit): CartApi = retrofit.create(CartApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideOrdersApi(retrofit: Retrofit): com.example.taskgoapp.core.data.remote.OrdersApi = retrofit.create(com.example.taskgoapp.core.data.remote.OrdersApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideOrderRepository(ordersApi: com.example.taskgoapp.core.data.remote.OrdersApi): com.example.taskgoapp.domain.repository.OrderRepository = 
+        com.example.taskgoapp.data.repository.OrderRepositoryImpl(ordersApi)
 }

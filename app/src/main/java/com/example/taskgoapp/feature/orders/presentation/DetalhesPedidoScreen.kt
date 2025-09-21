@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,13 +45,9 @@ fun DetalhesPedidoScreen(
             status = OrderStatus.EM_ANDAMENTO,
             items = listOf(
                 OrderItem(
-                    id = "1",
                     productId = "prod1",
-                    productName = "Guarda Roupa",
-                    productImage = null,
                     price = 750.0,
-                    quantity = 1,
-                    deliveryDate = "05/08/2025"
+                    quantity = 1
                 )
             ),
             paymentMethod = "Crédito",
@@ -187,7 +184,7 @@ fun DetalhesPedidoScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Previsão de entrega: ${order.items.firstOrNull()?.deliveryDate ?: "Não informada"}",
+                                text = "Previsão de entrega: Não informada",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -266,7 +263,7 @@ fun DetalhesPedidoScreen(
                             )
                         }
                         
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -368,20 +365,13 @@ private fun OrderItemCard(
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                if (item.productImage != null) {
-                    AsyncImage(
-                        model = item.productImage,
-                        contentDescription = "Imagem do produto",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Inventory,
-                        contentDescription = "Produto",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
+                // Product image placeholder
+                Icon(
+                    imageVector = Icons.Default.Inventory,
+                    contentDescription = "Produto",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp)
+                )
             }
             
             Spacer(modifier = Modifier.width(16.dp))
@@ -391,7 +381,7 @@ private fun OrderItemCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = item.productName,
+                    text = "Produto #${item.productId}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -413,15 +403,13 @@ private fun OrderItemCard(
                     fontWeight = FontWeight.Bold
                 )
                 
-                if (item.deliveryDate != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    Text(
-                        text = "Chega até ${item.deliveryDate}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = "Chega até: Não informado",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

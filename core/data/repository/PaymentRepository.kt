@@ -9,13 +9,13 @@ class PaymentRepository {
     }
     
     fun addPaymentMethod(paymentMethod: Any) {
-        // Em uma implementação real, isso seria salvo no banco de dados
-        // Por enquanto, apenas simulamos a adição
+        // TODO: Adicionar o método de pagamento ao banco de dados
+        // paymentMethod: objeto contendo informações do novo método de pagamento
     }
     
     fun removePaymentMethod(paymentMethodId: String) {
-        // Em uma implementação real, isso seria removido do banco de dados
-        // Por enquanto, apenas simulamos a remoção
+        // TODO: Remover o método de pagamento do banco de dados
+        // paymentMethodId: identificador único do método de pagamento a ser removido
     }
 }
 

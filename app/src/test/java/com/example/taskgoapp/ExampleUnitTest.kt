@@ -1,4 +1,4 @@
-package com.example.taskgoapp
+package br.com.taskgo
 
 import org.junit.Test
 

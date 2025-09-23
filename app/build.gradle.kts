@@ -24,13 +24,7 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
-        buildConfigField("boolean", "USE_FIREBASE", "false")
-        // Use 10.0.2.2 for Android emulator to reach host localhost
-        buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl}\"")
-        buildConfigField("boolean", "USE_REMOTE_API", "true")
     }
 
     buildTypes {
@@ -40,10 +34,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            isTestCoverageEnabled = false
         }
         debug {
-            isTestCoverageEnabled = false
         }
     }
     

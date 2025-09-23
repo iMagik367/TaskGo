@@ -35,9 +35,9 @@ class UserRepositoryJdbc(private val dataSource: DataSource) : UserRepository {
                         return User(
                             id = rs.getLong("id"),
                             email = rs.getString("email"),
-                            name = rs.getString("name"),
+                            name = rs.getString("name") ?: rs.getString("email"),
                             createdAt = rs.getTimestamp("created_at").time,
-                            role = UserRole.valueOf(rs.getString("role"))
+                            role = UserRole.valueOf(rs.getString("role").uppercase())
                         )
                     }
                 }
@@ -55,9 +55,9 @@ class UserRepositoryJdbc(private val dataSource: DataSource) : UserRepository {
                         User(
                             id = rs.getLong("id"),
                             email = rs.getString("email"),
-                            name = rs.getString("name"),
+                            name = rs.getString("name") ?: rs.getString("email"),
                             createdAt = rs.getTimestamp("created_at").time,
-                            role = UserRole.valueOf(rs.getString("role"))
+                            role = UserRole.valueOf(rs.getString("role").uppercase())
                         )
                     } else null
                 }
@@ -84,9 +84,17 @@ class UserRepositoryJdbc(private val dataSource: DataSource) : UserRepository {
             conn.prepareStatement("SELECT password_hash FROM users WHERE email = ? LIMIT 1").use { ps ->
                 ps.setString(1, email)
                 ps.executeQuery().use { rs ->
-                    if (!rs.next()) return false
+                    if (!rs.next()) {
+                        println("DEBUG: No user found with email $email")
+                        return false
+                    }
                     val stored = rs.getString("password_hash")
-                    val candidate = hashPassword(password)
+                    val candidate = com.example.taskgo.backend.util.PasswordUtil.hashPassword(password)
+                    println("DEBUG: Password validation for $email")
+                    println("DEBUG: Stored hash:      $stored")
+                    println("DEBUG: Candidate hash:   $candidate")
+                    println("DEBUG: Raw password:     $password")
+                    println("DEBUG: Match:           ${stored == candidate}")
                     return stored == candidate
                 }
             }
@@ -111,12 +119,6 @@ class UserRepositoryJdbc(private val dataSource: DataSource) : UserRepository {
                 }
             }
         }
-    }
-
-    private fun hashPassword(password: String): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        val hash = digest.digest(password.toByteArray())
-        return hash.joinToString("") { "%02x".format(it) }
     }
 
     override suspend fun updateUserRole(userId: Long, newRole: UserRole): User? {

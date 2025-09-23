@@ -48,6 +48,12 @@ class InMemoryUserRepository : UserRepository {
         return updated
     }
 
+    override suspend fun updatePasswordByEmail(email: String, newPasswordHash: String): Boolean {
+        if (!users.containsKey(email)) return false
+        passwordHashes[email] = newPasswordHash
+        return true
+    }
+
     override suspend fun updateUserDetails(userId: Long, details: UserDetailsUpdate): User? {
         val user = users.values.firstOrNull { it.id == userId } ?: return null
         val updated = user.copy(

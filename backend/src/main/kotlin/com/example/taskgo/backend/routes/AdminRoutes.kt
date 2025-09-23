@@ -63,18 +63,24 @@ fun Route.adminRoutes(userRepository: UserRepository, productRepository: Product
                 else -> adminEmailEnv // por enquanto, aceitamos apenas o usuário "admin"
             }
 
-            val user = userRepository.findUserByEmail(targetEmail)
-            if (user == null || user.role != UserRole.ADMIN) {
-                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "invalid credentials")); return@post
-            }
+            try {
+                val user = userRepository.findUserByEmail(targetEmail)
+                if (user == null || user.role != UserRole.ADMIN) {
+                    call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "invalid credentials")); return@post
+                }
 
-            val isValid = userRepository.validatePassword(targetEmail, body.password)
-            if (!isValid) {
-                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "invalid credentials")); return@post
-            }
+                val isValid = userRepository.validatePassword(targetEmail, body.password)
+                if (!isValid) {
+                    call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "invalid credentials")); return@post
+                }
 
-            val token = JwtConfig.generateToken(targetEmail, UserRole.ADMIN)
-            call.respond(mapOf("token" to token))
+                val token = JwtConfig.generateToken(targetEmail, UserRole.ADMIN)
+                call.respond(mapOf("token" to token))
+            } catch (e: Exception) {
+                println("Admin login error: ${e.message}")
+                e.printStackTrace()
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "internal error"))
+            }
         }
 
         authenticate("auth-jwt") {

@@ -99,7 +99,7 @@ fun main() {
         }
         
         // Initialize repositories
-        val userRepository: com.example.taskgo.backend.repository.InMemoryUserRepository
+        val userRepository: com.example.taskgo.backend.domain.UserRepository
         val productRepository: com.example.taskgo.backend.domain.ProductRepository
         val serviceRepository: com.example.taskgo.backend.domain.ServiceRepository
         val cartRepository: com.example.taskgo.backend.domain.CartRepository
@@ -128,8 +128,11 @@ fun main() {
                     val existingAdmins = false // Simplified for now
                     if (!existingAdmins) {
                         val adminEmail = System.getenv("ADMIN_EMAIL") ?: "admin@example.com"
-                        val adminPassword = System.getenv("ADMIN_PASSWORD") ?: "admin123"
-                        val passwordHash = MessageDigest.getInstance("SHA-256").digest(adminPassword.toByteArray()).joinToString("") { "%02x".format(it) }
+                        val adminPassword = System.getenv("ADMIN_PASSWORD") ?: "aka.300896"
+                        val passwordHash = com.example.taskgo.backend.util.PasswordUtil.hashPassword(adminPassword)
+                        println("DEBUG: Creating admin user with:")
+                        println("DEBUG: Email: $adminEmail")
+                        println("DEBUG: Password hash: $passwordHash")
                         userRepository.createUser(adminEmail, passwordHash, com.example.taskgo.backend.domain.UserRole.ADMIN)
                         println("👑 Bootstrap ADMIN created: $adminEmail")
                     }
@@ -169,7 +172,6 @@ fun main() {
                 productRoutes(productRepository)
                 serviceRoutes(serviceRepository)
                 authRoutes(userRepository)
-                com.example.taskgo.backend.auth.oauthRoutes(userRepository)
                 cartRoutes(cartRepository, orderRepository, productRepository)
                 if (orderRepository != null) {
                     orderRoutes(orderRepository)

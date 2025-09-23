@@ -23,6 +23,14 @@
         android:name="br.com.taskgo.TaskGoApp"
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
+        
+        <!-- Facebook Configuration -->
+        <meta-data 
+            android:name="com.facebook.sdk.ApplicationId" 
+            android:value="@string/facebook_app_id"/>
+        <meta-data 
+            android:name="com.facebook.sdk.ClientToken" 
+            android:value="@string/facebook_client_token"/>
         <activity
             android:name="br.com.taskgo.MainActivity"
             android:exported="true"
@@ -30,8 +38,18 @@
             android:theme="@style/Theme.TaskGoApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep Link para OAuth -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Esquema de URL personalizado -->
+                <data
+                    android:scheme="taskgo"
+                    android:host="oauth2redirect" />
             </intent-filter>
         </activity>
         

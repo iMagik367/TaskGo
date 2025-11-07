@@ -46,28 +46,38 @@ class FirebaseAuthRepository @Inject constructor(
             android.util.Log.e("FirebaseAuthRepository", "Tipo de erro: ${e.javaClass.simpleName}")
             
             // Log mais detalhado do erro
+            val errorMsg = e.message ?: ""
+            val fullStackTrace = e.stackTraceToString()
+            
             when (e) {
                 is com.google.firebase.FirebaseNetworkException -> {
                     android.util.Log.e("FirebaseAuthRepository", "Erro de rede do Firebase")
-                    // Verificar se o erro está relacionado ao App Check
-                    val errorMsg = e.message ?: ""
+                    
+                    // Verificar se o erro está relacionado ao App Check ou API bloqueada
                     if (errorMsg.contains("app-check", ignoreCase = true) || 
                         errorMsg.contains("403", ignoreCase = true) ||
-                        errorMsg.contains("API has not been used", ignoreCase = true)) {
-                        android.util.Log.e("FirebaseAuthRepository", "⚠️ ERRO RELACIONADO AO APP CHECK")
-                        android.util.Log.e("FirebaseAuthRepository", "As APIs do Firebase não estão habilitadas no Google Cloud Console")
-                        android.util.Log.e("FirebaseAuthRepository", "Consulte SOLUCAO_ERRO_LOGIN_FIREBASE.md para resolver")
+                        errorMsg.contains("API has not been used", ignoreCase = true) ||
+                        errorMsg.contains("blocked", ignoreCase = true) ||
+                        fullStackTrace.contains("API_KEY_SERVICE_BLOCKED", ignoreCase = true)) {
+                        android.util.Log.e("FirebaseAuthRepository", "⚠️ ERRO RELACIONADO AO APP CHECK OU API KEY BLOQUEADA")
+                        android.util.Log.e("FirebaseAuthRepository", "Possíveis causas:")
+                        android.util.Log.e("FirebaseAuthRepository", "   1. APIs do Firebase não habilitadas no Google Cloud Console")
+                        android.util.Log.e("FirebaseAuthRepository", "   2. API Key com restrições bloqueando as APIs necessárias")
+                        android.util.Log.e("FirebaseAuthRepository", "Consulte CORRECAO_API_KEY_BLOQUEADA.md para resolver")
+                        android.util.Log.e("FirebaseAuthRepository", "API Key: ${com.google.firebase.FirebaseApp.getInstance().options.apiKey}")
                     }
                 }
                 is com.google.firebase.auth.FirebaseAuthException -> {
                     android.util.Log.e("FirebaseAuthRepository", "Código de erro: ${e.errorCode}")
                     android.util.Log.e("FirebaseAuthRepository", "Mensagem de erro: ${e.message}")
                     
-                    // Verificar se é erro relacionado ao App Check
-                    val errorMsg = e.message ?: ""
+                    // Verificar se é erro relacionado ao App Check ou API bloqueada
                     if (errorMsg.contains("app-check", ignoreCase = true) || 
-                        errorMsg.contains("403", ignoreCase = true)) {
-                        android.util.Log.e("FirebaseAuthRepository", "⚠️ ERRO RELACIONADO AO APP CHECK")
+                        errorMsg.contains("403", ignoreCase = true) ||
+                        errorMsg.contains("blocked", ignoreCase = true) ||
+                        fullStackTrace.contains("API_KEY_SERVICE_BLOCKED", ignoreCase = true)) {
+                        android.util.Log.e("FirebaseAuthRepository", "⚠️ ERRO RELACIONADO AO APP CHECK OU API KEY BLOQUEADA")
+                        android.util.Log.e("FirebaseAuthRepository", "Consulte CORRECAO_API_KEY_BLOQUEADA.md para resolver")
                     }
                 }
                 is java.net.UnknownHostException -> {

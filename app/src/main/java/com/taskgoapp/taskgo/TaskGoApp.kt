@@ -51,8 +51,24 @@ class TaskGoApp : Application() {
                     }.addOnFailureListener { e ->
                         Log.e(TAG, "❌ Erro ao obter token de debug do App Check", e)
                         val errorMsg = e.message ?: "Erro desconhecido"
-                        if (errorMsg.contains("403") || errorMsg.contains("API has not been used")) {
-                            Log.e(TAG, "⚠️ PROBLEMA IDENTIFICADO: As APIs do Firebase não estão habilitadas no Google Cloud Console!")
+                        val stackTrace = e.stackTraceToString()
+                        
+                        // Verificar se é erro de API bloqueada
+                        if (errorMsg.contains("403") || errorMsg.contains("blocked") || errorMsg.contains("API_KEY_SERVICE_BLOCKED")) {
+                            Log.e(TAG, "⚠️ PROBLEMA CRÍTICO: API Key bloqueada ou APIs não habilitadas!")
+                            Log.e(TAG, "📋 SOLUÇÃO DETALHADA:")
+                            Log.e(TAG, "   1. Verifique as restrições da API Key:")
+                            Log.e(TAG, "      https://console.cloud.google.com/apis/credentials?project=605187481719")
+                            Log.e(TAG, "   2. Habilite Firebase App Check API:")
+                            Log.e(TAG, "      https://console.developers.google.com/apis/api/firebaseappcheck.googleapis.com/overview?project=605187481719")
+                            Log.e(TAG, "   3. Habilite Firebase Installations API:")
+                            Log.e(TAG, "      https://console.developers.google.com/apis/api/firebaseinstallations.googleapis.com/overview?project=605187481719")
+                            Log.e(TAG, "   4. Se a API Key tiver restrições, adicione as APIs acima na lista")
+                            Log.e(TAG, "   5. Ou temporariamente remova as restrições para teste")
+                            Log.e(TAG, "   6. Veja CORRECAO_API_KEY_BLOQUEADA.md para instruções detalhadas")
+                            Log.e(TAG, "   7. Aguarde 5-10 minutos após mudanças e reinicie o app")
+                        } else if (errorMsg.contains("API has not been used")) {
+                            Log.e(TAG, "⚠️ PROBLEMA: APIs do Firebase não estão habilitadas!")
                             Log.e(TAG, "📋 SOLUÇÃO:")
                             Log.e(TAG, "   1. Habilite Firebase App Check API:")
                             Log.e(TAG, "      https://console.developers.google.com/apis/api/firebaseappcheck.googleapis.com/overview?project=605187481719")
@@ -61,7 +77,12 @@ class TaskGoApp : Application() {
                             Log.e(TAG, "   3. Aguarde 5-10 minutos e reinicie o app")
                         } else {
                             Log.e(TAG, "Erro detalhado: $errorMsg")
+                            Log.e(TAG, "Stack trace: $stackTrace")
                         }
+                        
+                        // Log adicional para diagnóstico
+                        Log.e(TAG, "API Key sendo usada: ${FirebaseApp.getInstance().options.apiKey}")
+                        Log.e(TAG, "Project ID: ${FirebaseApp.getInstance().options.projectId}")
                     }
                 }, 2000) // Aguardar 2 segundos antes de tentar obter o token
             } else {

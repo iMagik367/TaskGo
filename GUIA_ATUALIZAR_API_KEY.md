@@ -1,6 +1,10 @@
 # 🔑 Guia para Atualizar API Key do Google Cloud
 
-Sua nova API Key: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+Sua nova API Key (Android): `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
+
+Outras chaves fornecidas pelo Firebase:
+- **Browser API Key:** `AIzaSyBYiaQk5X35XJgz-4BsM4Zd7RIE7YyxxtM`
+- **Gemini Developer API Key:** `AIzaSyCG9r2ruOBuTPfBQcaBwKaR3ODWMunaYR4`
 
 ---
 
@@ -42,7 +46,8 @@ Há duas instâncias no arquivo (para dois apps Android):
    - Clique no app (`com.example.taskgoapp` ou `com.taskgo.taskgo`)
    - Role até a seção **API Keys**
    - Clique em **Add API Key** ou **Edit** na chave existente
-   - Cole a nova chave: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+   - Cole a nova chave Android: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
+   - Se necessário, configure também a **Browser API Key**: `AIzaSyBYiaQk5X35XJgz-4BsM4Zd7RIE7YyxxtM`
    - Clique em **Save**
 
 5. **Baixar novo google-services.json:**
@@ -60,7 +65,7 @@ Há duas instâncias no arquivo (para dois apps Android):
 
 3. **Encontre a chave antiga:**
    - Procure pela chave: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
-   - Clique nela para editar
+   - Clique nela para editar ou copie para criar uma nova, se necessário
 
 4. **Atualizar a chave:**
    - Se for uma chave existente, você pode:
@@ -69,7 +74,7 @@ Há duas instâncias no arquivo (para dois apps Android):
 
 5. **Se criar nova chave:**
    - Clique em **Create Credentials** > **API Key**
-   - Cole a nova chave: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+   - Cole a nova chave Android em um local seguro
    - Configure as restrições necessárias (veja abaixo)
 
 ---
@@ -83,22 +88,26 @@ Há duas instâncias no arquivo (para dois apps Android):
    - Selecione o projeto: `task-go-ee85f`
 
 2. **Clique na chave API:**
-   - Encontre a chave: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+   - Encontre a chave: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
 
 3. **Configure Application restrictions:**
    - **Android apps:** Adicione os package names:
      - `com.example.taskgoapp`
      - `com.taskgo.taskgo`
+     - `com.taskgoapp.taskgo`
    - Adicione os SHA-1 certificates dos seus apps (se necessário)
 
 4. **Configure API restrictions:**
    - **Restrict key:** Selecione esta opção
    - Adicione apenas as APIs que você usa:
-     - **Firebase APIs** (se usado)
-     - **Google Maps Platform APIs** (se usar Maps/Places)
-     - **Google Places API** (se usar)
-     - **Geocoding API** (se usar)
-     - **Geolocation API** (se usar)
+     - **Firebase Installations API**
+     - **Firebase App Check API**
+     - **Identity Toolkit API** (Firebase Auth)
+     - **Cloud Firestore API**
+     - **Cloud Storage API**
+     - **Cloud Functions API**
+     - **Firebase Cloud Messaging API** (se usar notificações)
+     - **Gemini API** (se utilizar recursos do Gemini Developer)
 
 ---
 
@@ -117,30 +126,19 @@ Se ainda não estiver configurado, adicione:
     <!-- Google Maps API Key -->
     <meta-data
         android:name="com.google.android.geo.API_KEY"
-        android:value="AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8" />
+        android:value="AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw" />
 </application>
 ```
 
 ### 2. Adicionar BuildConfig (Se necessário)
 
-Se você quiser usar a chave no código Kotlin:
-
 ```kotlin
-// app/build.gradle.kts
-defaultConfig {
-    // ... outras configs ...
-    buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8\"")
+android {
+    defaultConfig {
+        buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw\"")
+    }
 }
 ```
-
-### 3. Habilitar APIs no Google Cloud Console
-
-1. Acesse: https://console.cloud.google.com/apis/library
-2. Habilite as APIs que você precisa:
-   - **Maps SDK for Android**
-   - **Places API**
-   - **Geocoding API**
-   - **Geolocation API**
 
 ---
 

@@ -25,7 +25,7 @@ Refatorar o aplicativo para usar o package `com.taskgoapp.taskgo` correspondente
 - **Atualizado** para usar o app correto do Firebase Console:
   - Package: `com.taskgoapp.taskgo`
   - App ID: `1:1093466748007:android:55d3d395716e81c4e8d0c2`
-  - API Key: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+  - API Key: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
 
 ### 4. ✅ ProGuard Rules (`app/proguard-rules.pro`)
 - **Atualizado** todas as referências de packages:

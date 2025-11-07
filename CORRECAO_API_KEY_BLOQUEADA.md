@@ -10,7 +10,7 @@ Requests to this API firebaseinstallations.googleapis.com are blocked.
 Requests to this API firebaseappcheck.googleapis.com are blocked.
 ```
 
-**API Key detectada nos logs:** `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+**API Key detectada nos logs:** `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
 
 ---
 
@@ -45,7 +45,7 @@ Requests to this API firebaseappcheck.googleapis.com are blocked.
    - https://console.cloud.google.com/apis/credentials?project=605187481719
 
 2. **Encontre a API Key:**
-   - Procure por: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+   - Procure por: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
    - Clique na chave para editar
 
 3. **Verifique "API restrictions":**

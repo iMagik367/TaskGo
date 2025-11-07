@@ -8,7 +8,7 @@
 - ✅ **Status:** CORRETO
 
 ### 2. API Key
-- ✅ **API Key no google-services.json:** `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+- ✅ **API Key no google-services.json:** `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
 - ⚠️ **Ação necessária:** Verificar no Google Cloud Console se esta API Key existe e está configurada corretamente
 
 ### 3. Project ID e Number

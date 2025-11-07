@@ -9,7 +9,9 @@
 - **SHA-256:** `465aTqmr9mjfSWYUMssSppD5y6ecDCBY3cQE5YngJXZhKvViWVK7446RPyBZRCE6pQKuT1bdwjRx5LAsfknBxL8YTrr97Hf`
 - **Project ID:** `task-go-ee85f`
 - **Project Number:** `1093466748007`
-- **API Key Atual:** `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+- **Android API Key Atual:** `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
+- **Browser API Key:** `AIzaSyBYiaQk5X35XJgz-4BsM4Zd7RIE7YyxxtM`
+- **Gemini Developer API Key:** `AIzaSyCG9r2ruOBuTPfBQcaBwKaR3ODWMunaYR4`
 
 ---
 
@@ -30,7 +32,7 @@
   2. Cole o package name: `com.taskgoapp.taskgo`
   3. Clique em **Register app**
   4. Baixe o novo `google-services.json`
-  5. Substitua o arquivo `app/google-services.json` no projeto
+  5. Substitua o arquivo `app/google-services.json` pelo novo
 
 #### Passo 3: Verificar SHA-1 e SHA-256
 1. Na página do app Android, role até a seção **SHA certificate fingerprints**
@@ -88,7 +90,7 @@
 
 #### Passo 1: Acessar Google Cloud Console
 1. Acesse: https://console.cloud.google.com/apis/credentials?project=605187481719
-2. Procure pela API Key: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+2. Procure pela API Key: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
 
 #### Passo 2: Verificar Restrições da API Key
 1. Clique na API Key para editar
@@ -119,6 +121,7 @@
    - ✅ Cloud Storage API
    - ✅ Cloud Functions API
    - ✅ Cloud Messaging API
+   - ✅ Gemini API (se utilizar recursos do Gemini Developer)
 
 ---
 
@@ -128,7 +131,7 @@
 1. Abra: `app/google-services.json`
 2. Verifique se contém:
    - Package name: `com.taskgoapp.taskgo`
-   - API Key: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+   - API Key: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
    - Project ID: `task-go-ee85f`
    - Project Number: `1093466748007`
 

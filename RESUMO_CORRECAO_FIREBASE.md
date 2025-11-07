@@ -54,12 +54,12 @@ Os logs mostram que o Firebase está falhando devido a **API Key bloqueada** ou 
 
 2. **Verificar Restrições da API Key:**
    - Acesse: https://console.cloud.google.com/apis/credentials?project=605187481719
-   - Encontre a chave: `AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`
+   - Encontre a chave: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
    - Se tiver restrições, adicione as APIs acima OU remova temporariamente para teste
 
 3. **Adicionar Token de Debug:**
    - Acesse: https://console.firebase.google.com/project/task-go-ee85f/appcheck
-   - Adicione o token: `8c4aab63-0f88-4a42-a909-28f25d93a956`
+   - Adicione o token: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
 
 4. **Aguardar Propagação:**
    - ⏰ Aguarde 5-10 minutos após fazer as mudanças
@@ -138,5 +138,24 @@ FirebaseAuthRepository: ⚠️ ERRO RELACIONADO AO APP CHECK OU API KEY BLOQUEAD
 ---
 
 **Última atualização:** 2025-11-07
+
+### 1. Verificar SHA-1/SHA-256 no Firebase Console
+**Prioridade:** 🔴 ALTA
+- Se não estiverem configurados, o app não funcionará corretamente
+- Após adicionar, **BAIXE um novo google-services.json**
+
+### 2. Verificar Token de Debug
+**Prioridade:** 🟡 MÉDIA
+- Se não estiver configurado, App Check não funcionará em debug
+- Adicione o token: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+
+### 3. Verificar API Key no Google Cloud Console
+**Prioridade:** 🟡 MÉDIA
+- Verifique se a API Key existe: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
+- Verifique se as restrições estão corretas (API, Android apps)
+- Se necessário, crie uma nova API Key
+- **Outras chaves disponíveis:**
+  - Browser API Key: `AIzaSyBYiaQk5X35XJgz-4BsM4Zd7RIE7YyxxtM`
+  - Gemini Developer API Key: `AIzaSyCG9r2ruOBuTPfBQcaBwKaR3ODWMunaYR4`
 
 

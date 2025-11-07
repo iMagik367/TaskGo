@@ -2,7 +2,9 @@
 
 Este guia contém todas as configurações que você precisa fazer manualmente no Firebase Console.
 
-**📌 IMPORTANTE:** Você também tem uma nova API Key do Google Cloud (`AIzaSyANaNKqRi8IZa9QvT9oCkTuSOzWMjrOov8`) que precisa ser atualizada. Veja `GUIA_ATUALIZAR_API_KEY.md` para instruções detalhadas.
+**📌 IMPORTANTE:** Você também tem uma nova API Key do Google Cloud (`AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`) que precisa ser atualizada. Veja `GUIA_ATUALIZAR_API_KEY.md` para instruções detalhadas. As chaves adicionais disponibilizadas são:
+- Browser API Key: `AIzaSyBYiaQk5X35XJgz-4BsM4Zd7RIE7YyxxtM`
+- Gemini Developer API Key: `AIzaSyCG9r2ruOBuTPfBQcaBwKaR3ODWMunaYR4`
 
 ---
 

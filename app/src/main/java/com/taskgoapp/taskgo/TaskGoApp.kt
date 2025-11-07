@@ -54,6 +54,19 @@ class TaskGoApp : Application() {
             Log.d(TAG, "Firebase API Key: ${FirebaseApp.getInstance().options.apiKey}")
             Log.d(TAG, "Firebase Project ID: ${FirebaseApp.getInstance().options.projectId}")
             Log.d(TAG, "Firebase Application ID: ${FirebaseApp.getInstance().options.applicationId}")
+            
+            // Validar configurações do Firebase
+            applicationScope.launch {
+                try {
+                    val validation = com.taskgoapp.taskgo.core.firebase.FirebaseConfigValidator.validate(this@TaskGoApp)
+                    if (!validation.isValid) {
+                        Log.e(TAG, "⚠️ CONFIGURAÇÕES DO FIREBASE INVÁLIDAS!")
+                        Log.e(TAG, "Consulte VERIFICACAO_FIREBASE_CONFIG.md para resolver")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Erro ao validar configurações do Firebase: ${e.message}", e)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao inicializar Firebase: ${e.message}", e)
         }

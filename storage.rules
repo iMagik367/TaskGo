@@ -1,0 +1,91 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is the owner
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profile images: {userId}/profile/{filename}
+    match /{userId}/profile/{filename} {
+      // Anyone can read profile images (public)
+      allow read: if isAuthenticated();
+      
+      // Users can upload/update their own profile images
+      allow write: if isOwner(userId) && 
+        request.resource.size < 5 * 1024 * 1024 && // 5MB limit
+        request.resource.contentType.matches('image/.*');
+    }
+
+    // Provider documents: {userId}/documents/{documentType}/{filename}
+    match /{userId}/documents/{documentType}/{filename} {
+      // Only owner and admins can read
+      allow read: if isOwner(userId) || request.auth != null && 
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      
+      // Only owner can upload
+      allow write: if isOwner(userId) && 
+        request.resource.size < 10 * 1024 * 1024 && // 10MB limit
+        request.resource.contentType.matches('(image|application)/pdf|image/.*');
+    }
+
+    // Order-related files: {userId}/orders/{orderId}/{filename}
+    match /{userId}/orders/{orderId}/{filename} {
+      // Order owner and provider can read
+      allow read: if isAuthenticated() && 
+        (isOwner(userId) || 
+         firestore.exists(/databases/(default)/documents/orders/$(orderId)));
+      
+      // Users can upload files to their own orders
+      allow write: if isOwner(userId) && 
+        request.resource.size < 50 * 1024 * 1024 && // 50MB limit
+        request.resource.contentType.matches('(image|application|video)/.*');
+    }
+
+    // Service images: {providerId}/services/{serviceId}/{filename}
+    match /{providerId}/services/{serviceId}/{filename} {
+      // Anyone can read service images (public)
+      allow read: if isAuthenticated();
+      
+      // Only provider can upload/update
+      allow write: if isOwner(providerId) && 
+        request.resource.size < 10 * 1024 * 1024 && // 10MB limit
+        request.resource.contentType.matches('image/.*');
+    }
+
+    // Review images: {userId}/reviews/{reviewId}/{filename}
+    match /{userId}/reviews/{reviewId}/{filename} {
+      // Anyone can read review images (public)
+      allow read: if isAuthenticated();
+      
+      // Only reviewer can upload
+      allow write: if isOwner(userId) && 
+        request.resource.size < 5 * 1024 * 1024 && // 5MB limit
+        request.resource.contentType.matches('image/.*');
+    }
+
+    // Chat attachments: {conversationId}/{filename}
+    match /chats/{conversationId}/{filename} {
+      // Only conversation participants can read
+      allow read: if isAuthenticated() && 
+        firestore.exists(/databases/(default)/documents/conversations/$(conversationId));
+      
+      // Only conversation participants can upload
+      allow write: if isAuthenticated() && 
+        firestore.exists(/databases/(default)/documents/conversations/$(conversationId)) &&
+        request.resource.size < 20 * 1024 * 1024 && // 20MB limit
+        request.resource.contentType.matches('(image|video|application)/.*');
+    }
+
+    // Deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

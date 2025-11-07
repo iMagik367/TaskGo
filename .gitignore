@@ -1,0 +1,67 @@
+# Android
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Gradle caches e builds
+caches/
+daemon/
+wrapper/
+jdks/
+native/
+kotlin-profile/
+*.log
+
+# Backend build files
+backend/build/
+backend/bin/
+
+# Backend (server folder - old structure)
+/server/
+
+# Node.js (test files)
+node_modules/
+package-lock.json
+test-server.js
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+firebase-export-*/
+
+# Firebase Functions
+functions/lib/
+functions/node_modules/
+*.log
+
+# Keystore files (NUNCA commitar!)
+*.jks
+*.keystore
+keystore.properties

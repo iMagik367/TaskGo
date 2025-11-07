@@ -1,0 +1,9 @@
+# Firebase App Hosting Configuration
+# This project is an Android app, not a web app
+# App Hosting should be disabled in Firebase Console
+
+# Build configuration
+build:
+  # This project is Android, not a web app
+  # No build steps needed
+  steps: []

@@ -1,0 +1,11 @@
+# Ignore everything except functions
+*
+
+# But include functions
+!functions/
+!firebase.json
+!.firebaserc
+!firestore.rules
+!firestore.indexes.json
+!storage.rules
+

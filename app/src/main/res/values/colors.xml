@@ -1,0 +1,30 @@
+<resources>
+    <!-- Base verde -->
+    <color name="tg_green_dark">#1B5E20</color>     <!-- Verde escuro (primário) -->
+    <color name="tg_green">#2E7D32</color>          <!-- Verde médio -->
+    <color name="tg_green_light">#A5D6A7</color>    <!-- Verde claro (container/active) -->
+
+    <!-- Acento opcional (mais claro para feedbacks positivos) -->
+    <color name="tg_green_accent">#66BB6A</color>
+
+    <!-- Neutros -->
+    <color name="tg_white">#FFFFFF</color>
+    <color name="tg_black">#000000</color>
+    <color name="tg_gray_900">#1A1A1A</color>
+    <color name="tg_gray_700">#4D4D4D</color>
+    <color name="tg_gray_500">#808080</color>
+    <color name="tg_gray_300">#D1D5DB</color>
+    <color name="tg_gray_200">#E5E7EB</color>
+    <color name="tg_gray_100">#F3F4F6</color>
+
+    <!-- Estados -->
+    <color name="tg_error">#D32F2F</color>
+    <color name="tg_warning">#F57C00</color>
+    <color name="tg_success">#2E7D32</color>
+
+    <!-- Compatibilidade com código existente -->
+    <color name="primary">#1B5E20</color>
+    <color name="secondary">#2E7D32</color>
+    <color name="background">#FFFFFF</color>
+    <color name="text_primary">#1A1A1A</color>
+</resources>

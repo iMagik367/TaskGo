@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Tema principal do app (Material Components, NoActionBar) -->
+    <style name="Theme.TaskGoApp" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Cor primária usada em botões, barra superior (compat) -->
+        <item name="colorPrimary">@color/primary</item>
+        <!-- Cor secundária usada em elementos de destaque (compat) -->
+        <item name="colorSecondary">@color/secondary</item>
+        <!-- Cor de fundo padrão das telas -->
+        <item name="android:colorBackground">@color/background</item>
+        <!-- Cor padrão do texto -->
+        <item name="android:textColorPrimary">@color/text_primary</item>
+    </style>
+
+    <!-- Tema para CropImageActivity com ActionBar -->
+    <style name="Theme.TaskGoApp.CropImage" parent="Theme.MaterialComponents.DayNight">
+        <!-- Cor primária usada em botões, barra superior (compat) -->
+        <item name="colorPrimary">@color/primary</item>
+        <!-- Cor secundária usada em elementos de destaque (compat) -->
+        <item name="colorSecondary">@color/secondary</item>
+        <!-- Cor de fundo padrão das telas -->
+        <item name="android:colorBackground">@color/background</item>
+        <!-- Cor padrão do texto -->
+        <item name="android:textColorPrimary">@color/text_primary</item>
+    </style>
+
+</resources>

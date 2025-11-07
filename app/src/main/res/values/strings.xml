@@ -1,0 +1,489 @@
+<resources>
+    <string name="app_name">TaskGo</string>
+    
+    <!-- Bottom Navigation -->
+    <string name="nav_home">Início</string>
+    <string name="nav_services">Serviços</string>
+    <string name="nav_products">Produtos</string>
+    <string name="nav_messages">Mensagens</string>
+    <string name="nav_profile">Perfil</string>
+    
+    <!-- Common Actions -->
+    <string name="action_save">Salvar</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_edit">Editar</string>
+    <string name="action_delete">Excluir</string>
+    <string name="action_add">Adicionar</string>
+    <string name="action_remove">Remover</string>
+    <string name="action_continue">Continuar</string>
+    <string name="action_back">Voltar</string>
+    <string name="action_next">Próximo</string>
+    <string name="action_previous">Anterior</string>
+    <string name="action_confirm">Confirmar</string>
+    <string name="action_accept">Aceitar</string>
+    <string name="action_reject">Rejeitar</string>
+    <string name="action_send">Enviar</string>
+    <string name="action_search">Buscar</string>
+    <string name="action_filter">Filtrar</string>
+    <string name="action_sort">Ordenar</string>
+    
+    <!-- Home Screen -->
+    <string name="home_title">TaskGo</string>
+    <string name="home_search_placeholder">Buscar produtos e serviços…</string>
+    <string name="home_categories_title">Categorias</string>
+    <string name="home_featured_title">Destaques</string>
+    <string name="home_banner_title">Divulgue seu trabalho!</string>
+    <string name="home_banner_subtitle">Comprar Banner</string>
+    <string name="home_banner_small">Pequeno R$ 50/dia</string>
+    <string name="home_banner_large">Grande R$ 90/dia</string>
+    
+    <!-- Service Categories -->
+    <string name="category_montagem">Montagem</string>
+    <string name="category_reforma">Reforma</string>
+    <string name="category_jardinagem">Jardinagem</string>
+    <string name="category_eletrica">Elétrica</string>
+    <string name="category_limpeza">Limpeza</string>
+    
+    <!-- Services -->
+    <string name="services_title">Serviços</string>
+    <string name="services_categories_title">Categorias</string>
+    <string name="services_create_order">Criar Ordem de Serviço</string>
+    <string name="services_create_order_title">Criar Ordem de Serviço</string>
+    <string name="services_create_order_subtitle">Descreva o serviço que você precisa</string>
+    <string name="services_create_order_description">Descrição do serviço</string>
+    <string name="services_create_order_address">Endereço</string>
+    <string name="services_create_order_city">Cidade</string>
+    <string name="services_create_order_state">Estado</string>
+    <string name="services_create_order_submit">Publicar Ordem</string>
+    <string name="services_proposals">Propostas Recebidas</string>
+    <string name="services_proposals_title">Propostas Recebidas</string>
+    <string name="services_proposals_subtitle">Propostas para suas ordens de serviço</string>
+    <string name="services_proposals_empty">Nenhuma proposta</string>
+    <string name="services_proposals_empty_message">Você ainda não recebeu propostas</string>
+    <string name="services_proposal_detail_title">Detalhes da Proposta</string>
+    <string name="services_proposal_provider_info">Informações do Prestador</string>
+    <string name="services_proposal_accept">Aceitar</string>
+    <string name="services_proposal_reject">Rejeitar</string>
+    <string name="services_category">Categoria</string>
+    <string name="services_description">Descrição</string>
+    <string name="services_date">Data</string>
+    <string name="services_address">Endereço</string>
+    <string name="services_publish">Publicar ordem</string>
+    <string name="services_provider_rating">%1$.1f (%2$d+ serviços)</string>
+    <string name="services_view_proposal">Ver</string>
+    <string name="services_accept_proposal">Aceitar Proposta</string>
+    <string name="services_proposal_accepted">Proposta Aceita</string>
+    
+    <!-- Products -->
+    <string name="products_title">Produtos</string>
+    <string name="products_empty_title">Nenhum produto encontrado</string>
+    <string name="products_empty_message">Tente ajustar os filtros ou buscar por outro termo</string>
+    <string name="search_placeholder">Buscar produtos...</string>
+    <string name="products_add_to_cart">Adicionar ao carrinho</string>
+    <string name="products_seller">Vendedor</string>
+    <string name="products_description">Descrição</string>
+    <string name="products_in_stock">Em estoque</string>
+    <string name="products_out_of_stock">Fora de estoque</string>
+    
+    <!-- Cart -->
+    <string name="cart_title">Carrinho</string>
+    <string name="cart_items_title">%d itens no carrinho</string>
+    <string name="cart_summary_title">Resumo do Pedido</string>
+    <string name="cart_subtotal">Subtotal</string>
+    <string name="cart_delivery">Frete</string>
+    <string name="cart_total">Total</string>
+    <string name="cart_checkout">Finalizar Compra</string>
+    <string name="cart_empty_title">Seu carrinho está vazio</string>
+    <string name="cart_empty_message">Adicione produtos para continuar comprando</string>
+    <string name="cart_start_shopping">Começar a Comprar</string>
+    <string name="cart_remove_title">Remover Item</string>
+    <string name="cart_remove_message">Deseja remover %s do carrinho?</string>
+    <string name="cart_remove_confirm">Remover</string>
+    <string name="cart_remove_cancel">Cancelar</string>
+    <string name="cart_remove_item">Remover item</string>
+    <string name="cart_increase_quantity">Aumentar quantidade</string>
+    <string name="cart_decrease_quantity">Diminuir quantidade</string>
+    
+    <!-- Checkout -->
+    <string name="checkout_title">Finalizar pedido</string>
+    <string name="checkout_delivery_address">Endereço de Entrega</string>
+    <string name="checkout_payment_method">Forma de Pagamento</string>
+    <string name="checkout_order_summary">Resumo do Pedido</string>
+    <string name="checkout_place_order">Fazer pedido</string>
+    <string name="checkout_order_confirmed">Pedido Confirmado</string>
+    <string name="checkout_purchase_completed">Compra Realizada</string>
+    
+    <!-- Payment -->
+    <string name="payment_pix">Pix</string>
+    <string name="payment_credit_card">Cartão de Crédito</string>
+    <string name="payment_debit_card">Cartão de Débito</string>
+    <string name="payment_pix_confirmed">Pix Confirmado</string>
+    <string name="payment_card_masked">**** **** **** %1$s</string>
+    
+    <!-- Orders -->
+    <string name="orders_title">Meus Pedidos</string>
+    <string name="orders_ongoing">Em andamento</string>
+    <string name="orders_completed">Concluído</string>
+    <string name="orders_canceled">Cancelado</string>
+    <string name="orders_tracking">Ver Rastreio</string>
+    <string name="orders_cancel_item">Cancelar Item</string>
+    <string name="orders_delivery_estimate">Previsão entrega %1$s</string>
+    <string name="orders_tracking_code">Código: %1$s</string>
+    
+    <!-- Messages -->
+    <string name="messages_title">Mensagens</string>
+    <string name="messages_empty_title">Nenhuma mensagem</string>
+    <string name="messages_empty_message">Você ainda não tem conversas. Comece a conversar com prestadores de serviço!</string>
+    <string name="messages_create_order">Criar Ordem de Serviço</string>
+    <string name="messages_typing">digitando…</string>
+    <string name="messages_input_placeholder">Digite sua mensagem…</string>
+    
+    <!-- Profile -->
+    <string name="profile_title">Perfil</string>
+    <string name="profile_loading_name">Carregando...</string>
+    <string name="profile_loading_type">Carregando...</string>
+    <string name="profile_edit_profile">Editar Perfil</string>
+    <string name="profile_rating">Avaliação</string>
+    <string name="profile_reviews">Avaliações</string>
+    <string name="profile_time">Tempo no TaskGo</string>
+    <string name="profile_quick_actions">Ações Rápidas</string>
+    <string name="profile_menu_title">Menu do Perfil</string>
+    <string name="profile_my_data">Meus Dados</string>
+    <string name="profile_my_services">Meus Serviços</string>
+    <string name="profile_my_products">Meus Produtos</string>
+    <string name="profile_my_orders">Meus Pedidos</string>
+    <string name="profile_my_reviews">Minhas Avaliações</string>
+    <string name="profile_manage_proposals">Gerenciar Propostas</string>
+    <string name="profile_settings">Configurações</string>
+    <string name="profile_account_type">Tipo de conta</string>
+    <string name="profile_time_on_taskgo">Tempo no TaskGo</string>
+    <string name="profile_view_reviews">Ver Avaliações</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">Configurações</string>
+    <string name="settings_account">Conta</string>
+    <string name="settings_preferences">Preferências</string>
+    <string name="settings_notifications">Notificações</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_privacy">Privacidade</string>
+    <string name="settings_support">Suporte</string>
+    <string name="settings_about">Sobre</string>
+    <string name="settings_logout">Sair da Conta</string>
+    <string name="settings_save_changes">Salvar Alterações</string>
+    <string name="settings_select_photo">Selecione a Foto</string>
+    <string name="settings_change_password">Alterar Senha</string>
+    <string name="settings_current_password">Senha atual</string>
+    <string name="settings_new_password">Nova senha</string>
+    <string name="settings_confirm_password">Confirmar senha</string>
+    
+    <!-- Notifications -->
+    <string name="notifications_title">Notificações</string>
+    <string name="notifications_today">Hoje</string>
+    <string name="notifications_yesterday">Ontem</string>
+    <string name="notifications_empty">Nenhuma notificação</string>
+    <string name="notifications_empty_message">Você está em dia!</string>
+    
+    <!-- Notification Items -->
+    <string name="notifications_order_sent">Pedido Enviado</string>
+    <string name="notifications_order_sent_desc">Sua compra de Guarda Roupa foi despachada</string>
+    <string name="notifications_proposal_approved">Proposta Aprovada</string>
+    <string name="notifications_proposal_approved_desc">Você aceitou a proposta de Carlos Montador</string>
+    <string name="notifications_update_available">Atualização Disponível</string>
+    <string name="notifications_update_available_desc">Uma nova versão do aplicativo está disponível para download</string>
+    <string name="notifications_service_order_published">Ordem de Serviço Publicada</string>
+    <string name="notifications_service_order_published_desc">Sua ordem Montagem de guarda roupa 2 portas foi enviada</string>
+    
+    <!-- Notification Settings -->
+    <string name="notifications_general">Notificações Gerais</string>
+    <string name="notifications_behavior">Comportamento das Notificações</string>
+    <string name="notifications_types">Tipos de Notificação</string>
+    <string name="notifications_schedule">Horário das Notificações</string>
+    <string name="notifications_schedule_desc">Receber notificações das 8h às 22h</string>
+    <string name="notifications_email">Notificações por E-mail</string>
+    <string name="notifications_email_desc">Receber atualizações por e-mail</string>
+    <string name="notifications_sms">Notificações por SMS</string>
+    <string name="notifications_sms_desc">Receber alertas por SMS</string>
+    <string name="notifications_push_desc">Receber notificações no app</string>
+    <string name="notifications_sound_desc">Tocar som nas notificações</string>
+    <string name="notifications_locked_screen_desc">Exibir notificações na tela bloqueada</string>
+    <string name="notifications_promotions_desc">Receber ofertas e promoções</string>
+    <string name="notifications_settings_saved">Configurações de notificação salvas!</string>
+    
+    <!-- Auth -->
+    <string name="auth_login">Entrar</string>
+    <string name="auth_signup">Criar Conta</string>
+    <string name="auth_email">E-mail</string>
+    <string name="auth_password">Senha</string>
+    <string name="auth_name">Nome</string>
+    <string name="auth_phone">Telefone</string>
+    <string name="auth_account_type_pf">Pessoa Física</string>
+    <string name="auth_account_type_store">Loja</string>
+    <string name="auth_payment_confirmed">Pagamento Confirmado</string>
+    <string name="forgot_password_title">Recuperar Senha</string>
+    <string name="forgot_password_subtitle">Informe seu e-mail para enviarmos o link de recuperação.</string>
+    <string name="forgot_password_send">Enviar link</string>
+    <string name="forgot_password_invalid_email">Informe um e-mail válido</string>
+    <string name="forgot_password_sent_success">Enviamos um link para recuperação de senha</string>
+    
+    <!-- Address -->
+    <string name="address_title">Cadastrar Endereço</string>
+    <string name="address_name">Nome</string>
+    <string name="address_phone">Telefone</string>
+    <string name="address_cep">CEP</string>
+    <string name="address_street">Endereço</string>
+    <string name="address_neighborhood">Bairro</string>
+    <string name="address_city">Cidade</string>
+    <string name="address_state">Estado</string>
+    <string name="address_save">Salvar</string>
+    
+    <!-- Cards -->
+    <string name="cards_title">Cartões</string>
+    <string name="cards_number">Número</string>
+    <string name="cards_expiry">Validade</string>
+    <string name="cards_cvc">CVC</string>
+    <string name="cards_holder_name">Nome do titular</string>
+    <string name="cards_save">Salvar</string>
+    
+    <!-- Design Review -->
+    <string name="design_review_title">Design Review</string>
+    <string name="design_review_select_screenshot">Selecionar Screenshot</string>
+    <string name="design_review_opacity">Opacidade: %1$d%%</string>
+    <string name="design_review_open_ui">Abrir UI Alvo: %1$s</string>
+    <string name="design_review_screenshots_available">Screenshots Disponíveis</string>
+    
+    <!-- Common UI -->
+    <string name="ui_error">Erro</string>
+    <string name="ui_retry">Tentar novamente</string>
+    <string name="ui_empty">Nenhum item encontrado</string>
+    <string name="ui_empty_message">Tente ajustar os filtros</string>
+    <string name="ui_ok">OK</string>
+    <string name="ui_yes">Sim</string>
+    <string name="ui_no">Não</string>
+    <string name="ui_notifications">Notificações</string>
+    <string name="ui_cart">Carrinho</string>
+    <string name="ui_messages">Mensagens</string>
+    
+    <!-- Tracking -->
+    <string name="tracking_posted">Postado</string>
+    <string name="tracking_in_transit">Em trânsito</string>
+    <string name="tracking_out_for_delivery">Saiu para entrega</string>
+    <string name="tracking_delivered">Entregue</string>
+    
+
+
+    
+    <!-- Account -->
+    <string name="account_full_name">Nome Completo</string>
+    <string name="account_email">Email</string>
+    <string name="account_profession">Profissão</string>
+    <string name="account_change_photo">Alterar foto de perfil</string>
+    <string name="account_select_photo">Selecione a Foto</string>
+    
+    <!-- Notifications -->
+    <string name="notifications_promotions">Promoções</string>
+    <string name="notifications_sound">Som de notificação</string>
+    <string name="notifications_push">Notificação push</string>
+    <string name="notifications_locked_screen">Mostrar na tela bloqueada</string>
+    <string name="notifications_save_changes">Salvar Alterações</string>
+    
+    <!-- Language -->
+    <string name="language_portuguese">Português</string>
+    <string name="language_english">English</string>
+    <string name="language_spanish">Español</string>
+    <string name="language_french">Français</string>
+    <string name="language_italian">Italiano</string>
+    <string name="language_german">Deutsch</string>
+    
+    <!-- Privacy -->
+    <string name="privacy_current_location">Localização atual</string>
+    <string name="privacy_account_type">Tipo de conta Prestador</string>
+    <string name="privacy_password">Senha</string>
+    <string name="privacy_change_password">Alterar senha</string>
+    <string name="privacy_new_password">Nova senha</string>
+    <string name="privacy_repeat_password">Repita a senha</string>
+    <string name="privacy_save_changes">Salvar Alterações</string>
+    
+    <!-- Support -->
+    <string name="support_help_center">Central de Suporte</string>
+    <string name="support_ai_chat">Chat AI TaskGo</string>
+    <string name="support_about_taskgo">Sobre o TaskGo</string>
+    
+    <!-- About -->
+    <string name="about_version">Versão 1.0.0</string>
+    <string name="about_contact">contato@taskgo.com.br</string>
+    <string name="about_terms_of_service">Termos de Serviço</string>
+    <string name="about_privacy_policy">Política de Privacidade</string>
+    <string name="about_copyright">© 2024 TaskGo. Todos os direitos reservados.</string>
+    
+    <!-- Home -->
+    <string name="home_quick_actions">Ações Rápidas</string>
+    
+    <!-- Payment -->
+    <string name="payment_method_title">Método de pagamento</string>
+    <string name="payment_method_select">Selecione um método de pagamento</string>
+    <string name="payment_method_none">Nenhum método selecionado</string>
+    
+    <!-- Form Validation -->
+    <string name="form_fill_all_fields">Preencha corretamente todos os campos.</string>
+    <string name="form_email_required">Email é obrigatório</string>
+    <string name="form_email_invalid">Email inválido</string>
+    <string name="form_password_required">Senha é obrigatória</string>
+    <string name="form_password_min_length">Senha deve ter pelo menos 6 caracteres</string>
+    <string name="form_name_required">Nome é obrigatório</string>
+    <string name="form_phone_required">Telefone é obrigatório</string>
+    
+
+    
+
+    
+    <!-- Reviews -->
+    <string name="reviews_title">Avaliações</string>
+    <string name="reviews_subtitle">Suas avaliações de prestadores</string>
+    <string name="reviews_empty">Nenhuma avaliação</string>
+    <string name="reviews_empty_message">Você ainda não fez avaliações</string>
+    <string name="reviews_rate_provider">Avaliar Prestador</string>
+    <string name="reviews_send">Enviar</string>
+    <string name="reviews_helpful">Útil</string>
+    
+    <!-- AI Support -->
+    <string name="ai_support_title">AI Task Go</string>
+    <string name="ai_support_subtitle">Converse com nossa inteligência artificial</string>
+    <string name="ai_support_placeholder">Digite sua mensagem…</string>
+    
+    <!-- Common -->
+    <string name="common_loading">Carregando…</string>
+    <string name="common_error">Erro</string>
+    <string name="common_retry">Tentar novamente</string>
+    <string name="common_ok">OK</string>
+    <string name="common_yes">Sim</string>
+    <string name="common_no">Não</string>
+    <string name="ui_back">Voltar</string>
+    <string name="ui_loading">Carregando…</string>
+    <string name="common_close">Fechar</string>
+    <string name="common_done">Concluído</string>
+    <string name="common_success">Sucesso</string>
+    <string name="common_failed">Falhou</string>
+    
+    <!-- Content Descriptions -->
+    <string name="cd_back_button">Botão voltar</string>
+    <string name="cd_search_button">Botão buscar</string>
+    <string name="cd_cart_button">Botão carrinho</string>
+    <string name="cd_notifications_button">Botão notificações</string>
+    <string name="cd_profile_button">Botão perfil</string>
+    <string name="cd_add_button">Botão adicionar</string>
+    <string name="cd_remove_button">Botão remover</string>
+    <string name="cd_edit_button">Botão editar</string>
+    <string name="cd_delete_button">Botão excluir</string>
+    <string name="cd_send_button">Botão enviar</string>
+    <string name="cd_star_rating">Avaliação %1$d estrelas</string>
+    <string name="cd_product_image">Imagem do produto</string>
+    <string name="cd_user_avatar">Avatar do usuário</string>
+    <string name="cd_qr_code">Código QR</string>
+    <string name="cd_credit_card">Cartão de crédito</string>
+
+    <!-- Service Detail -->
+    <string name="service_detail_title">Detalhes do Serviço</string>
+    <string name="service_price_per_hour">por hora</string>
+    <string name="service_description_title">Descrição do Serviço</string>
+    <string name="service_location_title">Localização</string>
+    <string name="service_create_order">Criar Ordem</string>
+    <string name="service_contact_provider">Contatar</string>
+    <string name="service_contact_dialog_title">Contatar Prestador</string>
+    <string name="service_contact_dialog_message">Deseja iniciar uma conversa com este prestador?</string>
+    <string name="service_contact_dialog_confirm">Sim</string>
+    <string name="service_contact_dialog_cancel">Não</string>
+
+    <!-- Chat -->
+    <string name="chat_title">Chat</string>
+    <string name="messages_send">Enviar</string>
+
+    <!-- MyDataScreen -->
+    <string name="profile_photo_title">Foto do Perfil</string>
+    <string name="profile_change_photo">Alterar Foto</string>
+    <string name="profile_change_photo_title">Alterar Foto</string>
+    <string name="profile_change_photo_message">Selecione a Foto</string>
+    <string name="profile_change_photo_confirm">OK</string>
+    <string name="profile_personal_info_title">Informações Pessoais</string>
+    <string name="profile_name_label">Nome Completo</string>
+    <string name="profile_email_label">E-mail</string>
+    <string name="profile_phone_label">Telefone</string>
+    <string name="profile_account_info_title">Informações da Conta</string>
+    <string name="profile_account_type_label">Tipo de Conta</string>
+    <string name="profile_account_type_provider">Prestador de Serviços</string>
+    <string name="profile_account_type_seller">Vendedor</string>
+    <string name="profile_account_type_client">Cliente</string>
+    <string name="profile_time_on_taskgo_label">Tempo no TaskGo</string>
+    <string name="profile_rating_label">Avaliação</string>
+    <string name="profile_city_label">Cidade</string>
+    <string name="profile_edit_info">Editar Informações</string>
+    <string name="profile_save">Salvar</string>
+    <string name="profile_cancel">Cancelar</string>
+    <string name="profile_change_password">Alterar Senha</string>
+    <string name="profile_change_password_title">Alterar Senha</string>
+    <string name="profile_current_password">Senha Atual</string>
+    <string name="profile_new_password">Nova Senha</string>
+    <string name="profile_confirm_password">Confirmar Nova Senha</string>
+    <string name="profile_change_password_confirm">Salvar Alterações</string>
+    <string name="profile_change_password_cancel">Cancelar</string>
+    <string name="profile_save_success">Alterações salvas com sucesso!</string>
+
+    <!-- Order Tracking -->
+    <string name="order_tracking_title">Rastreamento do Pedido</string>
+    <string name="order_tracking_order_info">Informações do Pedido</string>
+    <string name="order_tracking_product_name">Produto</string>
+    <string name="order_tracking_order_number">Pedido #%d</string>
+    <string name="order_tracking_timeline_title">Timeline do Pedido</string>
+    <string name="order_tracking_step_posted">Postado</string>
+    <string name="order_tracking_step_posted_desc">Pedido foi criado e está sendo processado</string>
+    <string name="order_tracking_step_processing">Em Processamento</string>
+    <string name="order_tracking_step_processing_desc">Pedido está sendo preparado para envio</string>
+    <string name="order_tracking_step_shipped">Enviado</string>
+    <string name="order_tracking_step_shipped_desc">Pedido foi enviado e está em trânsito</string>
+    <string name="order_tracking_step_delivered">Entregue</string>
+    <string name="order_tracking_step_delivered_desc">Pedido foi entregue com sucesso</string>
+    <string name="order_tracking_details_title">Detalhes do Pedido</string>
+    <string name="order_tracking_total">Total</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_notifications_settings">Configurações de notificações</string>
+    
+    <!-- Notification Details -->
+    <string name="notification_detail_title">Detalhes da Notificação</string>
+    <string name="notification_title_placeholder">Seu pedido foi confirmado</string>
+    <string name="notification_time_placeholder">Hoje, 10:32</string>
+    <string name="notification_message_placeholder">Obrigado pela sua compra! Seu pedido #1234 foi confirmado e está sendo processado. Você receberá atualizações por aqui.</string>
+    <string name="notification_details">Detalhes da Notificação</string>
+    <string name="notification_description">Descrição</string>
+    <string name="notification_actions">Ações</string>
+    <string name="notification_mark_as_read">Marcar como Lida</string>
+    <string name="notification_track_order">Acompanhar Pedido</string>
+    <string name="notification_view_proposal">Ver Proposta</string>
+    <string name="notification_update_app">Atualizar App</string>
+    <string name="notification_view_service_order">Ver Ordem de Serviço</string>
+    <string name="notification_view_details">Ver Detalhes</string>
+    
+    <!-- Image Cropper -->
+    <string name="crop_image_activity_title">Cortar Imagem</string>
+    <string name="crop_image_menu_crop">Cortar</string>
+    <string name="crop_image_menu_rotate_left">Girar Esquerda</string>
+    <string name="crop_image_menu_rotate_right">Girar Direita</string>
+    <string name="crop_image_menu_flip_horizontally">Inverter Horizontalmente</string>
+    <string name="crop_image_menu_flip_vertically">Inverter Verticalmente</string>
+    <string name="crop_image_menu_scale">Escala</string>
+    <string name="crop_image_menu_reset">Resetar</string>
+    <string name="crop_image_menu_done">Concluído</string>
+    <string name="crop_image_menu_cancel">Cancelar</string>
+    <string name="crop_image_menu_loading">Carregando...</string>
+    <string name="crop_image_menu_error">Erro ao carregar imagem</string>
+    <string name="crop_image_menu_error_cannot_load">Não foi possível carregar a imagem</string>
+    <string name="crop_image_menu_error_cannot_save">Não foi possível salvar a imagem</string>
+    <string name="crop_image_menu_error_cannot_crop">Não foi possível cortar a imagem</string>
+    <string name="crop_image_menu_error_cannot_rotate">Não foi possível girar a imagem</string>
+    <string name="crop_image_menu_error_cannot_flip">Não foi possível inverter a imagem</string>
+    <string name="crop_image_menu_error_cannot_scale">Não foi possível escalar a imagem</string>
+    <string name="crop_image_menu_error_cannot_reset">Não foi possível resetar a imagem</string>
+    <string name="crop_image_menu_error_cannot_done">Não foi possível concluir a operação</string>
+    <string name="crop_image_menu_error_cannot_cancel">Não foi possível cancelar a operação</string>
+    <string name="crop_image_menu_error_cannot_loading">Não foi possível carregar</string>
+    <string name="crop_image_menu_error_cannot_error">Erro inesperado</string>
+</resources>

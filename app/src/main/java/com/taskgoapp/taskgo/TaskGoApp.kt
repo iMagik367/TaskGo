@@ -8,9 +8,15 @@ import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import com.taskgoapp.taskgo.BuildConfig
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class TaskGoApp : Application() {
+    
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -19,10 +25,35 @@ class TaskGoApp : Application() {
         Log.d(TAG, "BuildConfig.USE_EMULATOR: ${BuildConfig.USE_EMULATOR}")
         Log.d(TAG, "BuildConfig.DEBUG: ${BuildConfig.DEBUG}")
         
+        // Diagnosticar conectividade de rede
+        Log.d(TAG, "=== DIAGNÓSTICO DE REDE ===")
+        applicationScope.launch {
+            try {
+                val diagnostic = com.taskgoapp.taskgo.core.network.NetworkDiagnostic.diagnose(this@TaskGoApp)
+                Log.d(TAG, "Resultado do diagnóstico: ${diagnostic}")
+                if (!diagnostic.isHealthy) {
+                    Log.e(TAG, "⚠️ PROBLEMA DE CONECTIVIDADE DETECTADO:")
+                    Log.e(TAG, "   - Internet: ${diagnostic.hasInternet}")
+                    Log.e(TAG, "   - Firebase: ${diagnostic.canReachFirebase}")
+                    Log.e(TAG, "   - Google: ${diagnostic.canReachGoogle}")
+                    Log.e(TAG, "   - reCAPTCHA: ${diagnostic.canReachRecaptcha}")
+                    Log.e(TAG, "   - Erro: ${diagnostic.error ?: "N/A"}")
+                    Log.e(TAG, "📋 Consulte DIAGNOSTICO_CONECTIVIDADE.md para resolver")
+                } else {
+                    Log.d(TAG, "✅ Conectividade OK")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Erro ao diagnosticar rede: ${e.message}", e)
+            }
+        }
+        
         // Initialize Firebase
         try {
             FirebaseApp.initializeApp(this)
             Log.d(TAG, "Firebase inicializado com sucesso")
+            Log.d(TAG, "Firebase API Key: ${FirebaseApp.getInstance().options.apiKey}")
+            Log.d(TAG, "Firebase Project ID: ${FirebaseApp.getInstance().options.projectId}")
+            Log.d(TAG, "Firebase Application ID: ${FirebaseApp.getInstance().options.applicationId}")
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao inicializar Firebase: ${e.message}", e)
         }

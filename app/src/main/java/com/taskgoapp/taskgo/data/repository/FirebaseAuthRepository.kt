@@ -38,6 +38,36 @@ class FirebaseAuthRepository @Inject constructor(
             android.util.Log.d("FirebaseAuthRepository", "FirebaseAuth instance: $firebaseAuth")
             android.util.Log.d("FirebaseAuthRepository", "FirebaseApp: ${com.google.firebase.FirebaseApp.getInstance().name}")
             
+            // Diagnosticar conectividade antes de tentar login
+            val appContext = firebaseAuth.app.applicationContext
+            val diagnostic = com.taskgoapp.taskgo.core.network.NetworkDiagnostic.diagnose(appContext)
+            
+            if (!diagnostic.hasInternet) {
+                android.util.Log.e("FirebaseAuthRepository", "❌ SEM CONEXÃO COM A INTERNET")
+                return Result.failure(Exception("Sem conexão com a internet. Verifique sua conexão de rede."))
+            }
+            
+            if (!diagnostic.canReachGoogle) {
+                android.util.Log.e("FirebaseAuthRepository", "❌ NÃO É POSSÍVEL CONECTAR AO GOOGLE")
+                return Result.failure(Exception("Não é possível conectar aos servidores do Google. Verifique sua conexão de rede."))
+            }
+            
+            if (!diagnostic.canReachFirebase) {
+                android.util.Log.e("FirebaseAuthRepository", "❌ NÃO É POSSÍVEL CONECTAR AO FIREBASE")
+                return Result.failure(Exception("Não é possível conectar aos servidores do Firebase. Verifique sua conexão de rede ou configurações de firewall."))
+            }
+            
+            if (!diagnostic.canReachRecaptcha) {
+                android.util.Log.w("FirebaseAuthRepository", "⚠️ NÃO É POSSÍVEL CONECTAR AO RECAPTCHA")
+                android.util.Log.w("FirebaseAuthRepository", "O login pode falhar se o reCAPTCHA não estiver acessível")
+            }
+            
+            android.util.Log.d("FirebaseAuthRepository", "Diagnóstico de rede: OK")
+            android.util.Log.d("FirebaseAuthRepository", "  - Internet: ${diagnostic.hasInternet}")
+            android.util.Log.d("FirebaseAuthRepository", "  - Firebase: ${diagnostic.canReachFirebase}")
+            android.util.Log.d("FirebaseAuthRepository", "  - Google: ${diagnostic.canReachGoogle}")
+            android.util.Log.d("FirebaseAuthRepository", "  - reCAPTCHA: ${diagnostic.canReachRecaptcha}")
+            
             val result = firebaseAuth.signInWithEmailAndPassword(email, password).await()
             android.util.Log.d("FirebaseAuthRepository", "Login bem-sucedido: ${result.user?.uid}")
             Result.success(result.user ?: throw Exception("User is null"))
@@ -81,13 +111,27 @@ class FirebaseAuthRepository @Inject constructor(
                     }
                 }
                 is java.net.UnknownHostException -> {
-                    android.util.Log.e("FirebaseAuthRepository", "Host desconhecido - problema de DNS ou conexão")
+                    android.util.Log.e("FirebaseAuthRepository", "❌ Host desconhecido - problema de DNS ou conexão")
+                    android.util.Log.e("FirebaseAuthRepository", "SOLUÇÃO:")
+                    android.util.Log.e("FirebaseAuthRepository", "   1. Verifique sua conexão com a internet")
+                    android.util.Log.e("FirebaseAuthRepository", "   2. Verifique as configurações de DNS do dispositivo")
+                    android.util.Log.e("FirebaseAuthRepository", "   3. Verifique se há firewall ou proxy bloqueando")
+                    android.util.Log.e("FirebaseAuthRepository", "   4. Tente reiniciar o dispositivo")
                 }
                 is java.net.ConnectException -> {
-                    android.util.Log.e("FirebaseAuthRepository", "Erro de conexão - não foi possível conectar ao servidor")
+                    android.util.Log.e("FirebaseAuthRepository", "❌ Erro de conexão - não foi possível conectar ao servidor")
+                    android.util.Log.e("FirebaseAuthRepository", "SOLUÇÃO:")
+                    android.util.Log.e("FirebaseAuthRepository", "   1. Verifique sua conexão com a internet")
+                    android.util.Log.e("FirebaseAuthRepository", "   2. Verifique se há firewall bloqueando")
+                    android.util.Log.e("FirebaseAuthRepository", "   3. Verifique se o dispositivo está em uma rede corporativa/VPN")
+                    android.util.Log.e("FirebaseAuthRepository", "   4. Consulte DIAGNOSTICO_CONECTIVIDADE.md para mais informações")
                 }
                 is java.net.SocketTimeoutException -> {
-                    android.util.Log.e("FirebaseAuthRepository", "Timeout de conexão")
+                    android.util.Log.e("FirebaseAuthRepository", "❌ Timeout de conexão")
+                    android.util.Log.e("FirebaseAuthRepository", "SOLUÇÃO:")
+                    android.util.Log.e("FirebaseAuthRepository", "   1. Verifique sua conexão com a internet")
+                    android.util.Log.e("FirebaseAuthRepository", "   2. Verifique se há firewall bloqueando")
+                    android.util.Log.e("FirebaseAuthRepository", "   3. Tente novamente em alguns instantes")
                 }
             }
             

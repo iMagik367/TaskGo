@@ -139,3 +139,4 @@ FirebaseAuthRepository: ⚠️ ERRO RELACIONADO AO APP CHECK OU API KEY BLOQUEAD
 
 **Última atualização:** 2025-11-07
 
+

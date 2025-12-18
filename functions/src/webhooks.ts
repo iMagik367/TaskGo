@@ -76,10 +76,19 @@ async function handlePaymentIntentSucceeded(
     return;
   }
 
-  // Find payment document
-  const paymentsSnapshot = await db.collection(COLLECTIONS.PAYMENTS)
+  // Try to find payment in product_payments first (for product orders)
+  let paymentsSnapshot = await db.collection('product_payments')
     .where('stripePaymentIntentId', '==', paymentIntent.id)
     .get();
+
+  const isProductPayment = !paymentsSnapshot.empty;
+
+  // If not found, try services payments collection
+  if (paymentsSnapshot.empty) {
+    paymentsSnapshot = await db.collection(COLLECTIONS.PAYMENTS)
+      .where('stripePaymentIntentId', '==', paymentIntent.id)
+      .get();
+  }
 
   if (paymentsSnapshot.empty) {
     functions.logger.error(`No payment document found for ${paymentIntent.id}`);
@@ -89,43 +98,83 @@ async function handlePaymentIntentSucceeded(
   const paymentDoc = paymentsSnapshot.docs[0];
   const payment = paymentDoc.data();
 
+  // Get charge ID from payment intent
+  let chargeId: string | null = null;
+  try {
+    const charges = await stripe.charges.list({
+      payment_intent: paymentIntent.id,
+      limit: 1,
+    });
+    if (charges.data.length > 0) {
+      chargeId = charges.data[0].id;
+    }
+  } catch (error) {
+    functions.logger.warn('Could not retrieve charge ID:', error);
+  }
+
   // Update payment status
-  await paymentDoc.ref.update({
+  const updateData: Record<string, unknown> = {
     status: PAYMENT_STATUS.SUCCEEDED,
     paidAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  };
 
-  // Update order status
-  const orderRef = db.collection(COLLECTIONS.ORDERS).doc(orderId);
-  await orderRef.update({
-    status: 'paid',
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  if (chargeId) {
+    updateData.stripeChargeId = chargeId;
+  }
 
-  // Create notification for provider
-  await db.collection(COLLECTIONS.NOTIFICATIONS).add({
-    userId: payment.providerId,
-    orderId: orderId,
-    type: 'payment_received',
-    title: 'Payment Received',
-    message: 'Payment for your order has been confirmed',
-    read: false,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  await paymentDoc.ref.update(updateData);
+
+  // Update order status based on payment type
+  if (isProductPayment) {
+    // Product payment - update purchase_orders
+    await db.collection('purchase_orders').doc(orderId).update({
+      status: 'PAID',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Create notification for seller
+    await db.collection(COLLECTIONS.NOTIFICATIONS).add({
+      userId: payment.sellerId,
+      orderId: orderId,
+      type: 'payment_received',
+      title: 'Pagamento Confirmado - Aguardando Envio',
+      message: `Pagamento confirmado para o pedido #${orderId.substring(0, 8)}. ` +
+        'Confirme o envio para receber o pagamento.',
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } else {
+    // Service payment - update orders
+    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+      status: 'paid',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Create notification for provider
+    await db.collection(COLLECTIONS.NOTIFICATIONS).add({
+      userId: payment.providerId,
+      orderId: orderId,
+      type: 'payment_received',
+      title: 'Payment Received',
+      message: 'Payment for your order has been confirmed',
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
 
   // Create notification for client
   await db.collection(COLLECTIONS.NOTIFICATIONS).add({
     userId: payment.clientId,
     orderId: orderId,
-    type: 'payment_received',
-    title: 'Payment Confirmed',
-    message: 'Your payment has been processed successfully',
+    type: 'payment_confirmed',
+    title: 'Pagamento Confirmado',
+    message: 'Seu pagamento foi processado com sucesso!',
     read: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  functions.logger.info(`Payment succeeded for order ${orderId}`);
+  functions.logger.info(`Payment succeeded for order ${orderId} (${isProductPayment ? 'product' : 'service'})`);
 }
 
 /**
@@ -142,27 +191,49 @@ async function handlePaymentIntentFailed(
     return;
   }
 
-  // Find payment document
-  const paymentsSnapshot = await db.collection(COLLECTIONS.PAYMENTS)
+  // Try to find payment in product_payments first
+  let paymentsSnapshot = await db.collection('product_payments')
     .where('stripePaymentIntentId', '==', paymentIntent.id)
     .get();
 
+  // If not found, try services payments collection
+  if (paymentsSnapshot.empty) {
+    paymentsSnapshot = await db.collection(COLLECTIONS.PAYMENTS)
+      .where('stripePaymentIntentId', '==', paymentIntent.id)
+      .get();
+  }
+
   if (!paymentsSnapshot.empty) {
     const paymentDoc = paymentsSnapshot.docs[0];
+    const payment = paymentDoc.data();
+    
     await paymentDoc.ref.update({
       status: PAYMENT_STATUS.FAILED,
       failedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // Update order status
+    const isProductPayment = paymentDoc.ref.parent.id === 'product_payments';
+    if (isProductPayment) {
+      await db.collection('purchase_orders').doc(orderId).update({
+        status: 'PENDING_PAYMENT',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } else {
+      await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+        status: 'payment_pending',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
     // Notify client
-    const payment = paymentDoc.data();
     await db.collection(COLLECTIONS.NOTIFICATIONS).add({
       userId: payment.clientId,
       orderId: orderId,
       type: 'system_alert',
-      title: 'Payment Failed',
-      message: 'Your payment could not be processed. Please try again.',
+      title: 'Pagamento Falhou',
+      message: 'Seu pagamento não pôde ser processado. Por favor, tente novamente.',
       read: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });

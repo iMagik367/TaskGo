@@ -1,0 +1,90 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    
+    "users": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && auth.uid == $uid",
+        ".validate": "newData.hasChildren(['uid', 'email']) && newData.child('uid').val() == auth.uid"
+      }
+    },
+    
+    "services": {
+      "$serviceId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (data.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".validate": "newData.hasChild('providerId') && (newData.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+    
+    "orders": {
+      "$orderId": {
+        ".read": "auth != null && (data.child('clientId').val() == auth.uid || data.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (data.child('clientId').val() == auth.uid || data.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".validate": "newData.hasChild('clientId') && (newData.child('clientId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+    
+    "products": {
+      "$productId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (data.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".validate": "newData.hasChild('sellerId') && (newData.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+    
+    "purchase_orders": {
+      "$orderId": {
+        ".read": "auth != null && (data.child('clientId').val() == auth.uid || data.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (data.child('clientId').val() == auth.uid || data.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+    
+    "messages": {
+      "$conversationId": {
+        ".read": "auth != null && (data.child('participants').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (data.child('participants').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+    
+    "notifications": {
+      "$notificationId": {
+        ".read": "auth != null && data.child('userId').val() == auth.uid",
+        ".write": "auth != null && (data.child('userId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+    
+    "reviews": {
+      "$reviewId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (data.child('clientId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    },
+    
+    "presence": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    
+    "typing": {
+      "$conversationId": {
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid == $uid"
+        }
+      }
+    },
+    "identity_verifications": {
+      "$userId": {
+        ".read": "auth != null && (auth.uid == $userId || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && auth.uid == $userId",
+        ".validate": "newData.hasChild('userId') && newData.child('userId').val() == auth.uid"
+      }
+    }
+  }
+}
+

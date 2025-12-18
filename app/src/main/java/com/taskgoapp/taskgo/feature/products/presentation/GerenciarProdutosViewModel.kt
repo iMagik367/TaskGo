@@ -9,7 +9,9 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.onEach
 
 data class GerenciarProdutosState(
     val products: List<Product> = emptyList(),
@@ -26,7 +28,47 @@ class GerenciarProdutosViewModel @Inject constructor(
     val uiState: StateFlow<GerenciarProdutosState> = _uiState.asStateFlow()
 
     init {
-        loadProducts()
+        observeProducts()
+    }
+
+    private fun observeProducts() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            
+            // Usar getMyProducts que já retorna produtos do usuário
+            // e observar mudanças em tempo real
+            try {
+                // Carregar produtos imediatamente do cache
+                val initialProducts = productsRepository.getMyProducts()
+                _uiState.value = _uiState.value.copy(
+                    products = initialProducts,
+                    isLoading = false,
+                    error = null
+                )
+                
+                // Observar mudanças em tempo real
+                productsRepository.observeProducts()
+                    .onEach { allProducts ->
+                        // Filtrar apenas produtos do usuário atual usando getMyProducts
+                        val myProducts = productsRepository.getMyProducts()
+                        _uiState.value = _uiState.value.copy(
+                            products = myProducts,
+                            isLoading = false,
+                            error = null
+                        )
+                    }
+                    .catch { e ->
+                        android.util.Log.e("GerenciarProdutosVM", "Erro ao observar produtos: ${e.message}", e)
+                        // Não atualizar erro aqui para não sobrescrever produtos já carregados
+                    }
+                    .collect { }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Erro ao carregar produtos: ${e.message}"
+                )
+            }
+        }
     }
 
     fun loadProducts() {

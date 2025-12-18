@@ -25,7 +25,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
+import kotlinx.coroutines.delay
 import com.taskgoapp.taskgo.core.design.TGIcons
+import com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
@@ -69,30 +72,46 @@ fun LoginStoreScreen(
             
             // Título
             Text(
-                text = "Loja",
+                text = "Prestador",
                 style = FigmaTitleLarge,
                 color = TaskGoTextBlack
             )
             
             Spacer(modifier = Modifier.height(40.dp))
             
-            // Campo E-mail
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("E-mail", style = FigmaProductDescription, color = TaskGoTextGray) },
+            // Campo CPF/CNPJ (em vez de email)
+            var documentError by remember { mutableStateOf<String?>(null) }
+            val documentValidator = remember { com.taskgoapp.taskgo.core.validation.DocumentValidator() }
+            
+            EnhancedOutlinedTextField(
+                value = email, // Reutilizando variável email para CPF/CNPJ
+                onValueChange = { newValue ->
+                    // Remove caracteres não numéricos
+                    val cleanValue = newValue.replace(Regex("[^0-9]"), "")
+                    if (cleanValue.length <= 14) {
+                        email = cleanValue
+                        // Formata e valida quando tiver tamanho completo
+                        if (cleanValue.length == 11) {
+                            email = documentValidator.formatCpf(cleanValue)
+                            val validation = documentValidator.validateCpf(email)
+                            documentError = if (validation is com.taskgoapp.taskgo.core.validation.ValidationResult.Invalid) validation.message else null
+                        } else if (cleanValue.length == 14) {
+                            email = documentValidator.formatCnpj(cleanValue)
+                            val validation = documentValidator.validateCnpj(email)
+                            documentError = if (validation is com.taskgoapp.taskgo.core.validation.ValidationResult.Invalid) validation.message else null
+                        } else {
+                            documentError = null
+                        }
+                    }
+                },
+                label = { Text("CPF ou CNPJ", style = FigmaProductDescription, color = TaskGoTextGray) },
+                placeholder = { Text("000.000.000-00 ou 00.000.000/0000-00", color = TaskGoTextGray) },
+                isError = documentError != null,
+                supportingText = documentError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -115,6 +134,9 @@ fun LoginStoreScreen(
                 ),
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    lineHeight = androidx.compose.ui.unit.TextUnit(24f, androidx.compose.ui.unit.TextUnitType.Sp)
+                ),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(
@@ -146,7 +168,14 @@ fun LoginStoreScreen(
             
             Button(
                 onClick = { 
-                    loginViewModel.login(email, password)
+                    // Validar CPF/CNPJ antes de fazer login
+                    val cleanDocument = email.replace(Regex("[^0-9]"), "")
+                    if (cleanDocument.length == 11 || cleanDocument.length == 14) {
+                        loginViewModel.loginWithDocument(email, password)
+                    } else {
+                        // Se não for CPF/CNPJ válido, tentar como email (fallback)
+                        loginViewModel.login(email, password)
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -185,8 +214,10 @@ fun LoginStoreScreen(
             }
             
             // Navegação após sucesso
-            if (loginUiState.value.isSuccess) {
-                LaunchedEffect(Unit) {
+            LaunchedEffect(loginUiState.value.isSuccess) {
+                if (loginUiState.value.isSuccess) {
+                    Log.d("LoginStoreScreen", "Login bem-sucedido, navegando para home...")
+                    kotlinx.coroutines.delay(300)
                     onNavigateToHome()
                 }
             }
@@ -240,9 +271,9 @@ fun LoginStoreScreen(
             
             Spacer(modifier = Modifier.height(32.dp))
             
-            // Link para Login de Pessoa Física
+            // Link para Login de Cliente
             Text(
-                text = "Sou pessoa física",
+                text = "Sou cliente",
                 color = TaskGoGreen,
                 fontSize = 14.sp,
                 modifier = Modifier.clickable { onNavigateToPersonLogin() }

@@ -17,7 +17,9 @@ import com.taskgoapp.taskgo.core.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onNavigateToPrivacyPolicy: () -> Unit = {},
+    onNavigateToTermsOfService: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -413,7 +415,7 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     OutlinedButton(
-                        onClick = { /* TODO: Implementar política de privacidade */ },
+                        onClick = onNavigateToPrivacyPolicy,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
@@ -428,7 +430,7 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     OutlinedButton(
-                        onClick = { /* TODO: Implementar termos de uso */ },
+                        onClick = onNavigateToTermsOfService,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
@@ -443,7 +445,7 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     OutlinedButton(
-                        onClick = { /* TODO: Implementar LGPD */ },
+                        onClick = onNavigateToPrivacyPolicy,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(

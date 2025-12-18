@@ -14,7 +14,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.theme.*
@@ -27,40 +32,22 @@ import com.taskgoapp.taskgo.core.data.models.CartItem
 @Composable
 fun CartScreen(
     onNavigateToCheckout: () -> Unit,
-    onNavigateToProductDetail: (Long) -> Unit,
+    onNavigateToProductDetail: (String) -> Unit,
     onNavigateBack: () -> Unit,
     onNavigateToProducts: () -> Unit = {},
-    variant: String? = null
+    variant: String? = null,
+    viewModel: CartViewModel = hiltViewModel()
 ) {
-    val isLoading = variant == "loading"
-    val isError = variant == "error"
+    val uiState by viewModel.uiState.collectAsState()
+    val isLoading = variant == "loading" || uiState.isLoading
+    val isError = variant == "error" || uiState.error != null
     val isSelectingAddress = variant == "selection_address"
-    fun getCartItems(): Flow<List<com.taskgoapp.taskgo.core.data.models.CartItem>> = flow {
-        delay(200)
-        if (variant == "filled" || isSelectingAddress) {
-            emit(
-                listOf(
-                    com.taskgoapp.taskgo.core.data.models.CartItem(
-                        id = 1L,
-                        product = com.taskgoapp.taskgo.core.data.models.Product(
-                            id = 1L,
-                            name = "Guarda Roupa",
-                            description = "Guarda-roupa 2 portas",
-                            price = 750.0,
-                            category = "Móveis"
-                        ),
-                        quantity = 1
-                    )
-                )
-            )
-        } else emit(emptyList())
-    }
-    val cartItems by getCartItems().collectAsStateWithLifecycle(initialValue = emptyList())
+    val cartItems = uiState.cartItems
+    val total = uiState.total
+    val deliveryFee = uiState.deliveryFee
+    val finalTotal = uiState.finalTotal
     
-    var showRemoveDialog by remember { mutableStateOf<CartItem?>(null) }
-    val total = cartItems.sumOf { it.quantity * it.product.price }
-    val deliveryFee = if (total > 0) 15.0 else 0.0
-    val finalTotal = total + deliveryFee
+    var showRemoveDialog by remember { mutableStateOf<com.taskgoapp.taskgo.core.data.models.CartItem?>(null) }
 
     // Loading state
     if (isLoading) {
@@ -157,13 +144,14 @@ fun CartScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 items(cartItems.size) { index ->
-                    val cartItem = cartItems[index]
+                    val cartItemWithId = cartItems[index]
+                    val cartItem = cartItemWithId.uiCartItem
                     CartItemCard(
                         cartItem = cartItem,
-                        onQuantityIncrease = { /* TODO: Implement quantity increase */ },
-                        onQuantityDecrease = { /* TODO: Implement quantity decrease */ },
+                        onQuantityIncrease = { viewModel.increaseQuantity(cartItemWithId.productId) },
+                        onQuantityDecrease = { viewModel.decreaseQuantity(cartItemWithId.productId) },
                         onRemove = { showRemoveDialog = cartItem },
-                        onClick = { onNavigateToProductDetail(cartItem.product.id) }
+                        onClick = { onNavigateToProductDetail(cartItemWithId.productId) }
                     )
                 }
                 item {
@@ -261,7 +249,10 @@ fun CartScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // TODO: Implement remove from cart
+                        // Encontrar o productId do item removido
+                        uiState.cartItems.find { it.uiCartItem == item }?.let { cartItemWithId ->
+                            viewModel.removeItem(cartItemWithId.productId)
+                        }
                         showRemoveDialog = null
                     }
                 ) {
@@ -298,18 +289,31 @@ private fun CartItemCard(
             verticalAlignment = Alignment.Top
         ) {
             // Product Image
+            val imageUri = cartItem.product.imageUrl
             Box(
                 modifier = Modifier
                     .size(80.dp)
                     .background(TaskGoSurfaceGray),
                 contentAlignment = Alignment.Center
             ) {
+                if (imageUri != null && imageUri.isNotBlank()) {
+                    coil.compose.AsyncImage(
+                        model = coil.request.ImageRequest.Builder(LocalContext.current)
+                            .data(imageUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = cartItem.product.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
                 Icon(
                     imageVector = Icons.Default.Image,
                     contentDescription = null,
                     modifier = Modifier.size(32.dp),
                     tint = TaskGoTextGray
                 )
+                }
             }
             
             Spacer(modifier = Modifier.width(12.dp))

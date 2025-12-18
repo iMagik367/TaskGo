@@ -6,9 +6,9 @@ import Filter from 'bad-words';
 import {assertAuthenticated, handleError} from './utils/errors';
 
 // Initialize OpenAI
-const openai = new OpenAI({
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-});
+}) : null;
 
 // Initialize content filter
 const filter = new Filter();
@@ -69,6 +69,14 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
         content: message,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
+    }
+
+    // Check if OpenAI is configured
+    if (!openai) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'OpenAI API key is not configured'
+      );
     }
 
     // Call OpenAI API

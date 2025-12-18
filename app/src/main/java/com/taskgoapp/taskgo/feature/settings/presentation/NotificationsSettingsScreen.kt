@@ -1,5 +1,7 @@
 ﻿package com.taskgoapp.taskgo.feature.settings.presentation
 
+import android.Manifest
+import android.os.Build
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,29 +13,124 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.PermissionStatus
+import com.google.accompanist.permissions.rememberPermissionState
 import com.taskgoapp.taskgo.core.design.*
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.theme.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun NotificationsSettingsScreen(
     onNavigateBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val settings by viewModel.state.collectAsState()
-    var pushNotifications by remember { mutableStateOf(settings.pushEnabled) }
-    var soundEnabled by remember { mutableStateOf(settings.soundEnabled) }
-    var showOnLockScreen by remember { mutableStateOf(settings.lockscreenEnabled) }
-    var promotionalNotifications by remember { mutableStateOf(settings.promosEnabled) }
+    val settings by viewModel.state.collectAsStateWithLifecycle()
+    // Estados locais - inicializar apenas uma vez
+    var pushNotifications by remember { mutableStateOf(false) }
+    var soundEnabled by remember { mutableStateOf(true) }
+    var showOnLockScreen by remember { mutableStateOf(true) }
+    var promotionalNotifications by remember { mutableStateOf(true) }
     var emailNotifications by remember { mutableStateOf(false) }
     var smsNotifications by remember { mutableStateOf(false) }
-    var showSaveSuccess by remember { mutableStateOf(false) }
+    
+    // Inicializar apenas uma vez quando dados estiverem disponíveis
+    var hasInitialized by remember { mutableStateOf(false) }
+    LaunchedEffect(settings.pushEnabled, settings.soundEnabled) {
+        if (!hasInitialized) {
+            pushNotifications = settings.pushEnabled
+            soundEnabled = settings.soundEnabled
+            showOnLockScreen = settings.lockscreenEnabled
+            promotionalNotifications = settings.promosEnabled
+            emailNotifications = settings.emailNotificationsEnabled
+            smsNotifications = settings.smsNotificationsEnabled
+            hasInitialized = true
+        }
+    }
+    
+    val coroutineScope = rememberCoroutineScope()
+    var saveJob by remember { mutableStateOf<Job?>(null) }
+
+    fun queueSave() {
+        if (!hasInitialized) return
+        saveJob?.cancel()
+        saveJob = coroutineScope.launch {
+            delay(800)
+            viewModel.saveNotifications(
+                promos = promotionalNotifications,
+                sound = soundEnabled,
+                push = pushNotifications,
+                lockscreen = showOnLockScreen,
+                email = emailNotifications,
+                sms = smsNotifications
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            saveJob?.cancel()
+            viewModel.saveNotifications(
+                promos = promotionalNotifications,
+                sound = soundEnabled,
+                push = pushNotifications,
+                lockscreen = showOnLockScreen,
+                email = emailNotifications,
+                sms = smsNotifications
+            )
+        }
+    }
+    
+    // Permissão de notificações
+    val notificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        null
+    }
+    
+    var hasRequestedNotificationPermission by remember { mutableStateOf(false) }
+    
+    // Solicitar permissão quando a tela abrir se ainda não tiver permissão
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && 
+            notificationPermission != null && 
+            notificationPermission.status !is PermissionStatus.Granted && 
+            !hasRequestedNotificationPermission) {
+            hasRequestedNotificationPermission = true
+            kotlinx.coroutines.delay(500) // Pequeno delay para melhor UX
+            notificationPermission.launchPermissionRequest()
+        }
+    }
+    
+    // Solicitar permissão quando pushNotifications for habilitado
+    LaunchedEffect(pushNotifications) {
+        if (pushNotifications && 
+            notificationPermission != null && 
+            notificationPermission.status !is PermissionStatus.Granted && 
+            !hasRequestedNotificationPermission) {
+            hasRequestedNotificationPermission = true
+            notificationPermission.launchPermissionRequest()
+        } else if (!pushNotifications) {
+            hasRequestedNotificationPermission = false
+        }
+    }
+    
+    LaunchedEffect(pushNotifications, soundEnabled, showOnLockScreen, promotionalNotifications, emailNotifications, smsNotifications) {
+        if (hasInitialized) {
+            queueSave()
+        }
+    }
 
     Scaffold(
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.settings_notifications),
+                subtitle = "Escolha como deseja ser notificado",
                 onBackClick = onNavigateBack,
                 backgroundColor = TaskGoGreen,
                 titleColor = TaskGoBackgroundWhite,
@@ -271,38 +368,7 @@ fun NotificationsSettingsScreen(
                 }
             }
 
-            // Save Button
-            PrimaryButton(
-                text = stringResource(R.string.notifications_save_changes),
-                onClick = {
-                    viewModel.saveNotifications(
-                        promos = promotionalNotifications,
-                        sound = soundEnabled,
-                        push = pushNotifications,
-                        lockscreen = showOnLockScreen
-                    )
-                    showSaveSuccess = true
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            )
-
             Spacer(modifier = Modifier.height(32.dp))
-        }
-    }
-
-    // Success Snackbar
-    if (showSaveSuccess) {
-        Snackbar(
-            modifier = Modifier.padding(16.dp),
-            action = {
-                TextButton(onClick = { showSaveSuccess = false }) {
-                    Text("OK")
-                }
-            }
-        ) {
-            Text(stringResource(R.string.notifications_settings_saved))
         }
     }
 }

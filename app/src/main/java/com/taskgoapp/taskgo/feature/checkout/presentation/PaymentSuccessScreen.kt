@@ -27,6 +27,7 @@ import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
 fun PaymentSuccessScreen(
     totalAmount: Double,
     orderId: String,
+    trackingCode: String?,
     onContinue: () -> Unit
 ) {
     Column(
@@ -54,6 +55,14 @@ fun PaymentSuccessScreen(
             style = FigmaStatusText,
             color = TaskGoTextGray
         )
+        if (!trackingCode.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Rastreio: $trackingCode",
+                style = FigmaStatusText,
+                color = TaskGoTextGray
+            )
+        }
         Spacer(modifier = Modifier.height(32.dp))
         PrimaryButton(
             text = "OK",

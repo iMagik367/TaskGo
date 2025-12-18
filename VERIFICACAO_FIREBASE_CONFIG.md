@@ -4,7 +4,7 @@
 
 - **Package Name:** `com.taskgoapp.taskgo`
 - **App Name no Firebase:** `TaskGo`
-- **Token de Debug App Check:** `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+- **Token de Debug App Check:** `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 - **SHA-1:** `87:d7:77:5d:c6:21:9c:3a:6d:f7:b6:2e:02:49:05:1b:05:8a:f2:18`
 - **SHA-256:** `465aTqmr9mjfSWYUMssSppD5y6ecDCBY3cQE5YngJXZhKvViWVK7446RPyBZRCE6pQKuT1bdwjRx5LAsfknBxL8YTrr97Hf`
 - **Project ID:** `task-go-ee85f`
@@ -71,11 +71,11 @@
 2. Clique em **Manage debug tokens**
 3. Verifique se o token está na lista:
    ```
-   A1512298-3EBF-4FF9-B1F3-D777060E3BC3
+   4D4F1322-E272-454F-9396-ED80E3DBDBD7
    ```
 4. Se não estiver, adicione:
    - Clique em **Add debug token**
-   - Cole: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+   - Cole: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
    - Clique em **Add**
 
 #### Passo 3: Verificar Play Integrity (para Release)
@@ -243,7 +243,7 @@ service cloud.firestore {
 ### Problema 3: Token de Debug Não Funciona
 **Solução:**
 - Verifique se o token está adicionado no Firebase Console
-- Verifique se o token está correto: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+- Verifique se o token está correto: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 - Aguarde alguns minutos após adicionar o token
 - Reinicie o app completamente
 
@@ -270,7 +270,7 @@ Antes de testar o app, verifique:
 - [ ] SHA-1 adicionado: `87:d7:77:5d:c6:21:9c:3a:6d:f7:b6:2e:02:49:05:1b:05:8a:f2:18`
 - [ ] SHA-256 adicionado: `465aTqmr9mjfSWYUMssSppD5y6ecDCBY3cQE5YngJXZhKvViWVK7446RPyBZRCE6pQKuT1bdwjRx5LAsfknBxL8YTrr97Hf`
 - [ ] Novo `google-services.json` baixado após adicionar SHA-1/SHA-256
-- [ ] Token de debug adicionado: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+- [ ] Token de debug adicionado: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 - [ ] API Key verificada e sem restrições bloqueantes
 - [ ] Todas as APIs do Firebase habilitadas no Google Cloud Console
 - [ ] Firebase Authentication habilitado com Email/Password

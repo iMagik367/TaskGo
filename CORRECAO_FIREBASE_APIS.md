@@ -27,9 +27,9 @@ Firebase Installations API has not been used in project 605187481719 before or i
 3. Aguarde alguns minutos para a propagação
 
 ### 3. Token de Debug do App Check
-**Token identificado nos logs:**
+**Token de debug recomendado:**
 ```
-d863e2c2-ce5b-4109-b7d5-e1db6a1dceae
+4D4F1322-E272-454F-9396-ED80E3DBDBD7
 ```
 
 **Solução:**
@@ -37,7 +37,7 @@ d863e2c2-ce5b-4109-b7d5-e1db6a1dceae
 2. Selecione o projeto **task-go-ee85f**
 3. Vá em **App Check** no menu lateral
 4. Clique em **"Manage debug tokens"**
-5. Adicione o token: `d863e2c2-ce5b-4109-b7d5-e1db6a1dceae`
+5. Adicione o token: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 6. Clique em **"Add"**
 
 ## Passos Rápidos para Resolver
@@ -59,7 +59,7 @@ Clique em **"ENABLE"** em ambas as páginas.
 1. Acesse: https://console.firebase.google.com/project/task-go-ee85f/appcheck
 2. Clique em **"Apps"** e selecione seu app Android
 3. Clique em **"Manage debug tokens"**
-4. Adicione o token: `d863e2c2-ce5b-4109-b7d5-e1db6a1dceae`
+4. Adicione o token: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 5. Salve
 
 ### Passo 3: Aguardar Propagação

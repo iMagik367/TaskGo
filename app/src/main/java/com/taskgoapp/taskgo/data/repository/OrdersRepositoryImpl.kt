@@ -70,7 +70,7 @@ class OrdersRepositoryImpl @Inject constructor(
         // Create order items
         val orderItems = cart.map { cartItem ->
             com.taskgoapp.taskgo.core.model.OrderItem(
-                productId = cartItem.productId.toLongOrNull() ?: 0L,
+                productId = cartItem.productId,
                 price = 0.0, // Will be loaded from product
                 quantity = cartItem.qty
             ).toEntity(orderId)

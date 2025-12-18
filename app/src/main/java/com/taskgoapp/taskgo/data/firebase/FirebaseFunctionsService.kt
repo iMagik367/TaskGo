@@ -27,18 +27,24 @@ class FirebaseFunctionsService @Inject constructor(
 
     // Order Functions
     suspend fun createOrder(
-        serviceId: String,
+        serviceId: String? = null,
+        category: String? = null,
         details: String,
         location: String,
-        budget: Double,
+        budget: Double? = null,
         dueDate: String? = null
     ): Result<Map<String, Any>> {
-        val data = mapOf(
-            "serviceId" to serviceId,
+        require(serviceId != null || category != null) { "Either serviceId or category must be provided" }
+        
+        val data = mutableMapOf<String, Any>(
             "details" to details,
-            "location" to location,
-            "budget" to budget
-        ).plus(dueDate?.let { mapOf("dueDate" to it) } ?: emptyMap())
+            "location" to location
+        )
+        
+        serviceId?.let { data["serviceId"] = it }
+        category?.let { data["category"] = it }
+        budget?.let { data["budget"] = it }
+        dueDate?.let { data["dueDate"] = it }
         
         return executeFunction("createOrder", data)
     }
@@ -153,6 +159,107 @@ class FirebaseFunctionsService @Inject constructor(
         return executeFunction("markAllNotificationsRead", null)
     }
 
+    // User Preferences Functions
+    suspend fun updateNotificationSettings(settings: Map<String, Boolean>): Result<Map<String, Any>> {
+        return executeFunction("updateNotificationSettings", settings.mapValues { it.value as Any })
+    }
+    
+    suspend fun updatePrivacySettings(settings: Map<String, Boolean>): Result<Map<String, Any>> {
+        return executeFunction("updatePrivacySettings", settings.mapValues { it.value as Any })
+    }
+    
+    suspend fun updateLanguagePreference(languageCode: String): Result<Map<String, Any>> {
+        val data = mapOf("language" to languageCode)
+        return executeFunction("updateLanguagePreference", data)
+    }
+    
+    suspend fun updateUserPreferences(categories: List<String>): Result<Map<String, Any>> {
+        val data = mapOf("categories" to categories)
+        return executeFunction("updateUserPreferences", data)
+    }
+
+    suspend fun getUserPreferences(): Result<Map<String, Any>> {
+        return executeFunction("getUserPreferences", null)
+    }
+    
+    suspend fun getUserSettings(): Result<Map<String, Any>> {
+        return executeFunction("getUserSettings", null)
+    }
+    
+    // Account Deletion Function
+    suspend fun deleteUserAccount(): Result<Map<String, Any>> {
+        return executeFunction("deleteUserAccount", null)
+    }
+    
+    // Product Payment Functions
+    suspend fun createProductPaymentIntent(orderId: String): Result<Map<String, Any>> {
+        val data = mapOf("orderId" to orderId)
+        return executeFunction("createProductPaymentIntent", data)
+    }
+    
+    suspend fun confirmProductPayment(paymentIntentId: String): Result<Map<String, Any>> {
+        val data = mapOf("paymentIntentId" to paymentIntentId)
+        return executeFunction("confirmProductPayment", data)
+    }
+    
+    suspend fun transferPaymentToSeller(orderId: String): Result<Map<String, Any>> {
+        val data = mapOf("orderId" to orderId)
+        return executeFunction("transferPaymentToSeller", data)
+    }
+    
+    suspend fun refundProductPayment(orderId: String, reason: String? = null): Result<Map<String, Any>> {
+        val data = mapOf("orderId" to orderId).plus(reason?.let { mapOf("reason" to it) } ?: emptyMap())
+        return executeFunction("refundProductPayment", data)
+    }
+
+    // PIX Payment Functions
+    suspend fun createPixPayment(orderId: String): Result<Map<String, Any>> {
+        val data = mapOf("orderId" to orderId)
+        return executeFunction("createPixPayment", data)
+    }
+    
+    suspend fun verifyPixPayment(paymentId: String): Result<Map<String, Any>> {
+        val data = mapOf("paymentId" to paymentId)
+        return executeFunction("verifyPixPayment", data)
+    }
+    
+    suspend fun confirmPixPayment(paymentId: String): Result<Map<String, Any>> {
+        val data = mapOf("paymentId" to paymentId)
+        return executeFunction("confirmPixPayment", data)
+    }
+    
+    // Stripe Configuration
+    suspend fun getStripePublishableKey(): Result<Map<String, Any>> {
+        return executeFunction("getStripePublishableKey", null)
+    }
+    
+    // Shipment Tracking Functions
+    suspend fun updateShipmentTracking(
+        shipmentId: String,
+        status: String,
+        trackingCode: String? = null,
+        carrier: String? = null,
+        customTrackingUrl: String? = null,
+        deliveryConfirmationPhotoUrl: String? = null,
+        isLocalDelivery: Boolean = false
+    ): Result<Map<String, Any>> {
+        val data = hashMapOf<String, Any>(
+            "shipmentId" to shipmentId,
+            "status" to status
+        )
+        trackingCode?.let { data["trackingCode"] = it }
+        carrier?.let { data["carrier"] = it }
+        customTrackingUrl?.let { data["customTrackingUrl"] = it }
+        deliveryConfirmationPhotoUrl?.let { data["deliveryConfirmationPhotoUrl"] = it }
+        data["isLocalDelivery"] = isLocalDelivery
+        return executeFunction("updateShipmentTracking", data)
+    }
+    
+    suspend fun trackCorreiosOrder(shipmentId: String): Result<Map<String, Any>> {
+        val data = mapOf("shipmentId" to shipmentId)
+        return executeFunction("trackCorreiosOrder", data)
+    }
+    
     // Helper function
     private suspend fun executeFunction(
         functionName: String,

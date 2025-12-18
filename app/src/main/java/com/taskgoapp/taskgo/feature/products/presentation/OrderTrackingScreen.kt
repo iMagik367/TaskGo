@@ -6,6 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,48 +21,89 @@ import com.taskgoapp.taskgo.core.design.TGIcons
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.delay
-import com.taskgoapp.taskgo.core.data.models.Order
-import com.taskgoapp.taskgo.core.data.models.TrackingEvent
-import com.taskgoapp.taskgo.core.data.models.OrderStatus
+import com.taskgoapp.taskgo.core.model.PurchaseOrder
+import com.taskgoapp.taskgo.core.model.TrackingEvent
+import com.taskgoapp.taskgo.core.model.OrderStatus
+import androidx.compose.ui.graphics.Color
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.foundation.shape.CircleShape
-
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.taskgoapp.taskgo.core.theme.*
+import com.taskgoapp.taskgo.feature.products.presentation.OrderTrackingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrderTrackingScreen(
-    orderId: Long,
-    onNavigateBack: () -> Unit
+    orderId: String,
+    onNavigateBack: () -> Unit,
+    viewModel: OrderTrackingViewModel = hiltViewModel()
 ) {
-    fun getOrderById(orderId: Long): Flow<Order?> = flow {
-        delay(300)
-        emit(null)
-    }
+    val uiState by viewModel.uiState.collectAsState()
     
-    fun getTrackingEvents(orderId: Long): Flow<List<TrackingEvent>> = flow {
-        delay(200)
-        emit(emptyList())
+    LaunchedEffect(orderId) {
+        viewModel.loadOrderTracking(orderId)
     }
-    val order = remember { null }
-    val trackingEvents = remember { emptyList<TrackingEvent>() }
     
     Scaffold(
         topBar = {
             AppTopBar(
-                title = stringResource(R.string.order_tracking_title),
-                onBackClick = onNavigateBack
+                title = "Rastreamento de Pedido",
+                subtitle = "Acompanhe seu pedido em tempo real",
+                onBackClick = onNavigateBack,
+                backgroundColor = TaskGoGreen,
+                titleColor = Color.White,
+                subtitleColor = Color.White,
+                backIconColor = Color.White
             )
         }
     ) { paddingValues ->
-        if (order != null) {
-            val currentOrder = order
-            Column(
+        if (uiState.isLoading) {
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
-                    .verticalScroll(rememberScrollState())
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
             ) {
+                CircularProgressIndicator(color = TaskGoGreen)
+            }
+        } else {
+            val error = uiState.error
+            val currentOrder = uiState.order
+            
+            if (error != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "Erro ao carregar rastreamento",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TaskGoError
+                        )
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TaskGoTextGray
+                        )
+                        Button(onClick = { viewModel.loadOrderTracking(orderId) }) {
+                            Text("Tentar Novamente")
+                        }
+                    }
+                }
+            } else if (currentOrder != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .verticalScroll(rememberScrollState())
+                ) {
                 // Order Header
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -70,16 +113,71 @@ fun OrderTrackingScreen(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "Pedido #$orderId",
+                            text = "Pedido #${currentOrder.orderNumber}",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Status: Aguardando confirmação",
+                            text = "Status: ${getStatusText(currentOrder.status)}",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            color = getStatusColor(currentOrder.status)
                         )
+                        if (uiState.trackingCode.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Código de rastreamento: ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TaskGoTextGray
+                                )
+                                Text(
+                                    text = uiState.trackingCode,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TaskGoGreen
+                                )
+                                if (uiState.carrier != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "• ${uiState.carrier}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TaskGoTextGray
+                                    )
+                                }
+                            }
+                            if (uiState.trackingUrl != null) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                TextButton(
+                                    onClick = { /* Abrir URL de rastreamento */ },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Abrir rastreamento completo")
+                                }
+                            }
+                        }
+                        if (uiState.isLocalDelivery && uiState.deliveryTime != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = null,
+                                    tint = TaskGoGreen,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Entrega local • Chegada: ${uiState.deliveryTime}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TaskGoTextGray
+                                )
+                            }
+                        }
                     }
                 }
                 
@@ -98,11 +196,18 @@ fun OrderTrackingScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Seu pedido está sendo processado",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        if (uiState.trackingEvents.isNotEmpty()) {
+                            uiState.trackingEvents.forEachIndexed { index, event ->
+                                TrackingEventItem(
+                                    event = event,
+                                    isLast = index == uiState.trackingEvents.size - 1
+                                )
+                            }
+                        } else {
+                            DefaultTimeline(currentStatus = currentOrder.status)
+                        }
                     }
                 }
                 
@@ -121,30 +226,86 @@ fun OrderTrackingScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Código de rastreamento: TG$orderId",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        currentOrder.items.forEach { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "${item.quantity}x Produto",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "R$ ${String.format("%.2f", item.price * item.quantity)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            if (item != currentOrder.items.lastOrNull()) {
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Total",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "R$ ${String.format("%.2f", currentOrder.total)}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TaskGoGreen
+                            )
+                        }
                     }
                 }
-            }
-        } else {
-            // Loading state
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+                }
+            } else {
+                // Empty state
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Pedido não encontrado",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TaskGoTextGray
+                    )
+                }
             }
         }
     }
 }
 
+private fun getStatusText(status: com.taskgoapp.taskgo.core.model.OrderStatus): String {
+    return when (status) {
+        com.taskgoapp.taskgo.core.model.OrderStatus.EM_ANDAMENTO -> "Em Andamento"
+        com.taskgoapp.taskgo.core.model.OrderStatus.CONCLUIDO -> "Concluído"
+        com.taskgoapp.taskgo.core.model.OrderStatus.CANCELADO -> "Cancelado"
+    }
+}
+
+private fun getStatusColor(status: com.taskgoapp.taskgo.core.model.OrderStatus): androidx.compose.ui.graphics.Color {
+    return when (status) {
+        com.taskgoapp.taskgo.core.model.OrderStatus.EM_ANDAMENTO -> TaskGoWarning
+        com.taskgoapp.taskgo.core.model.OrderStatus.CONCLUIDO -> TaskGoSuccessGreen
+        com.taskgoapp.taskgo.core.model.OrderStatus.CANCELADO -> TaskGoError
+    }
+}
+
 @Composable
-private fun OrderHeaderCard(order: Order) {
+private fun OrderHeaderCard(order: PurchaseOrder) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -169,14 +330,14 @@ private fun OrderHeaderCard(order: Order) {
             ) {
                 Column {
                     Text(
-                        text = order.items.firstOrNull()?.product?.name ?: stringResource(R.string.order_tracking_product_name),
+                        text = "Pedido #${order.orderNumber}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     
                     Text(
-                        text = stringResource(R.string.order_tracking_order_number, order.id),
+                        text = "ID: ${order.id}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
@@ -272,24 +433,17 @@ private fun TrackingEventItem(
             modifier = Modifier.weight(1f)
         ) {
             Text(
-                text = event.description,
+                text = event.label,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                color = if (event.done) TaskGoTextBlack else TaskGoTextGray
             )
             
             Text(
                 text = formatTrackingDate(event.date),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = TaskGoTextGray
             )
-            
-            if (event.location != null) {
-                Text(
-                    text = event.location,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }
@@ -298,27 +452,27 @@ private fun TrackingEventItem(
 private fun DefaultTimeline(currentStatus: OrderStatus) {
     val timelineSteps = listOf(
         TrackingStep(
-            title = stringResource(R.string.order_tracking_step_posted),
-            description = stringResource(R.string.order_tracking_step_posted_desc),
+            title = "Pedido Criado",
+            description = "Seu pedido foi criado e está aguardando pagamento",
             isCompleted = true,
             icon = TGIcons.Edit
         ),
         TrackingStep(
-            title = stringResource(R.string.order_tracking_step_processing),
-            description = stringResource(R.string.order_tracking_step_processing_desc),
-            isCompleted = currentStatus != OrderStatus.PENDING,
+            title = "Pagamento Confirmado",
+            description = "Pagamento confirmado, aguardando preparo",
+            isCompleted = currentStatus != OrderStatus.EM_ANDAMENTO,
             icon = TGIcons.Services
         ),
         TrackingStep(
-            title = stringResource(R.string.order_tracking_step_shipped),
-            description = stringResource(R.string.order_tracking_step_shipped_desc),
-            isCompleted = currentStatus in listOf(OrderStatus.SHIPPED, OrderStatus.IN_TRANSIT, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.CONFIRMED),
+            title = "Pedido Enviado",
+            description = "Seu pedido foi enviado e está a caminho",
+            isCompleted = currentStatus == OrderStatus.CONCLUIDO,
             icon = TGIcons.Cart
         ),
         TrackingStep(
-            title = stringResource(R.string.order_tracking_step_delivered),
-            description = stringResource(R.string.order_tracking_step_delivered_desc),
-            isCompleted = currentStatus == OrderStatus.DELIVERED,
+            title = "Pedido Entregue",
+            description = "Seu pedido foi entregue com sucesso",
+            isCompleted = currentStatus == OrderStatus.CONCLUIDO,
             icon = TGIcons.Check
         )
     )
@@ -411,7 +565,7 @@ private fun TrackingStepItem(
 }
 
 @Composable
-private fun OrderDetailsCard(order: Order) {
+private fun OrderDetailsCard(order: PurchaseOrder) {
     Card(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -434,19 +588,19 @@ private fun OrderDetailsCard(order: Order) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${item.quantity}x ${item.product.name}",
+                        text = "${item.quantity}x Produto",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     
                     Text(
-                        text = "R$ ${String.format("%.2f", item.product.price * item.quantity)}",
+                        text = "R$ ${String.format("%.2f", item.price * item.quantity)}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                 }
                 
                 if (item != order.items.last()) {
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
             
@@ -481,9 +635,9 @@ private data class TrackingStep(
     val icon: Int
 )
 
-private fun formatTrackingDate(date: java.time.LocalDateTime): String {
+private fun formatTrackingDate(timestamp: Long): String {
     val formatter = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale("pt", "BR"))
-    return formatter.format(Date.from(date.atZone(java.time.ZoneId.systemDefault()).toInstant()))
+    return formatter.format(Date(timestamp))
 }
 
 

@@ -45,7 +45,14 @@ object NetworkDiagnostic {
             val responseCode = connection.responseCode
             connection.disconnect()
             
-            val canReach = responseCode in 200..399
+            val canReach = when (responseCode) {
+                in 200..399 -> true
+                HttpURLConnection.HTTP_NOT_FOUND,
+                HttpURLConnection.HTTP_FORBIDDEN,
+                HttpURLConnection.HTTP_UNAUTHORIZED,
+                HttpURLConnection.HTTP_BAD_METHOD -> true
+                else -> false
+            }
             Log.d(TAG, "Firebase reachable: $canReach (response code: $responseCode)")
             canReach
         } catch (e: Exception) {

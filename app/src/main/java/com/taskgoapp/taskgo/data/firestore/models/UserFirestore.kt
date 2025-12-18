@@ -15,6 +15,7 @@ data class UserFirestore(
     
     // Identity Verification Fields
     val cpf: String? = null,
+    val rg: String? = null,
     val cnpj: String? = null,
     val birthDate: Date? = null,
     val documentFront: String? = null, // URL da foto do documento (frente)
@@ -42,9 +43,39 @@ data class UserFirestore(
     val documentsApprovedAt: Date? = null,
     val documentsApprovedBy: String? = null,
     
+    // Provider Preferences
+    val preferredCategories: List<String>? = null, // Categories the provider prefers to receive orders for
+    
+    // App Preferences
+    val notificationSettings: NotificationSettingsFirestore? = null,
+    val privacySettings: PrivacySettingsFirestore? = null,
+    val language: String? = "pt",
+    
+    // Rating (calculado a partir de avaliações)
+    val rating: Double? = null, // Média de avaliações recebidas
+    
     // Timestamps
     val createdAt: Date? = null,
     val updatedAt: Date? = null
+)
+
+data class NotificationSettingsFirestore(
+    val push: Boolean = true,
+    val promos: Boolean = true,
+    val sound: Boolean = true,
+    val lockscreen: Boolean = true,
+    val email: Boolean = false,
+    val sms: Boolean = false
+)
+
+data class PrivacySettingsFirestore(
+    val locationSharing: Boolean = true,
+    val profileVisible: Boolean = true,
+    val contactInfoSharing: Boolean = false,
+    val analytics: Boolean = true,
+    val personalizedAds: Boolean = false,
+    val dataCollection: Boolean = true,
+    val thirdPartySharing: Boolean = false
 )
 
 

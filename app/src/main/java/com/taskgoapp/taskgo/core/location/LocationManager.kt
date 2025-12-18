@@ -37,6 +37,8 @@ class LocationManager @Inject constructor(
      */
     @RequiresPermission(anyOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     suspend fun getCurrentLocation(): Location? = suspendCancellableCoroutine { continuation ->
+        var isResumed = false // Flag para garantir que só resuma uma vez
+        
         val locationRequest = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
             10000L // 10 segundos
@@ -46,9 +48,12 @@ class LocationManager @Inject constructor(
         
         val locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
-                fusedLocationClient.removeLocationUpdates(this)
-                val location = locationResult.lastLocation
-                continuation.resume(location)
+                if (!isResumed) {
+                    isResumed = true
+                    fusedLocationClient.removeLocationUpdates(this)
+                    val location = locationResult.lastLocation
+                    continuation.resume(location)
+                }
             }
         }
         
@@ -60,10 +65,16 @@ class LocationManager @Inject constructor(
             )
             
             continuation.invokeOnCancellation {
-                fusedLocationClient.removeLocationUpdates(locationCallback)
+                if (!isResumed) {
+                    isResumed = true
+                    fusedLocationClient.removeLocationUpdates(locationCallback)
+                }
             }
         } catch (e: SecurityException) {
-            continuation.resume(null)
+            if (!isResumed) {
+                isResumed = true
+                continuation.resume(null)
+            }
         }
     }
     

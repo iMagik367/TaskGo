@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.design.PrimaryButton
+import com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,17 +62,14 @@ fun ForgotPasswordScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            OutlinedTextField(
+            EnhancedOutlinedTextField(
                 value = email,
                 onValueChange = { email = it; error = null },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 placeholder = { Text(stringResource(R.string.auth_email)) },
                 isError = error != null,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                )
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email)
             )
 
             if (error != null) {

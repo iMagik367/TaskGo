@@ -61,9 +61,9 @@ Este erro ocorre porque o reCAPTCHA do Firebase Auth não consegue se comunicar 
 
 2. **Clique em "Manage debug tokens"** (Gerenciar tokens de debug)
 
-3. **Adicione o token identificado nos logs:**
+3. **Adicione o token de debug configurado:**
    ```
-   d863e2c2-ce5b-4109-b7d5-e1db6a1dceae
+   4D4F1322-E272-454F-9396-ED80E3DBDBD7
    ```
 
 4. **Clique em "Add" (Adicionar)**
@@ -95,7 +95,7 @@ Após seguir os passos acima, você deve ver nos logs:
 
 Exemplo de log esperado:
 ```
-TaskGoApp: ✅ App Check Debug Token obtido: d863e2c2-ce5b-4109-b7d5-e1db6a1dceae
+TaskGoApp: ✅ App Check Debug Token obtido: 4D4F1322-E272-454F-9396-ED80E3DBDBD7
 FirebaseAuthRepository: Login bem-sucedido: [user-id]
 ```
 

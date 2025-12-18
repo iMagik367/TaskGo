@@ -22,16 +22,45 @@ class SettingsViewModel @Inject constructor(
                 soundEnabled = true,
                 pushEnabled = true,
                 lockscreenEnabled = true,
+                emailNotificationsEnabled = false,
+                smsNotificationsEnabled = false,
                 language = "pt",
                 theme = "system",
                 categories = "[]",
+                locationSharingEnabled = true,
+                profileVisible = true,
+                contactInfoSharingEnabled = false,
+                analyticsEnabled = true,
+                personalizedAdsEnabled = false,
+                dataCollectionEnabled = true,
+                thirdPartySharingEnabled = false,
                 currentUser = null
             )
         )
-
-    fun saveNotifications(promos: Boolean, sound: Boolean, push: Boolean, lockscreen: Boolean) {
+    
+    init {
         viewModelScope.launch {
-            settingsUseCase.updateNotificationSettings(promos, sound, push, lockscreen)
+            settingsUseCase.syncRemoteSettings()
+        }
+    }
+
+    fun saveNotifications(
+        promos: Boolean,
+        sound: Boolean,
+        push: Boolean,
+        lockscreen: Boolean,
+        email: Boolean,
+        sms: Boolean
+    ) {
+        viewModelScope.launch {
+            settingsUseCase.updateNotificationSettings(
+                promos = promos,
+                sound = sound,
+                push = push,
+                lockscreen = lockscreen,
+                email = email,
+                sms = sms
+            )
         }
     }
 
@@ -45,6 +74,34 @@ class SettingsViewModel @Inject constructor(
 
     fun saveCategories(json: String) {
         viewModelScope.launch { settingsUseCase.updateCategories(json) }
+    }
+    
+    fun savePrivacySettings(
+        locationSharing: Boolean,
+        profileVisible: Boolean,
+        contactInfoSharing: Boolean,
+        analytics: Boolean,
+        personalizedAds: Boolean,
+        dataCollection: Boolean,
+        thirdPartySharing: Boolean
+    ) {
+        viewModelScope.launch {
+            settingsUseCase.updatePrivacySettings(
+                locationSharing = locationSharing,
+                profileVisible = profileVisible,
+                contactInfoSharing = contactInfoSharing,
+                analytics = analytics,
+                personalizedAds = personalizedAds,
+                dataCollection = dataCollection,
+                thirdPartySharing = thirdPartySharing
+            )
+        }
+    }
+    
+    fun refreshSettings() {
+        viewModelScope.launch {
+            settingsUseCase.syncRemoteSettings()
+        }
     }
 }
 

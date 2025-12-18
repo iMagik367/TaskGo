@@ -40,7 +40,7 @@ export const googlePlayBillingWebhook = functions.https.onRequest(async (req, re
         );
         break;
 
-      case 1: // ONE_TIME_PRODUCT_PURCHASED
+      case 20: // ONE_TIME_PRODUCT_PURCHASED
         // Processar compra de produto único
         await handleOneTimePurchase(purchaseToken, productId, db);
         break;
@@ -50,9 +50,10 @@ export const googlePlayBillingWebhook = functions.https.onRequest(async (req, re
     }
 
     res.status(200).json({ success: true });
-  } catch (error: any) {
+  } catch (error) {
     functions.logger.error('Error processing billing webhook:', error);
-    res.status(500).json({ error: error.message });
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    res.status(500).json({ error: message });
   }
 });
 

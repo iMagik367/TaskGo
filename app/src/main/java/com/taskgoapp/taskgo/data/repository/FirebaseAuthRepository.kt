@@ -25,55 +25,56 @@ class FirebaseAuthRepository @Inject constructor(
 
     suspend fun signUpWithEmail(email: String, password: String): Result<FirebaseUser> {
         return try {
+            android.util.Log.d("FirebaseAuthRepository", "Criando usuário com email: $email")
+            android.util.Log.d("FirebaseAuthRepository", "FirebaseAuth instance: $firebaseAuth")
+            android.util.Log.d("FirebaseAuthRepository", "FirebaseApp: ${com.google.firebase.FirebaseApp.getInstance().name}")
+            
             val result = firebaseAuth.createUserWithEmailAndPassword(email, password).await()
-            Result.success(result.user ?: throw Exception("User is null"))
+            val user = result.user ?: throw Exception("User is null")
+            
+            android.util.Log.d("FirebaseAuthRepository", "Usuário criado com sucesso: ${user.uid}, email: ${user.email}")
+            Result.success(user)
         } catch (e: Exception) {
+            android.util.Log.e("FirebaseAuthRepository", "Erro ao criar usuário: ${e.message}", e)
+            android.util.Log.e("FirebaseAuthRepository", "Tipo de erro: ${e.javaClass.simpleName}")
             Result.failure(e)
         }
     }
 
     suspend fun signInWithEmail(email: String, password: String): Result<FirebaseUser> {
         return try {
-            android.util.Log.d("FirebaseAuthRepository", "Tentando fazer login para: $email")
-            android.util.Log.d("FirebaseAuthRepository", "FirebaseAuth instance: $firebaseAuth")
-            android.util.Log.d("FirebaseAuthRepository", "FirebaseApp: ${com.google.firebase.FirebaseApp.getInstance().name}")
+            // Verificar se Firebase Auth está inicializado
+            if (firebaseAuth.app == null) {
+                android.util.Log.e("FirebaseAuthRepository", "❌ Firebase Auth não inicializado")
+                return Result.failure(Exception("Firebase Auth não inicializado. Reinicie o app."))
+            }
             
-            // Diagnosticar conectividade antes de tentar login
+            android.util.Log.d("FirebaseAuthRepository", "=== INÍCIO LOGIN ===")
+            android.util.Log.d("FirebaseAuthRepository", "Email: $email")
+            android.util.Log.d("FirebaseAuthRepository", "BuildConfig.DEBUG: ${com.taskgoapp.taskgo.BuildConfig.DEBUG}")
+            android.util.Log.d("FirebaseAuthRepository", "App Check Enabled: ${com.taskgoapp.taskgo.BuildConfig.FIREBASE_APP_CHECK_ENABLED}")
+            
+            // Diagnosticar conectividade em background (não bloqueia)
             val appContext = firebaseAuth.app.applicationContext
-            val diagnostic = com.taskgoapp.taskgo.core.network.NetworkDiagnostic.diagnose(appContext)
-            
-            if (!diagnostic.hasInternet) {
-                android.util.Log.e("FirebaseAuthRepository", "❌ SEM CONEXÃO COM A INTERNET")
-                return Result.failure(Exception("Sem conexão com a internet. Verifique sua conexão de rede."))
+            try {
+                val diagnostic = com.taskgoapp.taskgo.core.network.NetworkDiagnostic.diagnose(appContext)
+                android.util.Log.d("FirebaseAuthRepository", "Diagnóstico de rede: Internet=${diagnostic.hasInternet}, Firebase=${diagnostic.canReachFirebase}")
+            } catch (e: Exception) {
+                android.util.Log.w("FirebaseAuthRepository", "Erro ao diagnosticar rede (continuando): ${e.message}")
             }
             
-            if (!diagnostic.canReachGoogle) {
-                android.util.Log.e("FirebaseAuthRepository", "❌ NÃO É POSSÍVEL CONECTAR AO GOOGLE")
-                return Result.failure(Exception("Não é possível conectar aos servidores do Google. Verifique sua conexão de rede."))
-            }
-            
-            if (!diagnostic.canReachFirebase) {
-                android.util.Log.e("FirebaseAuthRepository", "❌ NÃO É POSSÍVEL CONECTAR AO FIREBASE")
-                return Result.failure(Exception("Não é possível conectar aos servidores do Firebase. Verifique sua conexão de rede ou configurações de firewall."))
-            }
-            
-            if (!diagnostic.canReachRecaptcha) {
-                android.util.Log.w("FirebaseAuthRepository", "⚠️ NÃO É POSSÍVEL CONECTAR AO RECAPTCHA")
-                android.util.Log.w("FirebaseAuthRepository", "O login pode falhar se o reCAPTCHA não estiver acessível")
-            }
-            
-            android.util.Log.d("FirebaseAuthRepository", "Diagnóstico de rede: OK")
-            android.util.Log.d("FirebaseAuthRepository", "  - Internet: ${diagnostic.hasInternet}")
-            android.util.Log.d("FirebaseAuthRepository", "  - Firebase: ${diagnostic.canReachFirebase}")
-            android.util.Log.d("FirebaseAuthRepository", "  - Google: ${diagnostic.canReachGoogle}")
-            android.util.Log.d("FirebaseAuthRepository", "  - reCAPTCHA: ${diagnostic.canReachRecaptcha}")
-            
+            android.util.Log.d("FirebaseAuthRepository", "Chamando signInWithEmailAndPassword...")
             val result = firebaseAuth.signInWithEmailAndPassword(email, password).await()
-            android.util.Log.d("FirebaseAuthRepository", "Login bem-sucedido: ${result.user?.uid}")
+            android.util.Log.d("FirebaseAuthRepository", "=== LOGIN BEM-SUCEDIDO ===")
+            android.util.Log.d("FirebaseAuthRepository", "UID: ${result.user?.uid}")
+            android.util.Log.d("FirebaseAuthRepository", "Email: ${result.user?.email}")
+            android.util.Log.d("FirebaseAuthRepository", "Email Verified: ${result.user?.isEmailVerified}")
             Result.success(result.user ?: throw Exception("User is null"))
         } catch (e: Exception) {
-            android.util.Log.e("FirebaseAuthRepository", "Erro ao fazer login: ${e.message}", e)
-            android.util.Log.e("FirebaseAuthRepository", "Tipo de erro: ${e.javaClass.simpleName}")
+            android.util.Log.e("FirebaseAuthRepository", "=== ERRO NO LOGIN ===")
+            android.util.Log.e("FirebaseAuthRepository", "Tipo: ${e.javaClass.name}")
+            android.util.Log.e("FirebaseAuthRepository", "Mensagem: ${e.message}")
+            android.util.Log.e("FirebaseAuthRepository", "Stack trace completo:", e)
             
             // Log mais detalhado do erro
             val errorMsg = e.message ?: ""
@@ -98,16 +99,35 @@ class FirebaseAuthRepository @Inject constructor(
                     }
                 }
                 is com.google.firebase.auth.FirebaseAuthException -> {
-                    android.util.Log.e("FirebaseAuthRepository", "Código de erro: ${e.errorCode}")
-                    android.util.Log.e("FirebaseAuthRepository", "Mensagem de erro: ${e.message}")
+                    android.util.Log.e("FirebaseAuthRepository", "=== FIREBASE AUTH EXCEPTION ===")
+                    android.util.Log.e("FirebaseAuthRepository", "Error Code: ${e.errorCode}")
+                    android.util.Log.e("FirebaseAuthRepository", "Error Message: ${e.message}")
+                    android.util.Log.e("FirebaseAuthRepository", "Full Stack Trace:")
+                    android.util.Log.e("FirebaseAuthRepository", fullStackTrace)
                     
-                    // Verificar se é erro relacionado ao App Check ou API bloqueada
-                    if (errorMsg.contains("app-check", ignoreCase = true) || 
-                        errorMsg.contains("403", ignoreCase = true) ||
+                    // Verificar se é erro relacionado ao App Check
+                    val isAppCheckError = errorMsg.contains("app-check", ignoreCase = true) || 
+                        errorMsg.contains("App Check token is invalid", ignoreCase = true) ||
+                        errorMsg.contains("app check", ignoreCase = true) ||
+                        fullStackTrace.contains("appcheck", ignoreCase = true) ||
+                        fullStackTrace.contains("AppCheck", ignoreCase = true)
+                    
+                    if (isAppCheckError) {
+                        android.util.Log.e("FirebaseAuthRepository", "🔴 ERRO CRÍTICO: APP CHECK FALHANDO")
+                        android.util.Log.e("FirebaseAuthRepository", "Causa: Token do App Check inválido ou não gerado")
+                        android.util.Log.e("FirebaseAuthRepository", "Soluções:")
+                        android.util.Log.e("FirebaseAuthRepository", "  1. Verificar SHA-256 cadastrado no Firebase Console")
+                        android.util.Log.e("FirebaseAuthRepository", "  2. Verificar Play Integrity API habilitada no Google Cloud")
+                        android.util.Log.e("FirebaseAuthRepository", "  3. Verificar App Check configurado no Firebase Console")
+                        android.util.Log.e("FirebaseAuthRepository", "  4. Se app não está na Play Store, Play Integrity não funciona")
+                    }
+                    
+                    // Verificar se é erro de API bloqueada
+                    if (errorMsg.contains("403", ignoreCase = true) ||
                         errorMsg.contains("blocked", ignoreCase = true) ||
                         fullStackTrace.contains("API_KEY_SERVICE_BLOCKED", ignoreCase = true)) {
-                        android.util.Log.e("FirebaseAuthRepository", "⚠️ ERRO RELACIONADO AO APP CHECK OU API KEY BLOQUEADA")
-                        android.util.Log.e("FirebaseAuthRepository", "Consulte CORRECAO_API_KEY_BLOQUEADA.md para resolver")
+                        android.util.Log.e("FirebaseAuthRepository", "⚠️ ERRO: API KEY BLOQUEADA")
+                        android.util.Log.e("FirebaseAuthRepository", "API Key: ${com.google.firebase.FirebaseApp.getInstance().options.apiKey}")
                     }
                 }
                 is java.net.UnknownHostException -> {
@@ -148,6 +168,7 @@ class FirebaseAuthRepository @Inject constructor(
     }
 
     fun signOut() {
+        // CRÍTICO: Limpar dados locais antes de fazer logout para evitar mistura de dados
         firebaseAuth.signOut()
     }
 
@@ -231,10 +252,25 @@ class FirebaseAuthRepository @Inject constructor(
 
     suspend fun signInWithGoogle(idToken: String): Result<FirebaseUser> {
         return try {
+            // Verificar se Firebase Auth está inicializado
+            if (firebaseAuth.app == null) {
+                android.util.Log.e("FirebaseAuthRepository", "❌ Firebase Auth não inicializado")
+                return Result.failure(Exception("Firebase Auth não inicializado. Reinicie o app."))
+            }
+            
+            android.util.Log.d("FirebaseAuthRepository", "Iniciando login com Google")
+            
             val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(idToken, null)
             val result = firebaseAuth.signInWithCredential(credential).await()
-            Result.success(result.user ?: throw Exception("User is null"))
+            val user = result.user ?: throw Exception("User is null")
+            
+            android.util.Log.d("FirebaseAuthRepository", "✅ Login com Google bem-sucedido: ${user.uid}, email: ${user.email}")
+            Result.success(user)
         } catch (e: Exception) {
+            android.util.Log.e("FirebaseAuthRepository", "❌ Erro ao fazer login com Google: ${e.message}", e)
+            if (e is com.google.firebase.auth.FirebaseAuthException) {
+                android.util.Log.e("FirebaseAuthRepository", "Código de erro Firebase: ${e.errorCode}")
+            }
             Result.failure(e)
         }
     }

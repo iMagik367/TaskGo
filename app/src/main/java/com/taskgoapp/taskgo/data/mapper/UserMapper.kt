@@ -3,6 +3,7 @@
 import com.taskgoapp.taskgo.data.local.entity.UserProfileEntity
 import com.taskgoapp.taskgo.core.model.UserProfile
 import com.taskgoapp.taskgo.core.model.AccountType
+import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -52,6 +53,28 @@ object UserMapper {
             rating = this.rating,
             avatarUri = this.avatarUri,
             profileImages = profileImagesJson
+        )
+    }
+    
+    fun UserFirestore.toModel(): UserProfile {
+        val accountType = when (this.role.lowercase()) {
+            "provider" -> AccountType.PRESTADOR
+            "seller" -> AccountType.VENDEDOR
+            "client" -> AccountType.CLIENTE
+            else -> AccountType.CLIENTE
+        }
+        
+        return UserProfile(
+            id = this.uid,
+            name = this.displayName ?: "",
+            email = this.email,
+            phone = this.phone,
+            city = this.address?.city,
+            profession = null, // UserFirestore não tem profession diretamente
+            accountType = accountType,
+            rating = this.rating,
+            avatarUri = this.photoURL,
+            profileImages = emptyList()
         )
     }
 }

@@ -48,7 +48,7 @@ object OrderMapper {
     
     fun PurchaseOrderItemEntity.toModel(): OrderItem {
         return OrderItem(
-            productId = this.productId.toLongOrNull() ?: 0L,
+            productId = this.productId,
             price = this.price,
             quantity = this.qty
         )
@@ -107,7 +107,7 @@ object OrderMapper {
     
     fun PurchaseOrderItemFirestore.toModel(): OrderItem {
         return OrderItem(
-            productId = this.productId.toLongOrNull() ?: 0L,
+            productId = this.productId,
             price = this.price,
             quantity = this.quantity
         )

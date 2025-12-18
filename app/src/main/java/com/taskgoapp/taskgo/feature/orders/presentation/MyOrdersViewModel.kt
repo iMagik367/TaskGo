@@ -50,7 +50,7 @@ class MyOrdersViewModel @Inject constructor(
     private fun PurchaseOrder.toSimpleOrder(): SimpleOrder {
         return SimpleOrder(
             id = this.id.toLongOrNull() ?: 0L,
-            items = this.items.map { OrderItem(it.productId, it.quantity, it.price) },
+            items = this.items.map { OrderItem(it.productId, it.productTitle, it.quantity, it.price) },
             total = this.total,
             status = this.status.name,
             createdAt = Instant.ofEpochMilli(this.createdAt)

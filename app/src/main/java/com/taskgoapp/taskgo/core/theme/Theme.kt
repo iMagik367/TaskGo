@@ -1,15 +1,21 @@
 ﻿package com.taskgoapp.taskgo.core.theme
 
 import android.app.Activity
+import android.content.res.Configuration
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.taskgoapp.taskgo.core.locale.LocaleManager
+import java.util.Locale
 
 /**
  * Esquema de cores baseado no protótipo Figma
@@ -92,12 +98,25 @@ private val DarkColorScheme = darkColorScheme(
 @Composable
 fun TaskGoTheme(
     darkTheme: Boolean = false, // Sempre usar tema claro
+    languageCode: String = "pt",
     content: @Composable () -> Unit
 ) {
     // Sempre usar tema claro - tema escuro desabilitado
     val colorScheme = LightColorScheme
 
     val view = LocalView.current
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    
+    // Aplicar locale dinamicamente
+    val locale = LocaleManager.getLocale(languageCode)
+    Locale.setDefault(locale)
+    
+    val updatedConfiguration = Configuration(configuration).apply {
+        setLocale(locale)
+    }
+    
+    
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
@@ -106,10 +125,15 @@ fun TaskGoTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = TaskGoTypography,
-        shapes = TaskGoShapes,
-        content = content
-    )
+    // Prover configuração atualizada para os composables filhos
+    CompositionLocalProvider(
+        LocalConfiguration provides updatedConfiguration
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = TaskGoTypography,
+            shapes = TaskGoShapes,
+            content = content
+        )
+    }
 }

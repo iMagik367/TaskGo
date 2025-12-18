@@ -72,7 +72,7 @@ fun NotificationDetailScreen(
 				color = TaskGoTextGray,
 				fontSize = 12.sp
 			)
-			Divider(color = Color(0xFFE0E0E0))
+			HorizontalDivider(color = Color(0xFFE0E0E0))
 			Text(
 				text = message,
 				color = TaskGoTextBlack,

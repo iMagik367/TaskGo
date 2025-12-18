@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -25,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.material.icons.automirrored.filled.Send
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.accessibility.AccessibilityStrings
 import com.taskgoapp.taskgo.core.theme.*
@@ -103,8 +105,9 @@ fun SecondaryButton(
             contentColor = TaskGoGreen,
             disabledContentColor = TaskGoGreen.copy(alpha = 0.5f)
         ),
-        border = ButtonDefaults.outlinedButtonBorder.copy(
-            brush = SolidColor(TaskGoGreen)
+        border = BorderStroke(
+            width = 1.dp,
+            brush = SolidColor(if (enabled) TaskGoGreen else TaskGoGreen.copy(alpha = 0.5f))
         ),
         contentPadding = PaddingValues(horizontal = 24.dp)
     ) {
@@ -451,7 +454,7 @@ fun InputMessage(
             containerColor = MaterialTheme.colorScheme.primary
         ) {
             Icon(
-                imageVector = Icons.Default.Send,
+                imageVector = Icons.AutoMirrored.Filled.Send,
                 contentDescription = "Enviar",
                 tint = MaterialTheme.colorScheme.onPrimary
             )

@@ -187,7 +187,7 @@ fun CarrinhoScreen(
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
-                    Divider()
+                    HorizontalDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween

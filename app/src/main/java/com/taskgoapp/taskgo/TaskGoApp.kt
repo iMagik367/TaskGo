@@ -2,10 +2,14 @@
 
 import android.app.Application
 import android.util.Log
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
+import javax.inject.Inject
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.taskgoapp.taskgo.BuildConfig
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -14,12 +18,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
-class TaskGoApp : Application() {
+class TaskGoApp : Application(), Configuration.Provider {
     
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "WorkManager configurado com HiltWorkerFactory")
         
         Log.d(TAG, "Inicializando TaskGoApp...")
         Log.d(TAG, "BuildConfig.USE_EMULATOR: ${BuildConfig.USE_EMULATOR}")
@@ -47,15 +55,34 @@ class TaskGoApp : Application() {
             }
         }
         
-        // Initialize Firebase
+        // Initialize Firebase - CRÍTICO: Deve ser a primeira coisa
         try {
-            FirebaseApp.initializeApp(this)
-            Log.d(TAG, "Firebase inicializado com sucesso")
-            Log.d(TAG, "Firebase API Key: ${FirebaseApp.getInstance().options.apiKey}")
-            Log.d(TAG, "Firebase Project ID: ${FirebaseApp.getInstance().options.projectId}")
-            Log.d(TAG, "Firebase Application ID: ${FirebaseApp.getInstance().options.applicationId}")
+            // Firebase é inicializado automaticamente pelo google-services.json
+            // Apenas verificar se está inicializado
+            val firebaseApp = FirebaseApp.getInstance()
             
-            // Validar configurações do Firebase
+            Log.d(TAG, "✅ Firebase inicializado com sucesso")
+            Log.d(TAG, "Firebase Project ID: ${firebaseApp.options.projectId}")
+            Log.d(TAG, "Firebase Application ID: ${firebaseApp.options.applicationId}")
+            
+            // Initialize Firebase Crashlytics
+            val crashlytics = FirebaseCrashlytics.getInstance()
+            crashlytics.setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "Crashlytics desabilitado em modo DEBUG")
+            } else {
+                Log.d(TAG, "Crashlytics habilitado para produção")
+            }
+            
+            // Garantir que Firebase Auth está pronto
+            try {
+                val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                Log.d(TAG, "✅ Firebase Auth inicializado")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao inicializar Firebase Auth: ${e.message}", e)
+            }
+            
+            // Validar configurações do Firebase em background (não bloqueia)
             applicationScope.launch {
                 try {
                     val validation = com.taskgoapp.taskgo.core.firebase.FirebaseConfigValidator.validate(this@TaskGoApp)
@@ -67,87 +94,111 @@ class TaskGoApp : Application() {
                     Log.e(TAG, "Erro ao validar configurações do Firebase: ${e.message}", e)
                 }
             }
+        } catch (e: IllegalStateException) {
+            // Firebase não inicializado - tentar inicializar manualmente
+            Log.e(TAG, "Firebase não inicializado, tentando inicializar manualmente...")
+            try {
+                FirebaseApp.initializeApp(this)
+                Log.d(TAG, "✅ Firebase inicializado manualmente")
+            } catch (initError: Exception) {
+                Log.e(TAG, "❌ ERRO CRÍTICO: Não foi possível inicializar Firebase: ${initError.message}", initError)
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Erro ao inicializar Firebase: ${e.message}", e)
+            Log.e(TAG, "❌ Erro ao inicializar Firebase: ${e.message}", e)
         }
         
         // Initialize Firebase App Check
-        try {
-            val appCheck = FirebaseAppCheck.getInstance()
-            
-            if (BuildConfig.DEBUG) {
-                // Para builds de debug, usar DebugAppCheckProviderFactory
-                // Isso permite testar sem precisar configurar Play Integrity
-                Log.d(TAG, "Configurando App Check para modo DEBUG")
-                appCheck.installAppCheckProviderFactory(
-                    DebugAppCheckProviderFactory.getInstance()
-                )
+        if (BuildConfig.FIREBASE_APP_CHECK_ENABLED) {
+            try {
+                val appCheck = FirebaseAppCheck.getInstance()
                 
-                // Obter e logar o token de debug (adicione este token no Firebase Console)
-                // Aguardar um pouco antes de tentar obter o token para dar tempo das APIs serem verificadas
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    appCheck.getAppCheckToken(false).addOnSuccessListener { token ->
-                        Log.d(TAG, "✅ App Check Debug Token obtido: ${token.token}")
-                        Log.d(TAG, "📋 IMPORTANTE: Adicione este token no Firebase Console:")
-                        Log.d(TAG, "   1. Acesse: https://console.firebase.google.com/project/task-go-ee85f/appcheck")
-                        Log.d(TAG, "   2. Vá em 'Manage debug tokens'")
-                        Log.d(TAG, "   3. Adicione o token: ${token.token}")
-                    }.addOnFailureListener { e ->
-                        Log.e(TAG, "❌ Erro ao obter token de debug do App Check", e)
-                        val errorMsg = e.message ?: "Erro desconhecido"
-                        val stackTrace = e.stackTraceToString()
-                        
-                        // Verificar se é erro de API bloqueada
-                        if (errorMsg.contains("403") || errorMsg.contains("blocked") || errorMsg.contains("API_KEY_SERVICE_BLOCKED")) {
-                            Log.e(TAG, "⚠️ PROBLEMA CRÍTICO: API Key bloqueada ou APIs não habilitadas!")
-                            Log.e(TAG, "📋 SOLUÇÃO DETALHADA:")
-                            Log.e(TAG, "   1. Verifique as restrições da API Key:")
-                            Log.e(TAG, "      https://console.cloud.google.com/apis/credentials?project=605187481719")
-                            Log.e(TAG, "   2. Habilite Firebase App Check API:")
-                            Log.e(TAG, "      https://console.developers.google.com/apis/api/firebaseappcheck.googleapis.com/overview?project=605187481719")
-                            Log.e(TAG, "   3. Habilite Firebase Installations API:")
-                            Log.e(TAG, "      https://console.developers.google.com/apis/api/firebaseinstallations.googleapis.com/overview?project=605187481719")
-                            Log.e(TAG, "   4. Se a API Key tiver restrições, adicione as APIs acima na lista")
-                            Log.e(TAG, "   5. Ou temporariamente remova as restrições para teste")
-                            Log.e(TAG, "   6. Veja CORRECAO_API_KEY_BLOQUEADA.md para instruções detalhadas")
-                            Log.e(TAG, "   7. Aguarde 5-10 minutos após mudanças e reinicie o app")
-                        } else if (errorMsg.contains("API has not been used")) {
-                            Log.e(TAG, "⚠️ PROBLEMA: APIs do Firebase não estão habilitadas!")
-                            Log.e(TAG, "📋 SOLUÇÃO:")
-                            Log.e(TAG, "   1. Habilite Firebase App Check API:")
-                            Log.e(TAG, "      https://console.developers.google.com/apis/api/firebaseappcheck.googleapis.com/overview?project=605187481719")
-                            Log.e(TAG, "   2. Habilite Firebase Installations API:")
-                            Log.e(TAG, "      https://console.developers.google.com/apis/api/firebaseinstallations.googleapis.com/overview?project=605187481719")
-                            Log.e(TAG, "   3. Aguarde 5-10 minutos e reinicie o app")
-                        } else {
-                            Log.e(TAG, "Erro detalhado: $errorMsg")
-                            Log.e(TAG, "Stack trace: $stackTrace")
-                        }
-                        
-                        // Log adicional para diagnóstico
-                        Log.e(TAG, "API Key sendo usada: ${FirebaseApp.getInstance().options.apiKey}")
-                        Log.e(TAG, "Project ID: ${FirebaseApp.getInstance().options.projectId}")
+                if (BuildConfig.DEBUG) {
+                    // Para builds de debug, usar DebugAppCheckProviderFactory
+                    val debugToken = BuildConfig.FIREBASE_DEBUG_APP_CHECK_TOKEN
+                    val debugTokenName = BuildConfig.FIREBASE_DEBUG_APP_CHECK_TOKEN_NAME
+                    if (debugToken.isNotBlank()) {
+                        val persistenceKey = FirebaseApp.getInstance().persistenceKey
+                        val sharedPrefsName = "com.google.firebase.appcheck.debug.store.$persistenceKey"
+                        val debugSecretKey = "com.google.firebase.appcheck.debug.DEBUG_SECRET"
+
+                        getSharedPreferences(sharedPrefsName, MODE_PRIVATE)
+                            .edit()
+                            .putString(debugSecretKey, debugToken)
+                            .apply()
+
+                        Log.d(TAG, "✅ App Check DEBUG configurado com token: ${debugTokenName}")
                     }
-                }, 2000) // Aguardar 2 segundos antes de tentar obter o token
-            } else {
-                // Para builds de release, usar Play Integrity
-                Log.d(TAG, "Configurando App Check para modo RELEASE (Play Integrity)")
-                appCheck.installAppCheckProviderFactory(
-                    PlayIntegrityAppCheckProviderFactory.getInstance()
-                )
+
+                    appCheck.installAppCheckProviderFactory(
+                        DebugAppCheckProviderFactory.getInstance()
+                    )
+                } else {
+                    // Para builds de release, usar Play Integrity
+                    Log.d(TAG, "=== CONFIGURANDO APP CHECK RELEASE ===")
+                    Log.d(TAG, "Provider: PlayIntegrityAppCheckProviderFactory")
+                    
+                    try {
+                        appCheck.installAppCheckProviderFactory(
+                            PlayIntegrityAppCheckProviderFactory.getInstance()
+                        )
+                        Log.d(TAG, "✅ Play Integrity Provider instalado")
+                        
+                        // Tentar obter token para verificar se está funcionando
+                        applicationScope.launch {
+                            kotlinx.coroutines.delay(5000) // Aguardar 5 segundos para Play Integrity inicializar
+                            try {
+                                appCheck.getAppCheckToken(false).addOnSuccessListener { token ->
+                                    Log.d(TAG, "✅ App Check token obtido com sucesso")
+                                    Log.d(TAG, "Token (primeiros 20 chars): ${token.token.take(20)}...")
+                                }.addOnFailureListener { e ->
+                                    Log.e(TAG, "❌ FALHA AO OBTER APP CHECK TOKEN")
+                                    Log.e(TAG, "Erro: ${e.message}")
+                                    Log.e(TAG, "Causa provável:")
+                                    Log.e(TAG, "  1. SHA-256 não cadastrado no Firebase Console")
+                                    Log.e(TAG, "  2. Play Integrity API não habilitada")
+                                    Log.e(TAG, "  3. App não instalado via Play Store")
+                                    Log.e(TAG, "  4. App Check não configurado no Firebase Console")
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Erro ao verificar token: ${e.message}", e)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ ERRO ao instalar Play Integrity Provider: ${e.message}", e)
+                        throw e
+                    }
+                    
+                    Log.d(TAG, "✅ App Check RELEASE configurado com Play Integrity")
+                }
+                
+                Log.d(TAG, "✅ Firebase App Check inicializado")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao inicializar Firebase App Check: ${e.message}", e)
+                throw e // Lançar exceção para identificar problema
             }
-            
-            Log.d(TAG, "Firebase App Check configurado com sucesso")
-        } catch (e: Exception) {
-            Log.e(TAG, "Erro ao configurar Firebase App Check: ${e.message}", e)
-            Log.e(TAG, "⚠️ O app continuará funcionando, mas o login pode falhar se as APIs não estiverem habilitadas")
-            // Continuar mesmo se App Check falhar - pode não ser crítico para login básico
+        } else {
+            Log.d(TAG, "ℹ️ Firebase App Check desativado via configuração")
         }
     }
     
     companion object {
         private const val TAG = "TaskGoApp"
     }
+    
+    override val workManagerConfiguration: Configuration
+        get() {
+            return if (::workerFactory.isInitialized) {
+                Configuration.Builder()
+                    .setWorkerFactory(workerFactory)
+                    .setMinimumLoggingLevel(Log.DEBUG)
+                    .build()
+            } else {
+                Log.w(TAG, "HiltWorkerFactory não inicializado, usando configuração padrão")
+                Configuration.Builder()
+                    .setMinimumLoggingLevel(Log.DEBUG)
+                    .build()
+            }
+        }
 }
 
 

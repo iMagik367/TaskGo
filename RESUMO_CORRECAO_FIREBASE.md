@@ -12,7 +12,7 @@ Os logs mostram que o Firebase está falhando devido a **API Key bloqueada** ou 
    - Firebase Authentication API bloqueada
 
 2. **Token de Debug do App Check:**
-   - Token gerado: `8c4aab63-0f88-4a42-a909-28f25d93a956`
+   - Token gerado: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
    - Precisa ser adicionado no Firebase Console
 
 3. **Erro de Login:**
@@ -59,7 +59,7 @@ Os logs mostram que o Firebase está falhando devido a **API Key bloqueada** ou 
 
 3. **Adicionar Token de Debug:**
    - Acesse: https://console.firebase.google.com/project/task-go-ee85f/appcheck
-   - Adicione o token: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+   - Adicione o token: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 
 4. **Aguardar Propagação:**
    - ⏰ Aguarde 5-10 minutos após fazer as mudanças
@@ -74,7 +74,7 @@ Os logs mostram que o Firebase está falhando devido a **API Key bloqueada** ou 
 - [ ] Firebase App Check API habilitada
 - [ ] Firebase Authentication API habilitada
 - [ ] API Key verificada e restrições corrigidas
-- [ ] Token de debug adicionado: `8c4aab63-0f88-4a42-a909-28f25d93a956`
+- [ ] Token de debug adicionado: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 - [ ] Aguardado 5-10 minutos para propagação
 - [ ] App desinstalado completamente
 - [ ] App reinstalado e testado
@@ -87,7 +87,7 @@ Após fazer as correções e reinstalar o app, verifique os logs:
 
 ### ✅ Logs Esperados (Sucesso):
 ```
-TaskGoApp: ✅ App Check Debug Token obtido: 8c4aab63-0f88-4a42-a909-28f25d93a956
+TaskGoApp: ✅ App Check Debug Token obtido: 4D4F1322-E272-454F-9396-ED80E3DBDBD7
 FirebaseAuthRepository: Login bem-sucedido: [user-id]
 ```
 
@@ -147,7 +147,7 @@ FirebaseAuthRepository: ⚠️ ERRO RELACIONADO AO APP CHECK OU API KEY BLOQUEAD
 ### 2. Verificar Token de Debug
 **Prioridade:** 🟡 MÉDIA
 - Se não estiver configurado, App Check não funcionará em debug
-- Adicione o token: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+- Adicione o token: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 
 ### 3. Verificar API Key no Google Cloud Console
 **Prioridade:** 🟡 MÉDIA

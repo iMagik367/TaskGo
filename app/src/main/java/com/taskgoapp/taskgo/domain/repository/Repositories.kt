@@ -5,11 +5,13 @@ import kotlinx.coroutines.flow.Flow
 
 interface ProductsRepository {
     fun observeProducts(): Flow<List<Product>>
+    fun observeProductErrors(): Flow<String>
     suspend fun getProduct(id: String): Product?
     suspend fun getMyProducts(): List<Product>
     suspend fun upsertProduct(product: Product)
     suspend fun deleteProduct(id: String)
     suspend fun addToCart(productId: String, qtyDelta: Int)
+    suspend fun removeFromCart(productId: String)
     fun observeCart(): Flow<List<CartItem>>
     suspend fun clearCart()
 }
@@ -23,6 +25,7 @@ interface ServiceRepository {
     suspend fun getProposal(id: String): Proposal?
     suspend fun upsertProposal(proposal: Proposal)
     suspend fun acceptProposal(proposalId: String)
+    suspend fun rejectProposal(proposalId: String)
 }
 
 interface OrdersRepository {
@@ -78,15 +81,33 @@ interface PreferencesRepository {
     fun observeSoundEnabled(): Flow<Boolean>
     fun observePushEnabled(): Flow<Boolean>
     fun observeLockscreenEnabled(): Flow<Boolean>
+    fun observeEmailNotificationsEnabled(): Flow<Boolean>
+    fun observeSmsNotificationsEnabled(): Flow<Boolean>
     fun observeLanguage(): Flow<String>
     fun observeTheme(): Flow<String>
     fun observeCategories(): Flow<String>
+    fun observePrivacyLocationSharing(): Flow<Boolean>
+    fun observePrivacyProfileVisible(): Flow<Boolean>
+    fun observePrivacyContactInfo(): Flow<Boolean>
+    fun observePrivacyAnalytics(): Flow<Boolean>
+    fun observePrivacyPersonalizedAds(): Flow<Boolean>
+    fun observePrivacyDataCollection(): Flow<Boolean>
+    fun observePrivacyThirdPartySharing(): Flow<Boolean>
     
     suspend fun updatePromosEnabled(enabled: Boolean)
     suspend fun updateSoundEnabled(enabled: Boolean)
     suspend fun updatePushEnabled(enabled: Boolean)
     suspend fun updateLockscreenEnabled(enabled: Boolean)
+    suspend fun updateEmailNotificationsEnabled(enabled: Boolean)
+    suspend fun updateSmsNotificationsEnabled(enabled: Boolean)
     suspend fun updateLanguage(language: String)
     suspend fun updateTheme(theme: String)
     suspend fun updateCategories(categories: String)
+    suspend fun updatePrivacyLocationSharing(enabled: Boolean)
+    suspend fun updatePrivacyProfileVisible(enabled: Boolean)
+    suspend fun updatePrivacyContactInfo(enabled: Boolean)
+    suspend fun updatePrivacyAnalytics(enabled: Boolean)
+    suspend fun updatePrivacyPersonalizedAds(enabled: Boolean)
+    suspend fun updatePrivacyDataCollection(enabled: Boolean)
+    suspend fun updatePrivacyThirdPartySharing(enabled: Boolean)
 }

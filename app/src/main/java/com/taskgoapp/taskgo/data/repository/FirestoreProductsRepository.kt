@@ -18,6 +18,10 @@ class FirestoreProductsRepository @Inject constructor(
     private val productsCollection = firestore.collection("products")
 
     fun observeAllProducts(): Flow<List<ProductFirestore>> = callbackFlow {
+        // Nota: Esta query requer um índice composto no Firestore:
+        // Collection: products
+        // Fields: active (Ascending), createdAt (Ascending)
+        // Criar em: https://console.firebase.google.com/project/task-go-ee85f/firestore/indexes
         val listenerRegistration = productsCollection
             .whereEqualTo("active", true)
             .orderBy("createdAt")
@@ -38,6 +42,10 @@ class FirestoreProductsRepository @Inject constructor(
     }
 
     fun observeProductsBySeller(sellerId: String): Flow<List<ProductFirestore>> = callbackFlow {
+        // Nota: Esta query requer um índice composto no Firestore:
+        // Collection: products
+        // Fields: sellerId (Ascending), active (Ascending), createdAt (Ascending)
+        // Criar em: https://console.firebase.google.com/project/task-go-ee85f/firestore/indexes
         val listenerRegistration = productsCollection
             .whereEqualTo("sellerId", sellerId)
             .whereEqualTo("active", true)

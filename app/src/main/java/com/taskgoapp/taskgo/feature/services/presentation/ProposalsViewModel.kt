@@ -69,6 +69,18 @@ class ProposalsViewModel @Inject constructor(
             }
         }
     }
+    
+    fun rejectProposal(proposalId: String) {
+        viewModelScope.launch {
+            try {
+                serviceRepository.rejectProposal(proposalId)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = e.message ?: "Erro ao rejeitar proposta"
+                )
+            }
+        }
+    }
 
     fun refresh(orderId: String) {
         loadProposals(orderId)

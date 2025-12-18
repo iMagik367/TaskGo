@@ -23,8 +23,6 @@ fun ConfiguracoesScreen(
     onPrivacidade: () -> Unit,
     onSuporte: () -> Unit,
     onSobre: () -> Unit,
-    onDesignReview: () -> Unit,
-    onTipoConta: () -> Unit,
     onAiSupport: () -> Unit,
     onSeguranca: () -> Unit = {}
 ) {
@@ -59,26 +57,6 @@ fun ConfiguracoesScreen(
                     ) {
                         Text(
                             text = "Conta",
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = TaskGoTextGray
-                        )
-                    }
-                    HorizontalDivider(thickness = 0.5.dp, color = TaskGoDivider)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onTipoConta() }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Tipo de conta",
                             style = FigmaProductName,
                             color = TaskGoTextBlack,
                             modifier = Modifier.weight(1f)
@@ -239,26 +217,6 @@ fun ConfiguracoesScreen(
                     ) {
                         Text(
                             text = "Sobre",
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = TaskGoTextGray
-                        )
-                    }
-                    HorizontalDivider(thickness = 0.5.dp, color = TaskGoDivider)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onDesignReview() }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Design Review",
                             style = FigmaProductName,
                             color = TaskGoTextBlack,
                             modifier = Modifier.weight(1f)

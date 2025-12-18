@@ -105,8 +105,10 @@ class GooglePayManager(private val context: Context) {
                     put("tokenizationSpecification", JSONObject().apply {
                         put("type", "PAYMENT_GATEWAY")
                         put("parameters", JSONObject().apply {
-                            put("gateway", "example")
-                            put("gatewayMerchantId", "exampleGatewayMerchantId")
+                            put("gateway", "stripe")
+                            // Stripe gateway merchant ID - deve ser configurado via variável de ambiente
+                            // Para produção, use o merchant ID do Stripe obtido do dashboard
+                            put("gatewayMerchantId", "stripe")
                         })
                     })
                 })
@@ -124,6 +126,8 @@ class GooglePayManager(private val context: Context) {
             put("apiVersionMinor", 0)
             put("merchantInfo", JSONObject().apply {
                 put("merchantName", "TaskGo")
+                // Merchant ID do Google Pay - deve ser configurado no Google Pay Console
+                // Para produção, use o merchant ID real obtido do Google Pay Business Console
                 put("merchantId", "01234567890123456789")
             })
             put("allowedPaymentMethods", JSONArray().apply {
@@ -149,8 +153,10 @@ class GooglePayManager(private val context: Context) {
                     put("tokenizationSpecification", JSONObject().apply {
                         put("type", "PAYMENT_GATEWAY")
                         put("parameters", JSONObject().apply {
-                            put("gateway", "example")
-                            put("gatewayMerchantId", "exampleGatewayMerchantId")
+                            put("gateway", "stripe")
+                            // Stripe gateway merchant ID - deve ser configurado via variável de ambiente
+                            // Para produção, use o merchant ID do Stripe obtido do dashboard
+                            put("gatewayMerchantId", "stripe")
                         })
                     })
                 })

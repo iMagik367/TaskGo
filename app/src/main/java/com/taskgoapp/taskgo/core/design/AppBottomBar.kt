@@ -1,14 +1,14 @@
 ﻿package com.taskgoapp.taskgo.core.design
 
-import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.taskgoapp.taskgo.R
+import com.taskgoapp.taskgo.core.design.TGIcon
+import com.taskgoapp.taskgo.core.design.TGIcons
 import com.taskgoapp.taskgo.core.theme.*
 
 data class BottomBarItem(
@@ -61,9 +61,10 @@ fun AppBottomBar(
                 selected = selected,
                 onClick = { onTabSelected(item.route) },
                 icon = {
-                    Icon(
-                        painter = painterResource(id = item.iconResId),
+                    TGIcon(
+                        iconRes = item.iconResId,
                         contentDescription = stringResource(id = item.titleResId),
+                        size = TGIcons.Sizes.Navigation,
                         tint = if (selected) TaskGoNavActive else TaskGoNavInactive
                     )
                 },

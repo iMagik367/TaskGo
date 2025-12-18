@@ -7,6 +7,7 @@ data class OrderFirestore(
     val clientId: String = "",
     val providerId: String? = null,
     val serviceId: String = "",
+    val category: String? = null, // Categoria do serviço (ex: "Montagem", "Jardinagem")
     val details: String = "",
     val location: String = "",
     val budget: Double = 0.0,

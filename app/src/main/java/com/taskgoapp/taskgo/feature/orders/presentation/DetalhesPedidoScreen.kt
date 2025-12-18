@@ -20,6 +20,7 @@ fun DetalhesPedidoScreen(
     onBackClick: () -> Unit,
     onRastrearPedido: (String) -> Unit,
     onVerResumo: (String) -> Unit,
+    onEnviarPedido: ((String) -> Unit)? = null, // Para vendedores
     variant: String? = null
 ) {
     val status = when(variant) {
@@ -75,6 +76,15 @@ fun DetalhesPedidoScreen(
         }
         Spacer(modifier = Modifier.height(18.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
+            // Botão de envio para vendedores (quando pedido está pago)
+            if (onEnviarPedido != null && variant != "pending" && variant != "canceled") {
+                Button(
+                    onClick = { onEnviarPedido(orderId) },
+                    colors = ButtonDefaults.buttonColors(containerColor = TaskGoGreen)
+                ) {
+                    Text("Confirmar Envio")
+                }
+            }
             Button(onClick = { onRastrearPedido(orderId) }, enabled = variant != "pending") {
                 Text("Rastrear pedido")
             }

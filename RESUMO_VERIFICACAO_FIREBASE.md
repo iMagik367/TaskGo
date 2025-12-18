@@ -42,7 +42,7 @@
 
 ## 🔑 TOKEN DE DEBUG DO APP CHECK
 
-**Token:** `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+**Token:** `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 
 **Verificar:**
 1. Acesse: https://console.firebase.google.com/project/task-go-ee85f/appcheck
@@ -94,7 +94,7 @@
 ### 2. Verificar Token de Debug
 **Prioridade:** 🟡 MÉDIA
 - Se não estiver configurado, App Check não funcionará em debug
-- Adicione o token: `A1512298-3EBF-4FF9-B1F3-D777060E3BC3`
+- Adicione o token: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 
 ### 3. Verificar API Key no Google Cloud Console
 **Prioridade:** 🟡 MÉDIA

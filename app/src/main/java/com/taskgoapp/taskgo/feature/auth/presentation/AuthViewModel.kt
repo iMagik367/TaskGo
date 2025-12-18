@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,7 +33,11 @@ data class ForgotPasswordUiState(
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val authRepository: FirebaseAuthRepository
+    private val authRepository: FirebaseAuthRepository,
+    private val addressRepository: com.taskgoapp.taskgo.domain.repository.AddressRepository,
+    private val cardRepository: com.taskgoapp.taskgo.domain.repository.CardRepository,
+    private val productsRepository: com.taskgoapp.taskgo.domain.repository.ProductsRepository,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -151,8 +156,40 @@ class AuthViewModel @Inject constructor(
     }
 
     fun logout() {
-        authRepository.signOut()
-        _uiState.value = AuthUiState()
+        viewModelScope.launch {
+            // CRÍTICO: Limpar todos os dados locais antes de fazer logout para evitar mistura de dados entre usuários
+            try {
+                // Limpar carrinho
+                productsRepository.clearCart()
+                
+                // Limpar endereços locais (serão recarregados quando novo usuário fizer login)
+                addressRepository.observeAddresses().first().forEach { address ->
+                    addressRepository.deleteAddress(address.id)
+                }
+                
+                // Limpar cartões locais (serão recarregados quando novo usuário fizer login)
+                cardRepository.observeCards().first().forEach { card ->
+                    cardRepository.deleteCard(card.id)
+                }
+                
+                // CRÍTICO: Limpar foto de perfil e dados do usuário do PreferencesManager
+                val preferencesManager = com.taskgoapp.taskgo.core.data.PreferencesManager(context)
+                preferencesManager.saveUserAvatarUri("")
+                preferencesManager.saveUserProfileImages(emptyList())
+                preferencesManager.saveUserName("")
+                preferencesManager.saveUserEmail("")
+                preferencesManager.saveUserPhone("")
+                preferencesManager.saveUserCpf("")
+                preferencesManager.saveUserProfession("")
+                android.util.Log.d("AuthViewModel", "Dados do usuário limpos do PreferencesManager")
+            } catch (e: Exception) {
+                android.util.Log.e("AuthViewModel", "Erro ao limpar dados locais no logout: ${e.message}", e)
+            }
+            
+            // Fazer logout
+            authRepository.signOut()
+            _uiState.value = AuthUiState()
+        }
     }
 
     fun clearError() {

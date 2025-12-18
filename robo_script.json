@@ -1,0 +1,151 @@
+[
+  {
+    "crawlStage": "crawl",
+    "contextDescriptor": {
+      "condition": "app_under_test_shown"
+    },
+    "actions": [
+      {
+        "eventType": "VIEW_DISPLAYED",
+        "delayTime": 2000,
+        "elementDescriptors": [
+          {
+            "className": "android.app.Activity"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 1000,
+        "elementDescriptors": [
+          {
+            "text": "Cadastrar"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_TEXT_CHANGED",
+        "replacementText": "teste@taskgo.app",
+        "delayTime": 500,
+        "elementDescriptors": [
+          {
+            "hint": "Email"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_TEXT_CHANGED",
+        "replacementText": "senha123456",
+        "delayTime": 500,
+        "elementDescriptors": [
+          {
+            "hint": "Senha"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 2000,
+        "elementDescriptors": [
+          {
+            "text": "Entrar"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 2000,
+        "elementDescriptors": [
+          {
+            "text": "Serviços"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_SCROLLED",
+        "delayTime": 2000,
+        "canScrollTo": true,
+        "elementDescriptors": [
+          {
+            "className": "androidx.compose.foundation.lazy.LazyColumn"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 1000,
+        "elementDescriptors": [
+          {
+            "text": "Produtos"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 1000,
+        "elementDescriptors": [
+          {
+            "text": "Perfil"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 1000,
+        "elementDescriptors": [
+          {
+            "text": "Configurações"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 1000,
+        "elementDescriptors": [
+          {
+            "text": "Sobre"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 1000,
+        "elementDescriptors": [
+          {
+            "text": "Política de Privacidade"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_SCROLLED",
+        "delayTime": 2000,
+        "canScrollTo": true,
+        "elementDescriptors": [
+          {
+            "className": "androidx.compose.foundation.lazy.LazyColumn"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_CLICKED",
+        "delayTime": 1000,
+        "elementDescriptors": [
+          {
+            "text": "Termos de Uso"
+          }
+        ]
+      },
+      {
+        "eventType": "VIEW_SCROLLED",
+        "delayTime": 2000,
+        "canScrollTo": true,
+        "elementDescriptors": [
+          {
+            "className": "androidx.compose.foundation.lazy.LazyColumn"
+          }
+        ]
+      }
+    ]
+  }
+]
+

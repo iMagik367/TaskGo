@@ -11,6 +11,7 @@ import com.taskgoapp.taskgo.domain.repository.ProductsRepository
 import com.taskgoapp.taskgo.core.model.Product
 import com.taskgoapp.taskgo.core.model.CartItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,6 +30,8 @@ class ProductsRepositoryImpl @Inject constructor(
             }
         }
     }
+
+    override fun observeProductErrors(): Flow<String> = emptyFlow()
 
     override suspend fun getProduct(id: String): Product? {
         val entity = productDao.getById(id) ?: return null
@@ -87,6 +90,10 @@ class ProductsRepositoryImpl @Inject constructor(
 
     override suspend fun clearCart() {
         cartDao.clearAll()
+    }
+
+    override suspend fun removeFromCart(productId: String) {
+        cartDao.deleteByProductId(productId)
     }
 
     private fun generateId(): String {

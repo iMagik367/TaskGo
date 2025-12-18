@@ -14,7 +14,11 @@ object ProductMapper {
             price = this.price,
             description = this.description,
             sellerName = this.sellerName,
-            imageUris = imageUris
+            imageUris = imageUris,
+            rating = this.rating,
+            latitude = this.latitude,
+            longitude = this.longitude,
+            featured = this.featured
         )
     }
     
@@ -24,7 +28,11 @@ object ProductMapper {
             title = this.title,
             price = this.price,
             description = this.description,
-            sellerName = this.sellerName
+            sellerName = this.sellerName,
+            rating = this.rating,
+            latitude = this.latitude,
+            longitude = this.longitude,
+            featured = this.featured ?: false
         )
     }
     
@@ -47,7 +55,12 @@ object ProductMapper {
             price = this.price,
             description = this.description,
             sellerName = this.sellerName,
-            imageUris = this.imageUrls
+            imageUris = this.imageUrls,
+            category = this.category,
+            rating = this.rating,
+            latitude = this.latitude,
+            longitude = this.longitude,
+            featured = this.featured
         )
     }
     
@@ -60,9 +73,13 @@ object ProductMapper {
             sellerId = "", // TODO: Get from auth
             sellerName = this.sellerName,
             imageUrls = this.imageUris,
-            category = null,
+            category = this.category,
             tags = emptyList(),
-            active = true
+            active = true,
+            featured = this.featured ?: false,
+            rating = this.rating,
+            latitude = this.latitude,
+            longitude = this.longitude
         )
     }
 }

@@ -1,0 +1,406 @@
+{
+  "metadata": {
+    "versaoDocumento": "1.0",
+    "dataCriacao": "2024-12-19",
+    "app": "TaskGo",
+    "packageName": "com.taskgoapp.taskgo",
+    "versaoApp": "1.0.4",
+    "versionCode": 5
+  },
+  "informacoesBasicas": {
+    "nomeApp": "TaskGo",
+    "packageName": "com.taskgoapp.taskgo",
+    "versao": {
+      "versionName": "1.0.4",
+      "versionCode": 5
+    },
+    "idiomaPadrao": "pt-BR",
+    "tipoApp": "App",
+    "categoria": "Produtividade",
+    "categoriasSecundarias": [
+      "Negócios",
+      "Serviços"
+    ],
+    "modeloNegocio": "Gratuito",
+    "contemAnuncios": false,
+    "contemComprasInApp": true,
+    "descricaoCurta": "Plataforma de serviços sob demanda conectando clientes e prestadores de serviços",
+    "descricaoCompleta": "TaskGo é uma plataforma completa que conecta clientes que precisam de serviços com prestadores qualificados. Oferece funcionalidades de busca, agendamento, pagamento seguro e rastreamento de pedidos em tempo real."
+  },
+  "informacoesTecnicas": {
+    "minSdkVersion": 24,
+    "targetSdkVersion": 35,
+    "compileSdkVersion": 35,
+    "buildToolsVersion": "35.0.0",
+    "arquitetura": "Android App Bundle (AAB)",
+    "assinatura": {
+      "keystoreConfigurado": true,
+      "appSigning": "Google Play App Signing (recomendado)",
+      "uploadKey": "Configurado via keystore.properties"
+    },
+    "proguard": {
+      "minifyEnabled": true,
+      "shrinkResources": true,
+      "rulesFile": "proguard-rules.pro"
+    },
+    "firebase": {
+      "projeto": "task-go-ee85f",
+      "servicos": [
+        "Authentication",
+        "Firestore",
+        "Storage",
+        "Cloud Functions",
+        "Cloud Messaging",
+        "Crashlytics",
+        "App Check"
+      ],
+      "appCheckHabilitado": true,
+      "crashlyticsHabilitado": true
+    }
+  },
+  "permissoes": {
+    "permissoesNormais": [
+      {
+        "nome": "android.permission.INTERNET",
+        "justificativa": "Necessário para comunicação com servidores e APIs"
+      },
+      {
+        "nome": "android.permission.ACCESS_NETWORK_STATE",
+        "justificativa": "Verificar conectividade antes de operações de rede"
+      },
+      {
+        "nome": "android.permission.POST_NOTIFICATIONS",
+        "justificativa": "Enviar notificações sobre pedidos, mensagens e atualizações"
+      }
+    ],
+    "permissoesSensiveis": [
+      {
+        "nome": "android.permission.CAMERA",
+        "justificativa": "Upload de documentos de identidade e fotos de perfil",
+        "uso": "Apenas quando o usuário solicita upload de imagem",
+        "opcional": true
+      },
+      {
+        "nome": "android.permission.READ_MEDIA_IMAGES",
+        "justificativa": "Selecionar imagens da galeria para upload",
+        "uso": "Apenas quando o usuário seleciona imagem da galeria",
+        "opcional": true
+      },
+      {
+        "nome": "android.permission.READ_EXTERNAL_STORAGE",
+        "justificativa": "Acesso a arquivos para upload (Android 12 e anteriores)",
+        "maxSdkVersion": 32,
+        "opcional": true
+      },
+      {
+        "nome": "android.permission.ACCESS_FINE_LOCATION",
+        "justificativa": "Filtrar prestadores de serviços por proximidade geográfica",
+        "uso": "Apenas quando o usuário ativa filtro de localização",
+        "opcional": true
+      },
+      {
+        "nome": "android.permission.ACCESS_COARSE_LOCATION",
+        "justificativa": "Filtrar prestadores de serviços por região",
+        "uso": "Apenas quando o usuário ativa filtro de localização",
+        "opcional": true
+      },
+      {
+        "nome": "android.permission.RECORD_AUDIO",
+        "justificativa": "Gravação de áudio para mensagens de voz (funcionalidade futura)",
+        "opcional": true,
+        "status": "Declarada mas não implementada"
+      },
+      {
+        "nome": "android.permission.USE_BIOMETRIC",
+        "justificativa": "Autenticação biométrica para pagamentos e acesso seguro",
+        "uso": "Apenas quando o usuário habilita autenticação biométrica",
+        "opcional": true
+      },
+      {
+        "nome": "android.permission.USE_FINGERPRINT",
+        "justificativa": "Suporte a impressão digital para autenticação",
+        "opcional": true
+      }
+    ],
+    "features": [
+      {
+        "nome": "android.hardware.camera",
+        "required": false,
+        "justificativa": "Câmera opcional para upload de fotos"
+      },
+      {
+        "nome": "android.hardware.biometric",
+        "required": false,
+        "justificativa": "Biometria opcional para autenticação segura"
+      }
+    ]
+  },
+  "informacoesLegais": {
+    "politicaPrivacidade": {
+      "url": "https://taskgo.app/privacidade",
+      "status": "Implementada internamente",
+      "telaInterna": "PrivacyPolicyScreen.kt",
+      "conformidadeLGPD": true,
+      "conformidadeGDPR": true,
+      "nota": "URL pública deve ser criada e hospedada antes do upload"
+    },
+    "termosUso": {
+      "url": "https://taskgo.app/termos",
+      "status": "Implementada internamente",
+      "telaInterna": "TermsOfServiceScreen.kt",
+      "nota": "URL pública deve ser criada e hospedada antes do upload"
+    },
+    "contato": {
+      "email": "contato@taskgo.app",
+      "website": "https://taskgo.app",
+      "endereco": "A definir"
+    }
+  },
+  "dataSafety": {
+    "dadosColetados": [
+      {
+        "tipo": "Informações de conta",
+        "dados": [
+          "Nome",
+          "Email",
+          "Telefone",
+          "Foto de perfil"
+        ],
+        "obrigatorio": true,
+        "justificativa": "Necessário para criar conta e identificar usuários"
+      },
+      {
+        "tipo": "Localização",
+        "dados": [
+          "Localização aproximada",
+          "Localização precisa"
+        ],
+        "obrigatorio": false,
+        "justificativa": "Usado apenas quando o usuário ativa filtro de localização para encontrar prestadores próximos"
+      },
+      {
+        "tipo": "Fotos e vídeos",
+        "dados": [
+          "Fotos de perfil",
+          "Fotos de documentos",
+          "Fotos de serviços"
+        ],
+        "obrigatorio": false,
+        "justificativa": "Upload opcional de fotos pelo usuário"
+      },
+      {
+        "tipo": "Informações financeiras",
+        "dados": [
+          "Informações de pagamento (processadas via Stripe)",
+          "Histórico de transações"
+        ],
+        "obrigatorio": true,
+        "justificativa": "Necessário para processar pagamentos",
+        "processamento": "Stripe (PCI DSS compliant)"
+      }
+    ],
+    "dadosCompartilhados": [
+      {
+        "tipo": "Com prestadores de serviço",
+        "dados": [
+          "Nome",
+          "Localização (quando aplicável)",
+          "Detalhes do pedido"
+        ],
+        "justificativa": "Necessário para prestação do serviço solicitado"
+      },
+      {
+        "tipo": "Com processadores de pagamento",
+        "dados": [
+          "Informações de pagamento"
+        ],
+        "servico": "Stripe",
+        "justificativa": "Processamento seguro de pagamentos"
+      }
+    ],
+    "seguranca": {
+      "dadosCriptografados": true,
+      "metodoCriptografia": "TLS/SSL em trânsito, criptografia do Firebase em repouso",
+      "autenticacao": "Firebase Authentication",
+      "appCheck": true,
+      "compliance": [
+        "LGPD",
+        "GDPR",
+        "PCI DSS (via Stripe)"
+      ]
+    },
+    "direitosUsuario": {
+      "acessoDados": true,
+      "correcaoDados": true,
+      "exclusaoDados": true,
+      "portabilidadeDados": true,
+      "revogacaoConsentimento": true,
+      "comoExercer": "Através das configurações do app ou contato: contato@taskgo.app"
+    }
+  },
+  "classificacaoConteudo": {
+    "classificacao": "Para todos",
+    "conteudoSensivel": {
+      "violencia": false,
+      "sexo": false,
+      "drogas": false,
+      "apostas": false,
+      "conteudoMedico": false,
+      "conteudoEducacional": false
+    },
+    "interatividade": {
+      "compartilhamentoUsuario": true,
+      "comentariosUsuario": true,
+      "avaliacoesUsuario": true,
+      "moderacao": true
+    },
+    "comprasInApp": {
+      "presente": true,
+      "tipo": "Serviços e produtos digitais",
+      "processamento": "Stripe e Google Play Billing"
+    }
+  },
+  "distribuicao": {
+    "paises": [
+      "Brasil"
+    ],
+    "disponibilidade": "Todos os países (configurável)",
+    "restricoes": [],
+    "programas": {
+      "googlePlayPass": false,
+      "googlePlayPoints": false
+    }
+  },
+  "assets": {
+    "icone": {
+      "status": "Configurado",
+      "tamanho": "512x512",
+      "localizacao": "app/src/main/res/mipmap-*/ic_launcher.png"
+    },
+    "screenshots": {
+      "status": "A criar",
+      "quantidadeMinima": 2,
+      "quantidadeRecomendada": 4,
+      "tamanhos": [
+        "Phone: 320px - 3840px (largura)",
+        "Tablet 7\": 320px - 3840px",
+        "Tablet 10\": 320px - 3840px"
+      ]
+    },
+    "featureGraphic": {
+      "status": "A criar",
+      "tamanho": "1024x500 pixels",
+      "formato": "PNG ou JPG"
+    },
+    "videoPromocional": {
+      "status": "Opcional",
+      "url": null
+    }
+  },
+  "testes": {
+    "testeInterno": {
+      "status": "A configurar",
+      "testadores": []
+    },
+    "testeFechado": {
+      "status": "A configurar",
+      "testadores": []
+    },
+    "testeAberto": {
+      "status": "A configurar"
+    },
+    "dispositivosTestados": [],
+    "versoesAndroidTestadas": [
+      "Android 7.0 (API 24)",
+      "Android 8.0 (API 26)",
+      "Android 10 (API 29)",
+      "Android 12 (API 31)",
+      "Android 14 (API 34)",
+      "Android 15 (API 35)"
+    ]
+  },
+  "checklistPreLancamento": {
+    "tecnico": {
+      "aabGerado": false,
+      "aabAssinado": false,
+      "versionCodeIncrementado": true,
+      "versionNameDefinido": true,
+      "proguardConfigurado": true,
+      "firebaseConfigurado": true,
+      "crashlyticsConfigurado": true,
+      "appCheckConfigurado": true,
+      "keystoreConfigurado": true,
+      "permissoesDeclaradas": true,
+      "permissoesJustificadas": false,
+      "nota": "Justificar permissões sensíveis na Play Console"
+    },
+    "conteudo": {
+      "politicaPrivacidadeURL": false,
+      "termosUsoURL": false,
+      "descricaoCurta": false,
+      "descricaoCompleta": false,
+      "screenshots": false,
+      "featureGraphic": false,
+      "icone": true,
+      "nota": "Criar URLs públicas para política e termos, ou usar conteúdo das telas internas"
+    },
+    "legal": {
+      "dataSafetyPreenchido": false,
+      "permissoesJustificadas": false,
+      "classificacaoConteudo": false,
+      "conformidadeLGPD": true,
+      "conformidadeGDPR": true,
+      "nota": "Preencher Data Safety e justificar permissões na Play Console"
+    },
+    "marketing": {
+      "descricaoAtrativa": false,
+      "screenshotsQualidade": false,
+      "videoPromocional": false,
+      "informacoesContato": false,
+      "nota": "Preparar materiais de marketing antes da publicação"
+    },
+    "testes": {
+      "testeInternoConfigurado": false,
+      "testadoEmDispositivosReais": false,
+      "funcionalidadesCriticasTestadas": false,
+      "pagamentosTestados": false,
+      "nota": "Realizar testes extensivos antes da publicação"
+    }
+  },
+  "problemasConhecidos": [
+    {
+      "severidade": "baixa",
+      "descricao": "Permissão RECORD_AUDIO declarada mas não implementada",
+      "impacto": "Nenhum - permissão opcional",
+      "acao": "Pode ser removida se não for usar no futuro"
+    }
+  ],
+  "proximosPassos": [
+    "1. Criar URLs públicas para Política de Privacidade e Termos de Uso",
+    "2. Gerar AAB de release assinado",
+    "3. Fazer upload do AAB na Play Console",
+    "4. Preencher Data Safety na Play Console",
+    "5. Justificar permissões sensíveis na Play Console",
+    "6. Preencher classificação de conteúdo",
+    "7. Adicionar screenshots e feature graphic",
+    "8. Escrever descrições atrativas",
+    "9. Configurar teste interno",
+    "10. Testar em dispositivos reais",
+    "11. Revisar todas as informações",
+    "12. Publicar em produção ou teste fechado"
+  ],
+  "notasImportantes": [
+    "O Google Play gera automaticamente relatórios de pré-lançamento após o upload do AAB",
+    "Este JSON serve como documentação e checklist antes do upload",
+    "Todas as informações sensíveis devem ser preenchidas na Play Console",
+    "Manter este documento atualizado conforme o app evolui",
+    "SHA-1 do keystore de release deve ser adicionado na Play Console se usar App Signing manual"
+  ],
+  "recursos": {
+    "playConsole": "https://play.google.com/console",
+    "documentacaoDataSafety": "https://support.google.com/googleplay/android-developer/answer/10787469",
+    "documentacaoPermissoes": "https://support.google.com/googleplay/android-developer/answer/9888170",
+    "firebaseConsole": "https://console.firebase.google.com/project/task-go-ee85f",
+    "stripeDashboard": "https://dashboard.stripe.com"
+  }
+}

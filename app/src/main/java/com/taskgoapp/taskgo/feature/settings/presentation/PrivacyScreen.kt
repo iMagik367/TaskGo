@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.settings.presentation
 
+import android.Manifest
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,15 +12,44 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.PermissionStatus
+import com.google.accompanist.permissions.rememberPermissionState
 import com.taskgoapp.taskgo.core.design.*
+import com.taskgoapp.taskgo.core.security.LGPDComplianceManager
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import com.google.firebase.auth.FirebaseAuth
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun PrivacyScreen(
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onNavigateToPrivacyPolicy: () -> Unit = {},
+    onNavigateToTermsOfService: () -> Unit = {},
+    onNavigateToConsentHistory: () -> Unit = {},
+    viewModel: SettingsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
+    val settings by viewModel.state.collectAsState()
+    val auth = FirebaseAuth.getInstance()
+    val currentUser = auth.currentUser
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var saveJob by remember { mutableStateOf<Job?>(null) }
+    var isSyncingFromRemote by remember { mutableStateOf(true) }
+    
+    val lgpdManager = remember(context) { 
+        com.taskgoapp.taskgo.core.security.LGPDComplianceManager(
+            context,
+            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        )
+    }
+    // Estados locais - inicializar apenas uma vez
     var locationSharingEnabled by remember { mutableStateOf(true) }
     var profileVisibilityEnabled by remember { mutableStateOf(true) }
     var contactInfoSharingEnabled by remember { mutableStateOf(false) }
@@ -28,10 +58,97 @@ fun PrivacyScreen(
     var dataCollectionEnabled by remember { mutableStateOf(true) }
     var thirdPartySharingEnabled by remember { mutableStateOf(false) }
     
+    // Inicializar apenas uma vez quando dados estiverem disponíveis
+    var hasInitialized by remember { mutableStateOf(false) }
+    LaunchedEffect(
+        settings.locationSharingEnabled,
+        settings.profileVisible,
+        settings.contactInfoSharingEnabled,
+        settings.analyticsEnabled,
+        settings.personalizedAdsEnabled,
+        settings.dataCollectionEnabled,
+        settings.thirdPartySharingEnabled
+    ) {
+        isSyncingFromRemote = true
+        locationSharingEnabled = settings.locationSharingEnabled
+        profileVisibilityEnabled = settings.profileVisible
+        contactInfoSharingEnabled = settings.contactInfoSharingEnabled
+        analyticsEnabled = settings.analyticsEnabled
+        personalizedAdsEnabled = settings.personalizedAdsEnabled
+        dataCollectionEnabled = settings.dataCollectionEnabled
+        thirdPartySharingEnabled = settings.thirdPartySharingEnabled
+        hasInitialized = true
+        isSyncingFromRemote = false
+    }
+    
+    fun queueSave() {
+        if (!hasInitialized || isSyncingFromRemote) return
+        saveJob?.cancel()
+        saveJob = coroutineScope.launch {
+            delay(800)
+            viewModel.savePrivacySettings(
+                locationSharing = locationSharingEnabled,
+                profileVisible = profileVisibilityEnabled,
+                contactInfoSharing = contactInfoSharingEnabled,
+                analytics = analyticsEnabled,
+                personalizedAds = personalizedAdsEnabled,
+                dataCollection = dataCollectionEnabled,
+                thirdPartySharing = thirdPartySharingEnabled
+            )
+        }
+    }
+    
+    LaunchedEffect(
+        locationSharingEnabled,
+        profileVisibilityEnabled,
+        contactInfoSharingEnabled,
+        analyticsEnabled,
+        personalizedAdsEnabled,
+        dataCollectionEnabled,
+        thirdPartySharingEnabled
+    ) {
+        queueSave()
+    }
+    
+    // Salvar quando sair da tela (garantir salvamento final)
+    DisposableEffect(Unit) {
+        onDispose {
+            saveJob?.cancel()
+            viewModel.savePrivacySettings(
+                locationSharing = locationSharingEnabled,
+                profileVisible = profileVisibilityEnabled,
+                contactInfoSharing = contactInfoSharingEnabled,
+                analytics = analyticsEnabled,
+                personalizedAds = personalizedAdsEnabled,
+                dataCollection = dataCollectionEnabled,
+                thirdPartySharing = thirdPartySharingEnabled
+            )
+        }
+    }
+    
+    // Permissão de localização
+    val locationPermission = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
+    
+    // Flag para evitar solicitações contínuas de permissão
+    var hasRequestedLocationPermission by remember { mutableStateOf(false) }
+    
+    // Solicitar permissão apenas uma vez quando locationSharingEnabled for habilitado
+    LaunchedEffect(locationSharingEnabled) {
+        if (locationSharingEnabled && 
+            locationPermission.status !is PermissionStatus.Granted && 
+            !hasRequestedLocationPermission) {
+            hasRequestedLocationPermission = true
+            locationPermission.launchPermissionRequest()
+        } else if (!locationSharingEnabled) {
+            hasRequestedLocationPermission = false
+        }
+    }
+    
     Scaffold(
         topBar = {
             AppTopBar(
                 title = "Privacidade",
+                subtitle = "Controle como suas informações são utilizadas",
                 onBackClick = onBackClick
             )
         }
@@ -94,28 +211,36 @@ fun PrivacyScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = null,
-                                tint = TaskGoGreen
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Compartilhar Localização",
                                     style = FigmaProductName,
                                     color = TaskGoTextBlack,
                                     fontWeight = FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Permitir que prestadores vejam sua localização para serviços próximos",
                                     style = FigmaStatusText,
-                                    color = TaskGoTextGray
+                                    color = TaskGoTextGray,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
                         
                         Switch(
                             checked = locationSharingEnabled,
@@ -127,7 +252,15 @@ fun PrivacyScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         OutlinedButton(
-                            onClick = { /* TODO: Implementar configurações de localização */ },
+                            onClick = {
+                                // Abrir configurações de localização do Android
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                try {
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("PrivacyScreen", "Erro ao abrir configurações: ${e.message}", e)
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(
@@ -165,28 +298,36 @@ fun PrivacyScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Visibility,
                                 contentDescription = null,
-                                tint = TaskGoGreen
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Perfil Público",
                                     style = FigmaProductName,
                                     color = TaskGoTextBlack,
                                     fontWeight = FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Permitir que outros usuários vejam seu perfil",
                                     style = FigmaStatusText,
-                                    color = TaskGoTextGray
+                                    color = TaskGoTextGray,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
                         
                         Switch(
                             checked = profileVisibilityEnabled,
@@ -202,28 +343,36 @@ fun PrivacyScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ContactPhone,
                                 contentDescription = null,
-                                tint = TaskGoGreen
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Compartilhar Contato",
                                     style = FigmaProductName,
                                     color = TaskGoTextBlack,
                                     fontWeight = FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Permitir que prestadores vejam seu telefone e e-mail",
                                     style = FigmaStatusText,
-                                    color = TaskGoTextGray
+                                    color = TaskGoTextGray,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
                         
                         Switch(
                             checked = contactInfoSharingEnabled,
@@ -256,28 +405,36 @@ fun PrivacyScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Analytics,
                                 contentDescription = null,
-                                tint = TaskGoGreen
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Analytics e Métricas",
                                     style = FigmaProductName,
                                     color = TaskGoTextBlack,
                                     fontWeight = FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Coletar dados para melhorar o aplicativo",
                                     style = FigmaStatusText,
-                                    color = TaskGoTextGray
+                                    color = TaskGoTextGray,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
                         
                         Switch(
                             checked = analyticsEnabled,
@@ -293,28 +450,36 @@ fun PrivacyScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DataUsage,
                                 contentDescription = null,
-                                tint = TaskGoGreen
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Coleta de Dados",
                                     style = FigmaProductName,
                                     color = TaskGoTextBlack,
                                     fontWeight = FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Armazenar informações sobre seu uso do aplicativo",
                                     style = FigmaStatusText,
-                                    color = TaskGoTextGray
+                                    color = TaskGoTextGray,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
                         
                         Switch(
                             checked = dataCollectionEnabled,
@@ -347,28 +512,36 @@ fun PrivacyScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ShoppingCart,
                                 contentDescription = null,
-                                tint = TaskGoGreen
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Publicidade Personalizada",
                                     style = FigmaProductName,
                                     color = TaskGoTextBlack,
                                     fontWeight = FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Mostrar anúncios baseados em seus interesses",
                                     style = FigmaStatusText,
-                                    color = TaskGoTextGray
+                                    color = TaskGoTextGray,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
                         
                         Switch(
                             checked = personalizedAdsEnabled,
@@ -384,28 +557,36 @@ fun PrivacyScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = null,
-                                tint = TaskGoGreen
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Compartilhamento com Terceiros",
                                     style = FigmaProductName,
                                     color = TaskGoTextBlack,
                                     fontWeight = FontWeight.Medium
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "Permitir que parceiros acessem dados para publicidade",
                                     style = FigmaStatusText,
-                                    color = TaskGoTextGray
+                                    color = TaskGoTextGray,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
                         
                         Switch(
                             checked = thirdPartySharingEnabled,
@@ -432,38 +613,149 @@ fun PrivacyScreen(
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
+                    var isExporting by remember { mutableStateOf(false) }
+                    var exportMessage by remember { mutableStateOf<String?>(null) }
+                    
                     OutlinedButton(
-                        onClick = { /* TODO: Implementar download de dados */ },
-                        modifier = Modifier.fillMaxWidth()
+                        onClick = {
+                            val user = currentUser
+                            if (user != null) {
+                                isExporting = true
+                                coroutineScope.launch {
+                                    try {
+                                        val result = lgpdManager.exportUserData(user.uid)
+                                        result.fold(
+                                            onSuccess = { export ->
+                                                exportMessage = "Dados exportados com sucesso! Total: ${export.data.size} itens"
+                                                isExporting = false
+                                            },
+                                            onFailure = { error ->
+                                                exportMessage = "Erro ao exportar: ${error.message}"
+                                                isExporting = false
+                                                // Tratar erro específico do Secure Token API bloqueado
+                                                if (error.message?.contains("SecureToken") == true || error.message?.contains("securetoken") == true) {
+                                                    android.util.Log.w("PrivacyScreen", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
+                                                }
+                                            }
+                                        )
+                                    } catch (e: Exception) {
+                                        exportMessage = "Erro: ${e.message}"
+                                        isExporting = false
+                                        if (e.message?.contains("SecureToken") == true || e.message?.contains("securetoken") == true) {
+                                            android.util.Log.w("PrivacyScreen", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isExporting && currentUser != null
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        if (isExporting) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Baixar Meus Dados")
+                        Text(if (isExporting) "Exportando..." else "Baixar Meus Dados")
+                    }
+                    
+                    if (exportMessage != null) {
+                        Text(
+                            text = exportMessage!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (exportMessage!!.contains("sucesso")) TaskGoGreen else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
                     }
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
+                    var showDeleteConfirmation by remember { mutableStateOf(false) }
+                    
                     OutlinedButton(
-                        onClick = { /* TODO: Implementar exclusão de dados */ },
-                        modifier = Modifier.fillMaxWidth()
+                        onClick = { showDeleteConfirmation = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.Transparent,
+                            contentColor = TaskGoError
+                        )
                     ) {
                         Icon(
                             imageVector = Icons.Default.DeleteForever,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
+                            tint = TaskGoError
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Excluir Meus Dados")
+                        Text("Excluir Meus Dados", color = TaskGoError)
+                    }
+                    
+                    if (showDeleteConfirmation) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteConfirmation = false },
+                            title = { Text("Confirmar Exclusão", color = TaskGoError) },
+                            text = { 
+                                Text(
+                                    "Tem certeza que deseja excluir permanentemente todos os seus dados? Esta ação não pode ser desfeita.",
+                                    color = TaskGoTextBlack
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        val user = currentUser
+                                        if (user != null) {
+                                            coroutineScope.launch {
+                                                try {
+                                                    val result = lgpdManager.requestDataDeletion(user.uid)
+                                                    result.fold(
+                                                        onSuccess = { report ->
+                                                            exportMessage = "Exclusão concluída. ${report.deletedDocuments} documentos foram removidos."
+                                                            showDeleteConfirmation = false
+                                                        },
+                                                        onFailure = { error ->
+                                                            exportMessage = "Erro ao excluir: ${error.message}"
+                                                            showDeleteConfirmation = false
+                                                            // Tratar erro específico do Secure Token API bloqueado
+                                                            if (error.message?.contains("SecureToken") == true || error.message?.contains("securetoken") == true) {
+                                                                android.util.Log.w("PrivacyScreen", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
+                                                            }
+                                                        }
+                                                    )
+                                                } catch (e: Exception) {
+                                                    exportMessage = "Erro: ${e.message}"
+                                                    showDeleteConfirmation = false
+                                                    if (e.message?.contains("SecureToken") == true || e.message?.contains("securetoken") == true) {
+                                                        android.util.Log.w("PrivacyScreen", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = TaskGoError
+                                    )
+                                ) {
+                                    Text("Excluir", fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showDeleteConfirmation = false }) {
+                                    Text("Cancelar")
+                                }
+                            }
+                        )
                     }
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     OutlinedButton(
-                        onClick = { /* TODO: Implementar política de privacidade */ },
+                        onClick = onNavigateToPrivacyPolicy,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
@@ -478,7 +770,7 @@ fun PrivacyScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     OutlinedButton(
-                        onClick = { /* TODO: Implementar termos de uso */ },
+                        onClick = onNavigateToTermsOfService,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
@@ -488,6 +780,21 @@ fun PrivacyScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Termos de Uso")
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    OutlinedButton(
+                        onClick = onNavigateToConsentHistory,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Histórico de Consentimentos")
                     }
                 }
             }
@@ -546,6 +853,7 @@ fun PrivacyScreen(
                     )
                 }
             }
+            
         }
     }
 }

@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -24,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -53,6 +57,7 @@ fun ProductFormScreen(
         }
     }
 
+    
     val context = androidx.compose.ui.platform.LocalContext.current
     var pendingLauncherAction by remember { mutableStateOf(false) }
     
@@ -92,19 +97,36 @@ fun ProductFormScreen(
         }
     }
     
-    fun openImagePicker() {
-        if (hasImagePermission) {
-            launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        } else {
-            imagePermissionLauncher.launch(com.taskgoapp.taskgo.core.permissions.PermissionHandler.getImageReadPermission())
+    // Camera support
+    var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && cameraImageUri != null) {
+            viewModel.addImage(cameraImageUri!!.toString())
         }
     }
+    val cameraPermissionLauncher = com.taskgoapp.taskgo.core.permissions.rememberCameraPermissionLauncher(
+        onPermissionGranted = {
+            val imageFile = java.io.File(context.cacheDir, "camera_${System.currentTimeMillis()}.jpg")
+            cameraImageUri = Uri.fromFile(imageFile)
+            cameraLauncher.launch(cameraImageUri!!)
+        },
+        onPermissionDenied = { /* noop */ }
+    )
+    
+    var showImageSourceDialog by remember { mutableStateOf(false) }
+    fun openImagePicker() { 
+        showImageSourceDialog = true 
+    }
 
-    // Saved effect
+    // Saved effect - navegar de volta para gerenciar produtos
     LaunchedEffect(uiState.saved) {
         if (uiState.saved) {
             try {
-                Log.d("ProductFormScreen", "Product saved, navigating back")
+                Log.d("ProductFormScreen", "Product saved, navigating to gerenciar_produtos")
+                // Pequeno delay para garantir que o produto foi salvo
+                kotlinx.coroutines.delay(300)
                 onSaved(uiState.id ?: "")
             } catch (e: Exception) {
                 Log.e("ProductFormScreen", "Error navigating after save", e)
@@ -145,6 +167,7 @@ fun ProductFormScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -315,10 +338,12 @@ fun ProductFormScreen(
                 OutlinedTextField(
                     value = uiState.description,
                     onValueChange = { viewModel.onDescriptionChange(it) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 140.dp),
                     placeholder = { Text("Descreva o produto") },
-                    minLines = 3,
-                    maxLines = 5,
+                    minLines = 4,
+                    maxLines = 10,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
@@ -348,7 +373,65 @@ fun ProductFormScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            // Featured product toggle
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Produto em Destaque",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Seu produto aparecerá na seção de produtos em destaque para usuários próximos (raio de 100km)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    Switch(
+                        checked = uiState.featured,
+                        onCheckedChange = { viewModel.onFeaturedChange(it) }
+                    )
+                }
+            }
+            
+            // Discount percentage input
+            if (uiState.featured) {
+                Column {
+                    Text(
+                        text = "Porcentagem de Desconto",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = uiState.discountPercentage,
+                        onValueChange = { viewModel.onDiscountPercentageChange(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Ex: 10") },
+                        suffix = { Text("%") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+            }
 
             // Save button
             Button(
@@ -396,6 +479,22 @@ fun ProductFormScreen(
             }
         }
     }
+
+    // Image Source Chooser Dialog
+    ProductImageSourceChooser(
+        show = showImageSourceDialog,
+        onDismiss = { showImageSourceDialog = false },
+        onPickFromGallery = {
+            if (hasImagePermission) {
+                launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            } else {
+                imagePermissionLauncher?.launch(android.Manifest.permission.READ_MEDIA_IMAGES)
+            }
+        },
+        onCaptureFromCamera = {
+            cameraPermissionLauncher?.launch(android.Manifest.permission.CAMERA)
+        }
+    )
 
     // Image Editor Dialog
     if (showImageEditor && selectedImageUri != null) {
@@ -559,4 +658,31 @@ private fun ImageEditorDialog(
     }
 }
 
+// Camera/Galeria chooser acoplado à tela de produto
+@Composable
+private fun ProductImageSourceChooser(
+    show: Boolean,
+    onDismiss: () -> Unit,
+    onPickFromGallery: () -> Unit,
+    onCaptureFromCamera: () -> Unit
+) {
+    if (!show) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Selecionar imagem") },
+        text = { Text("Escolha de onde deseja obter a imagem") },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onPickFromGallery()
+            }) { Text("Galeria") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onCaptureFromCamera()
+            }) { Text("Câmera") }
+        }
+    )
+}
 

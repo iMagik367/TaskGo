@@ -24,6 +24,7 @@ import com.taskgoapp.taskgo.core.accessibility.contentDescription
 import com.taskgoapp.taskgo.core.accessibility.testTag
 import androidx.compose.ui.res.stringResource
 import com.taskgoapp.taskgo.core.model.Product
+import com.taskgoapp.taskgo.core.model.ReviewType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +33,7 @@ fun ProductDetailScreen(
     onBackClick: () -> Unit,
     onAddToCart: () -> Unit,
     variant: String? = null,
+    onNavigateToReviews: ((String) -> Unit)? = null,
     viewModel: ProductDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -87,6 +89,7 @@ fun ProductDetailScreen(
                     product = uiState.product!!,
                     onAddToCart = { viewModel.addToCart(productId) },
                     variant = variant,
+                    onNavigateToReviews = onNavigateToReviews,
                     modifier = Modifier.padding(paddingValues)
                 )
             }
@@ -99,6 +102,7 @@ private fun ProductDetailContent(
     product: Product,
     onAddToCart: () -> Unit,
     variant: String? = null,
+    onNavigateToReviews: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -176,8 +180,20 @@ private fun ProductDetailContent(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        if (variant == "reviews") {
-            ReviewsSection()
+        // Seção de Avaliações
+        if (onNavigateToReviews != null) {
+            com.taskgoapp.taskgo.core.design.reviews.ReviewsSectionCompact(
+                targetId = product.id,
+                type = com.taskgoapp.taskgo.core.model.ReviewType.PRODUCT,
+                onNavigateToReviews = { onNavigateToReviews(product.id) },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        } else if (variant == "reviews" && onNavigateToReviews != null) {
+            ReviewsSection(
+                productId = product.id,
+                onNavigateToReviews = onNavigateToReviews
+            )
             Spacer(modifier = Modifier.height(16.dp))
         }
         
@@ -229,40 +245,17 @@ private fun ProductDetailContent(
 }
 
 @Composable
-private fun ReviewsSection() {
-    Card(
+private fun ReviewsSection(
+    productId: String,
+    onNavigateToReviews: (String) -> Unit
+) {
+    // Usar o componente real de avaliações conectado ao backend
+    com.taskgoapp.taskgo.core.design.reviews.ReviewsSectionCompact(
+        targetId = productId,
+        type = com.taskgoapp.taskgo.core.model.ReviewType.PRODUCT,
+        onNavigateToReviews = { onNavigateToReviews(productId) },
         modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Avaliações",
-                style = FigmaProductName,
-                color = TaskGoTextBlack
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "4,6 • 128 avaliações",
-                style = FigmaProductDescription,
-                color = TaskGoTextGray
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            repeat(3) { idx ->
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Text(
-                        text = "Usuário ${idx + 1}",
-                        style = FigmaStatusText,
-                        color = TaskGoTextBlack
-                    )
-                    Text(
-                        text = "Ótimo produto, recomendo!",
-                        style = FigmaProductDescription,
-                        color = TaskGoTextGray
-                    )
-                }
-                if (idx < 2) HorizontalDivider(color = TaskGoDivider)
-            }
-        }
-    }
+    )
 }
 
 @Composable

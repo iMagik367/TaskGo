@@ -24,9 +24,10 @@ import com.taskgoapp.taskgo.data.local.converter.Converters
         MessageThreadEntity::class,
         ChatMessageEntity::class,
         AddressEntity::class,
-        CardEntity::class
+        CardEntity::class,
+        SyncQueueEntity::class
     ],
-    version = 2,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -43,6 +44,7 @@ abstract class TaskGoDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun addressDao(): AddressDao
     abstract fun cardDao(): CardDao
+    abstract fun syncQueueDao(): SyncQueueDao
 
     companion object {
         @Volatile

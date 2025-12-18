@@ -109,5 +109,32 @@ class MessagesViewModel @Inject constructor(
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
+    
+    /**
+     * Busca ou cria uma thread baseada em orderId
+     */
+    suspend fun getOrCreateThreadForOrder(
+        orderId: String,
+        orderRepository: com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository,
+        userRepository: com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
+    ): String {
+        val msgRepo = messageRepository as? com.taskgoapp.taskgo.data.repository.MessageRepositoryImpl
+            ?: throw IllegalStateException("MessageRepository não é MessageRepositoryImpl")
+        
+        return msgRepo.getOrCreateThreadForOrder(orderId, orderRepository, userRepository)
+    }
+    
+    /**
+     * Busca ou cria uma thread baseada em providerId
+     */
+    suspend fun getOrCreateThreadForProvider(
+        providerId: String,
+        userRepository: com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
+    ): String {
+        val msgRepo = messageRepository as? com.taskgoapp.taskgo.data.repository.MessageRepositoryImpl
+            ?: throw IllegalStateException("MessageRepository não é MessageRepositoryImpl")
+        
+        return msgRepo.getOrCreateThreadForProvider(providerId, userRepository)
+    }
 }
 

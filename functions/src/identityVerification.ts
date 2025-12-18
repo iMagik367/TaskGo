@@ -47,12 +47,13 @@ export const verifyIdentity = functions.https.onCall(async (data, context) => {
       success: true,
       message: 'Documentos enviados com sucesso. Aguardando verificação.'
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Erro ao verificar identidade:', error);
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
     throw new functions.https.HttpsError(
       'internal',
       'Erro ao processar verificação de identidade',
-      error.message
+      message
     );
   }
 });
@@ -108,12 +109,13 @@ export const approveIdentityVerification = functions.https.onCall(async (data, c
       success: true,
       message: approved ? 'Verificação aprovada' : 'Verificação rejeitada'
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Erro ao aprovar verificação:', error);
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
     throw new functions.https.HttpsError(
       'internal',
       'Erro ao processar aprovação',
-      error.message
+      message
     );
   }
 });

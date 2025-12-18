@@ -31,7 +31,12 @@ data class Product(
     val price: Double,
     val description: String?,
     val sellerName: String?,
-    val imageUris: List<String> // 1..n imagens
+    val imageUris: List<String>, // 1..n imagens
+    val category: String? = null, // Categoria do produto
+    val rating: Double? = null, // Avaliação média do produto/vendedor
+    val latitude: Double? = null, // Latitude da localização do produto
+    val longitude: Double? = null, // Longitude da localização do produto
+    val featured: Boolean? = false // Produto em destaque/promocional
 )
 
 data class ServiceOrder(
@@ -41,7 +46,11 @@ data class ServiceOrder(
     val date: Long, // epoch millis
     val addressLine: String,
     val city: String,
-    val state: String
+    val state: String,
+    val rating: Double? = null, // Avaliação média do prestador de serviço
+    val latitude: Double? = null, // Latitude da localização do serviço
+    val longitude: Double? = null, // Longitude da localização do serviço
+    val featured: Boolean? = false // Serviço em destaque
 )
 
 data class Proposal(
@@ -59,6 +68,13 @@ data class Proposal(
 data class CartItem(
     val productId: String, 
     val qty: Int
+)
+
+data class OrderItem(
+    val productId: String,
+    val productTitle: String? = null,
+    val quantity: Int,
+    val price: Double
 )
 
 enum class OrderStatus { 
@@ -177,6 +193,36 @@ data class NotificationItem(
 enum class NotificationType {
     ORDER_SHIPPED, PROPOSAL_APPROVED, NEW_MESSAGE, UPDATE_AVAILABLE, ORDER_PUBLISHED
 }
+
+// Review/Rating Models
+enum class ReviewType {
+    PRODUCT,      // Avaliação de produto
+    SERVICE,      // Avaliação de serviço
+    PROVIDER      // Avaliação de prestador de serviço
+}
+
+data class Review(
+    val id: String,
+    val type: ReviewType,
+    val targetId: String, // ID do produto, serviço ou prestador
+    val reviewerId: String,
+    val reviewerName: String,
+    val reviewerAvatarUri: String? = null,
+    val rating: Int, // 1-5 estrelas
+    val comment: String? = null,
+    val photoUrls: List<String> = emptyList(),
+    val createdAt: Long, // epoch millis
+    val updatedAt: Long? = null,
+    val orderId: String? = null, // ID do pedido relacionado (se aplicável)
+    val helpfulCount: Int = 0, // Quantidade de "útil" recebidos
+    val verifiedPurchase: Boolean = false // Se foi uma compra verificada
+)
+
+data class ReviewSummary(
+    val averageRating: Double,
+    val totalReviews: Int,
+    val ratingDistribution: Map<Int, Int> = emptyMap() // 1->count, 2->count, etc.
+)
 
 // Result wrapper for error handling
 sealed class Result<out T> {

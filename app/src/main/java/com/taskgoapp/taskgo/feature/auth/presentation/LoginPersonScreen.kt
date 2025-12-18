@@ -118,7 +118,7 @@ fun LoginPersonScreen(
             
             // Título
             Text(
-                text = "Pessoa Física",
+                text = "Login",
                 style = FigmaTitleLarge,
                 color = TaskGoTextBlack
             )
@@ -194,22 +194,14 @@ fun LoginPersonScreen(
             }
             
             // Campo E-mail
-            OutlinedTextField(
+            com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
                 label = { Text("E-mail", style = FigmaProductDescription, color = TaskGoTextGray) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                keyboardType = KeyboardType.Email
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -232,6 +224,9 @@ fun LoginPersonScreen(
                 ),
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    lineHeight = androidx.compose.ui.unit.TextUnit(24f, androidx.compose.ui.unit.TextUnitType.Sp)
+                ),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(
@@ -303,6 +298,8 @@ fun LoginPersonScreen(
             LaunchedEffect(loginUiState.value.isSuccess) {
                 if (loginUiState.value.isSuccess) {
                     Log.d("LoginPersonScreen", "Login bem-sucedido, navegando para home...")
+                    // Aguardar um pouco para garantir que tudo está sincronizado
+                    kotlinx.coroutines.delay(300)
                     onNavigateToHome()
                 }
             }
@@ -386,9 +383,9 @@ fun LoginPersonScreen(
             
             Spacer(modifier = Modifier.height(32.dp))
             
-            // Link para Login de Loja
+            // Link para Login de Prestador
             Text(
-                text = "Sou uma loja",
+                text = "Sou prestador",
                 color = TaskGoGreen,
                 fontSize = 14.sp,
                 modifier = Modifier.clickable { onNavigateToStoreLogin() }

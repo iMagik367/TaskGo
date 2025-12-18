@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.design.TGIcons
 import com.taskgoapp.taskgo.core.permissions.PermissionHandler
 import com.taskgoapp.taskgo.core.permissions.rememberImageReadPermissionLauncher
@@ -38,6 +39,8 @@ import com.taskgoapp.taskgo.core.theme.*
 fun IdentityVerificationScreen(
     onBackClick: () -> Unit,
     onVerificationComplete: () -> Unit,
+    onSkipVerification: () -> Unit = {},
+    onNavigateToFacialVerification: () -> Unit = {},
     viewModel: IdentityVerificationViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -112,26 +115,9 @@ fun IdentityVerificationScreen(
     
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        "Verificação de Identidade",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    ) 
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            painter = painterResource(TGIcons.Back),
-                            contentDescription = "Voltar",
-                            tint = Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = TaskGoGreen
-                )
+            AppTopBar(
+                title = "Verificação de Identidade",
+                onBackClick = onBackClick
             )
         }
     ) { paddingValues ->
@@ -198,14 +184,95 @@ fun IdentityVerificationScreen(
                 required = true
             )
             
-            // Selfie
-            DocumentUploadSection(
-                title = "Selfie",
-                description = "Tire uma selfie segurando seu documento",
-                imageUri = uiState.selfieUri,
-                onSelectImage = { openImageSelector(selfieLauncher) },
-                required = true
-            )
+            // Verificação Facial (substitui selfie)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Verificação Facial",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TaskGoTextBlack
+                            )
+                            Text(
+                                text = "* Obrigatório",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Verificação biométrica com câmera e sensores",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TaskGoTextGray,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    if (uiState.selfieUri != null) {
+                        val context = LocalContext.current
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .background(
+                                    Color(0xFFF5F5F5),
+                                    RoundedCornerShape(8.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = coil.request.ImageRequest.Builder(context)
+                                    .data(uiState.selfieUri)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = "Selfie capturada",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(8.dp),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = { onNavigateToFacialVerification() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = TaskGoGreen
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Iniciar Verificação Facial",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
             
             // Comprovante de Endereço
             DocumentUploadSection(
@@ -256,12 +323,34 @@ fun IdentityVerificationScreen(
                     )
                 } else {
                     Text(
-                        text = "Enviar Verificação",
+                        text = "Confirmar Verificação",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Botão Cadastrar Depois
+            OutlinedButton(
+                onClick = { onSkipVerification() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = TaskGoTextGray
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD9D9D9))
+            ) {
+                Text(
+                    text = "Cadastrar Depois",
+                    color = TaskGoTextGray,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
             
             Spacer(modifier = Modifier.height(16.dp))

@@ -7,19 +7,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.theme.*
+import androidx.compose.ui.unit.size
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CartaoCreditoScreen(
     onBackClick: () -> Unit,
-    isAlt: Boolean = false
+    isAlt: Boolean = false,
+    viewModel: CardFormViewModel = hiltViewModel()
 ) {
-    var nome by remember { mutableStateOf("Lucas Almeida") }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    
+    var nome by remember { mutableStateOf("") }
     var numeroCartao by remember { mutableStateOf("") }
     var validade by remember { mutableStateOf("") }
     var cvc by remember { mutableStateOf("") }
+    
+    // Observar sucesso e navegar de volta
+    LaunchedEffect(uiState.success) {
+        if (uiState.success) {
+            onBackClick()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -72,8 +85,12 @@ fun CartaoCreditoScreen(
                 // Número
                 OutlinedTextField(
                     value = numeroCartao,
-                    onValueChange = { numeroCartao = it },
-                    placeholder = { Text("Número do cartão") },
+                    onValueChange = { 
+                        // Formatar número do cartão (adicionar espaços a cada 4 dígitos)
+                        val cleanValue = it.replace(Regex("[^0-9]"), "")
+                        numeroCartao = cleanValue.chunked(4).joinToString(" ")
+                    },
+                    placeholder = { Text("0000 0000 0000 0000") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -86,14 +103,25 @@ fun CartaoCreditoScreen(
                 ) {
                     OutlinedTextField(
                         value = validade,
-                        onValueChange = { validade = it },
-                        placeholder = { Text("Validade") },
+                        onValueChange = { 
+                            // Formatar validade (MM/AA)
+                            val cleanValue = it.replace(Regex("[^0-9]"), "")
+                            validade = when {
+                                cleanValue.length <= 2 -> cleanValue
+                                else -> "${cleanValue.take(2)}/${cleanValue.drop(2).take(2)}"
+                            }
+                        },
+                        placeholder = { Text("MM/AA") },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = cvc,
-                        onValueChange = { cvc = it },
+                        onValueChange = { 
+                            // Limitar CVC a 3-4 dígitos
+                            val cleanValue = it.replace(Regex("[^0-9]"), "")
+                            cvc = cleanValue.take(4)
+                        },
                         placeholder = { Text("CVC") },
                         modifier = Modifier.weight(1f),
                         singleLine = true
@@ -101,21 +129,61 @@ fun CartaoCreditoScreen(
                 }
             }
 
+            // Mostrar erro do ViewModel
+            uiState.error?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            
             Spacer(modifier = Modifier.weight(1f))
 
             // Save button
             Button(
-                onClick = { /* TODO: Salvar cartão */ },
+                onClick = {
+                    // Parse validade (MM/AA)
+                    val validadeParts = validade.split("/")
+                    val expMonth = validadeParts.getOrNull(0)?.toIntOrNull() ?: 0
+                    val expYear = if (validadeParts.getOrNull(1)?.length == 2) {
+                        2000 + (validadeParts[1].toIntOrNull() ?: 0)
+                    } else {
+                        validadeParts.getOrNull(1)?.toIntOrNull() ?: 0
+                    }
+                    
+                    viewModel.saveCard(
+                        holder = nome,
+                        cardNumber = numeroCartao.replace(Regex("[^0-9]"), ""),
+                        expMonth = expMonth,
+                        expYear = expYear,
+                        cvc = cvc,
+                        type = "Crédito"
+                    )
+                },
+                enabled = !uiState.isLoading && nome.isNotEmpty() && 
+                         numeroCartao.replace(Regex("[^0-9]"), "").length >= 13 &&
+                         validade.length >= 5 && cvc.length >= 3,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = TaskGoGreen
                 )
             ) {
-                Text(
-                    text = if (isAlt) "Salvar Cartão" else "Salvar",
-                    style = FigmaButtonText,
-                    color = Color.White
-                )
+                if (uiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Salvando...", style = FigmaButtonText, color = Color.White)
+                } else {
+                    Text(
+                        text = if (isAlt) "Salvar Cartão" else "Salvar",
+                        style = FigmaButtonText,
+                        color = Color.White
+                    )
+                }
             }
         }
     }

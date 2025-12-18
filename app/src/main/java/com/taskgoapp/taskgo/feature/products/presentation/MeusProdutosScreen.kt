@@ -9,6 +9,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,6 +43,18 @@ fun MeusProdutosScreen(
                 title = "Gerencie seus Produtos",
                 onBackClick = onBackClick
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onCriarProduto,
+                containerColor = TaskGoGreen
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Criar Produto",
+                    tint = Color.White
+                )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -260,6 +274,27 @@ private fun ProductCardWithCheckbox(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2
+                        )
+                    }
+                }
+                // Badge de produto em destaque
+                if (product.featured == true) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Em destaque",
+                            modifier = Modifier.size(14.dp),
+                            tint = TaskGoSuccessGreen
+                        )
+                        Text(
+                            text = "Em destaque",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TaskGoSuccessGreen,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }

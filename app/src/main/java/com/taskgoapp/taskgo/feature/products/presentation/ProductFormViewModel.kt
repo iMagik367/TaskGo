@@ -12,6 +12,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.util.UUID
 
 data class ProductFormState(
@@ -21,6 +25,8 @@ data class ProductFormState(
     val description: String = "",
     val sellerName: String = "",
     val imageUris: List<String> = emptyList(),
+    val featured: Boolean = false, // Produto em destaque
+    val discountPercentage: String = "", // Porcentagem de desconto
     val isSaving: Boolean = false,
     val error: String? = null,
     val canSave: Boolean = false,
@@ -29,11 +35,28 @@ data class ProductFormState(
 
 @HiltViewModel
 class ProductFormViewModel @Inject constructor(
-    private val productsRepository: ProductsRepository
+    private val productsRepository: ProductsRepository,
+    private val documentVerificationManager: com.taskgoapp.taskgo.core.security.DocumentVerificationManager,
+    private val locationManager: com.taskgoapp.taskgo.core.location.LocationManager,
+    private val storageRepository: com.taskgoapp.taskgo.data.repository.FirebaseStorageRepository,
+    private val authRepository: com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProductFormState())
     val uiState: StateFlow<ProductFormState> = _uiState.asStateFlow()
+    
+    private val _isVerified = MutableStateFlow(false)
+    val isVerified: StateFlow<Boolean> = _isVerified.asStateFlow()
+    
+    init {
+        checkVerificationStatus()
+    }
+    
+    private fun checkVerificationStatus() {
+        viewModelScope.launch {
+            _isVerified.value = documentVerificationManager.hasDocumentsVerified()
+        }
+    }
 
     fun load(productId: String?) {
         if (productId == null) return
@@ -49,7 +72,8 @@ class ProductFormViewModel @Inject constructor(
                         price = p.price.toString(),
                         description = p.description.orEmpty(),
                         sellerName = p.sellerName.orEmpty(),
-                        imageUris = p.imageUris
+                        imageUris = p.imageUris,
+                        featured = p.featured ?: false
                     )
                     validate()
                 } else {
@@ -102,6 +126,24 @@ class ProductFormViewModel @Inject constructor(
         }
     }
 
+    fun onFeaturedChange(value: Boolean) {
+        try {
+            Log.d("ProductFormViewModel", "Featured changed to: $value")
+            _uiState.value = _uiState.value.copy(featured = value)
+        } catch (e: Exception) {
+            Log.e("ProductFormViewModel", "Error changing featured", e)
+        }
+    }
+    
+    fun onDiscountPercentageChange(value: String) {
+        try {
+            Log.d("ProductFormViewModel", "Discount percentage changed to: $value")
+            _uiState.value = _uiState.value.copy(discountPercentage = value)
+        } catch (e: Exception) {
+            Log.e("ProductFormViewModel", "Error changing discount percentage", e)
+        }
+    }
+
     fun addImage(uri: String) {
         try {
             Log.d("ProductFormViewModel", "Adding image: $uri")
@@ -144,27 +186,79 @@ class ProductFormViewModel @Inject constructor(
     fun save() {
         val s = _uiState.value
         if (!s.canSave || s.isSaving) return
+        
+        val currentUser = authRepository.getCurrentUser()
+        if (currentUser == null) {
+            _uiState.value = _uiState.value.copy(error = "Usuário não autenticado. Faça login novamente.")
+            return
+        }
+        
         viewModelScope.launch {
+            _uiState.value = s.copy(isSaving = true, error = null)
+            
             try {
-                Log.d("ProductFormViewModel", "Saving product: ${s.title}")
-                Log.d("ProductFormViewModel", "Product images: ${s.imageUris}")
-                _uiState.value = s.copy(isSaving = true)
-                val id = s.id ?: UUID.randomUUID().toString()
+                val userId = currentUser.uid
+                val productId = s.id ?: UUID.randomUUID().toString()
+                
+                // Upload de imagens (igual aos serviços)
+                val imageUrls = mutableListOf<String>()
+                
+                s.imageUris.forEachIndexed { index, imageUri ->
+                    // Se já é URL, adiciona diretamente
+                    if (imageUri.startsWith("http://") || imageUri.startsWith("https://")) {
+                        imageUrls.add(imageUri)
+                    } else {
+                        // Faz upload
+                        val uri = android.net.Uri.parse(imageUri)
+                        val result = storageRepository.uploadProductImage(
+                            userId = userId,
+                            productId = productId,
+                            uri = uri,
+                            imageIndex = index
+                        )
+                        result.fold(
+                            onSuccess = { url ->
+                                imageUrls.add(url)
+                            },
+                            onFailure = { e ->
+                                throw e
+                            }
+                        )
+                    }
+                }
+                
+                // Capturar localização
+                var latitude: Double? = null
+                var longitude: Double? = null
+                try {
+                    val location = locationManager.getCurrentLocation()
+                    location?.let {
+                        latitude = it.latitude
+                        longitude = it.longitude
+                    }
+                } catch (e: Exception) {
+                    // Ignora erro de localização
+                }
+                
                 val product = Product(
-                    id = id,
+                    id = productId,
                     title = s.title.trim(),
                     price = s.price.replace(",", ".").toDouble(),
                     description = s.description.ifBlank { null },
                     sellerName = s.sellerName.ifBlank { null },
-                    imageUris = s.imageUris
+                    imageUris = imageUrls,
+                    featured = s.featured,
+                    latitude = latitude,
+                    longitude = longitude
                 )
-                Log.d("ProductFormViewModel", "Product to save: $product")
+                
                 productsRepository.upsertProduct(product)
-                Log.d("ProductFormViewModel", "Product saved successfully")
                 _uiState.value = _uiState.value.copy(isSaving = false, saved = true)
             } catch (e: Exception) {
-                Log.e("ProductFormViewModel", "Error saving product", e)
-                _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                _uiState.value = _uiState.value.copy(
+                    isSaving = false,
+                    error = "Erro ao salvar produto: ${e.message}"
+                )
             }
         }
     }

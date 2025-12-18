@@ -1,10 +1,19 @@
 ﻿package com.taskgoapp.taskgo.navigation
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.taskgoapp.taskgo.feature.home.presentation.HomeScreen
 import com.taskgoapp.taskgo.feature.splash.presentation.SplashScreen
 import com.taskgoapp.taskgo.feature.auth.presentation.LoginPersonScreen
@@ -12,13 +21,18 @@ import com.taskgoapp.taskgo.feature.auth.presentation.LoginStoreScreen
 import com.taskgoapp.taskgo.feature.auth.presentation.SignUpScreen
 import com.taskgoapp.taskgo.feature.auth.presentation.SignUpSuccessScreen
 import com.taskgoapp.taskgo.feature.services.presentation.ServicesScreen
+import com.taskgoapp.taskgo.feature.services.presentation.LocalProvidersScreen
+import com.taskgoapp.taskgo.feature.services.presentation.LocalServiceOrdersScreen
+import com.taskgoapp.taskgo.feature.services.presentation.ServiceOrderDetailScreen
 import com.taskgoapp.taskgo.feature.services.presentation.ProposalsReceivedScreen
 import com.taskgoapp.taskgo.feature.services.presentation.ProposalDetailScreen
+import com.taskgoapp.taskgo.feature.services.presentation.ProposalsViewModel
 import com.taskgoapp.taskgo.feature.services.presentation.ServiceHistoryScreen
 import com.taskgoapp.taskgo.feature.services.presentation.RateProviderScreen
 import com.taskgoapp.taskgo.feature.services.presentation.HistoricoServicosScreen
 import com.taskgoapp.taskgo.feature.services.presentation.AvaliarPrestadorScreen
 import com.taskgoapp.taskgo.feature.products.presentation.ProductsScreen
+import com.taskgoapp.taskgo.feature.products.presentation.DiscountedProductsScreen
 import com.taskgoapp.taskgo.feature.products.presentation.CreateProductScreen
 import com.taskgoapp.taskgo.feature.products.presentation.EditProductScreen
 import com.taskgoapp.taskgo.feature.products.presentation.ManageProductsScreen
@@ -26,8 +40,7 @@ import com.taskgoapp.taskgo.feature.messages.presentation.MessagesScreen
 import com.taskgoapp.taskgo.feature.profile.presentation.ProfileScreen
 import com.taskgoapp.taskgo.feature.profile.presentation.MyDataScreen
 import com.taskgoapp.taskgo.feature.profile.presentation.MyReviewsScreen
-import com.taskgoapp.taskgo.feature.ads.presentation.AnunciosScreen
-import com.taskgoapp.taskgo.feature.ads.presentation.AnuncioDetalheScreen
+import com.taskgoapp.taskgo.feature.profile.presentation.ProviderProfileScreen
 import com.taskgoapp.taskgo.feature.ads.presentation.ComprarBannerScreen
 import com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutScreen
 import com.taskgoapp.taskgo.feature.checkout.presentation.OrderSummaryScreen
@@ -56,7 +69,6 @@ import com.taskgoapp.taskgo.feature.services.presentation.GerenciarPropostasScre
 import com.taskgoapp.taskgo.feature.services.presentation.ConfirmarPropostaScreen
 import com.taskgoapp.taskgo.feature.services.presentation.DetalhesPropostaScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.ConfiguracoesScreen
-import com.taskgoapp.taskgo.core.design.review.DesignReviewScreen
 import com.taskgoapp.taskgo.feature.auth.presentation.ForgotPasswordScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.AccountScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.PreferencesScreen
@@ -65,6 +77,9 @@ import com.taskgoapp.taskgo.feature.settings.presentation.LanguageScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.PrivacyScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.SupportScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.AboutScreen
+import com.taskgoapp.taskgo.feature.settings.presentation.PrivacyPolicyScreen
+import com.taskgoapp.taskgo.feature.settings.presentation.TermsOfServiceScreen
+import com.taskgoapp.taskgo.feature.settings.presentation.ConsentHistoryScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.AlterarSenhaScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.PrivacidadeScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.SobreScreen
@@ -73,6 +88,8 @@ import com.taskgoapp.taskgo.feature.settings.presentation.SettingsScreen
 import com.taskgoapp.taskgo.feature.messages.presentation.ChatScreen
 import com.taskgoapp.taskgo.feature.products.presentation.MeusProdutosScreen
 import com.taskgoapp.taskgo.feature.services.presentation.MeusServicosScreen
+import com.taskgoapp.taskgo.feature.services.presentation.ServiceFormScreen
+import com.taskgoapp.taskgo.feature.services.presentation.MyServiceOrdersScreen
 import com.taskgoapp.taskgo.feature.checkout.presentation.AddressBookScreen
 import com.taskgoapp.taskgo.feature.checkout.presentation.CadastrarEnderecoScreen
 import com.taskgoapp.taskgo.feature.checkout.presentation.PaymentMethodScreen
@@ -87,7 +104,12 @@ import com.taskgoapp.taskgo.feature.orders.presentation.ResumoPedidoScreen
 import com.taskgoapp.taskgo.feature.products.presentation.ProductFormScreen
 import com.taskgoapp.taskgo.feature.ads.presentation.AdsScreen
 import com.taskgoapp.taskgo.feature.chatai.presentation.AiSupportScreen
-import com.taskgoapp.taskgo.feature.settings.presentation.AccountTypeScreen
+import com.taskgoapp.taskgo.feature.chatai.presentation.ChatListScreen
+import com.taskgoapp.taskgo.feature.search.presentation.UniversalSearchScreen
+import com.taskgoapp.taskgo.feature.reviews.presentation.UserReviewsScreen
+import com.taskgoapp.taskgo.feature.reviews.presentation.ReviewsScreen
+import com.taskgoapp.taskgo.feature.reviews.presentation.CreateReviewScreen
+import com.taskgoapp.taskgo.core.model.ReviewType
 import com.taskgoapp.taskgo.feature.auth.presentation.IdentityVerificationScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.SecuritySettingsScreen
 
@@ -113,9 +135,17 @@ fun TaskGoNavGraph(
                     navController.navigate("home") {
                         popUpTo("splash") { inclusive = true }
                     }
+                },
+                onNavigateToBiometricAuth = {
+                    // Biometria removida - navegar direto para home
+                    navController.navigate("home") {
+                        popUpTo("splash") { inclusive = true }
+                    }
                 }
             )
         }
+        
+        // Rota de biometria removida - login apenas no primeiro acesso
 
         composable("forgot_password") {
             ForgotPasswordScreen(
@@ -147,6 +177,7 @@ fun TaskGoNavGraph(
             SignUpScreen(
                 onNavigateToLogin = { navController.navigate("login_person") },
                 onNavigateToHome = { navController.navigate("signup_success") },
+                onNavigateToDocumentVerification = { navController.navigate("identity_verification") },
                 onBackClick = { navController.popBackStack() }
             )
         }
@@ -173,7 +204,7 @@ fun TaskGoNavGraph(
                         navController.navigate("proposals_inbox")
                     },
                     onNavigateToBuyBanner = {
-                        navController.navigate("anuncios")
+                        navController.navigate("comprar_banner")
                     },
                     onNavigateToNotifications = {
                         navController.navigate("notifications")
@@ -186,6 +217,36 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToCart = {
                         navController.navigate("cart")
+                    },
+                    onNavigateToSearch = {
+                        navController.navigate("universal_search")
+                    },
+                    onNavigateToLocalProviders = {
+                        navController.navigate("local_providers")
+                    },
+                    onNavigateToDiscountedProducts = {
+                        navController.navigate("discounted_products")
+                    },
+                    onNavigateToLocalServiceOrders = {
+                        navController.navigate("local_service_orders")
+                    },
+                    onNavigateToProviderProfile = { providerId, isStore ->
+                        // Por enquanto, usar apenas providerId. Se precisar diferenciar loja, criar rota separada
+                        navController.navigate("provider_profile/$providerId")
+                    }
+                )
+            }
+            
+            composable("universal_search") {
+                UniversalSearchScreen(
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onNavigateToProduct = { productId ->
+                        navController.navigate("product_detail/$productId")
+                    },
+                    onNavigateToService = { serviceId ->
+                        navController.navigate("service_detail/$serviceId")
                     }
                 )
             }
@@ -205,7 +266,7 @@ fun TaskGoNavGraph(
                         navController.navigate("proposals_inbox")
                     },
                     onNavigateToBuyBanner = {
-                        navController.navigate("anuncios")
+                        navController.navigate("comprar_banner")
                     },
                     onNavigateToNotifications = {
                         navController.navigate("notifications")
@@ -218,6 +279,15 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToCart = {
                         navController.navigate("cart")
+                    },
+                    onNavigateToLocalProviders = {
+                        navController.navigate("local_providers")
+                    },
+                    onNavigateToDiscountedProducts = {
+                        navController.navigate("discounted_products")
+                    },
+                    onNavigateToLocalServiceOrders = {
+                        navController.navigate("local_service_orders")
                     },
                     variant = "products"
                 )
@@ -237,7 +307,7 @@ fun TaskGoNavGraph(
                         navController.navigate("proposals_inbox")
                     },
                     onNavigateToBuyBanner = {
-                        navController.navigate("anuncios")
+                        navController.navigate("comprar_banner")
                     },
                     onNavigateToNotifications = {
                         navController.navigate("notifications")
@@ -250,6 +320,15 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToCart = {
                         navController.navigate("cart")
+                    },
+                    onNavigateToLocalProviders = {
+                        navController.navigate("local_providers")
+                    },
+                    onNavigateToDiscountedProducts = {
+                        navController.navigate("discounted_products")
+                    },
+                    onNavigateToLocalServiceOrders = {
+                        navController.navigate("local_service_orders")
                     },
                     variant = "services"
                 )
@@ -269,7 +348,7 @@ fun TaskGoNavGraph(
                         navController.navigate("proposals_inbox")
                     },
                     onNavigateToBuyBanner = {
-                        navController.navigate("anuncios")
+                        navController.navigate("comprar_banner")
                     },
                     onNavigateToNotifications = {
                         navController.navigate("notifications")
@@ -282,6 +361,15 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToCart = {
                         navController.navigate("cart")
+                    },
+                    onNavigateToLocalProviders = {
+                        navController.navigate("local_providers")
+                    },
+                    onNavigateToDiscountedProducts = {
+                        navController.navigate("discounted_products")
+                    },
+                    onNavigateToLocalServiceOrders = {
+                        navController.navigate("local_service_orders")
                     },
                     variant = "messages"
                 )
@@ -301,7 +389,7 @@ fun TaskGoNavGraph(
                         navController.navigate("proposals_inbox")
                     },
                     onNavigateToBuyBanner = {
-                        navController.navigate("anuncios")
+                        navController.navigate("comprar_banner")
                     },
                     onNavigateToNotifications = {
                         navController.navigate("notifications")
@@ -315,7 +403,101 @@ fun TaskGoNavGraph(
                     onNavigateToCart = {
                         navController.navigate("cart")
                     },
+                    onNavigateToLocalProviders = {
+                        navController.navigate("local_providers")
+                    },
+                    onNavigateToDiscountedProducts = {
+                        navController.navigate("discounted_products")
+                    },
+                    onNavigateToLocalServiceOrders = {
+                        navController.navigate("local_service_orders")
+                    },
                     variant = "profile"
+                )
+            }
+
+            // Novas rotas de banners promocionais
+            composable("local_service_orders") {
+                LocalServiceOrdersScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onOrderClick = { orderId ->
+                        navController.navigate("service_order_detail/$orderId")
+                    }
+                )
+            }
+            composable(
+                route = "service_order_detail/{orderId}",
+                arguments = listOf(
+                    navArgument("orderId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
+                ServiceOrderDetailScreen(
+                    orderId = orderId,
+                    onBackClick = { navController.popBackStack() },
+                    onSendProposal = { orderId ->
+                        // Navegar para mensagens
+                        // A abertura automática da conversa será implementada no MessagesScreen
+                        // quando receber orderId via parâmetro
+                        navController.navigate("messages")
+                    }
+                )
+            }
+            composable("local_providers") {
+                LocalProvidersScreen(
+                    onNavigateToServiceDetail = { providerId ->
+                        navController.navigate("provider_profile/$providerId")
+                    },
+                    onNavigateToCreateWorkOrder = {
+                        navController.navigate("create_work_order")
+                    },
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
+            
+            // Rota de perfil do prestador/loja
+            composable(
+                route = "provider_profile/{providerId}",
+                arguments = listOf(
+                    navArgument("providerId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val providerId = backStackEntry.arguments?.getString("providerId") ?: ""
+                // Por padrão, assumir que é prestador (não loja)
+                // Se precisar diferenciar, pode passar via query parameter ou criar rota separada
+                val isStore = false
+                ProviderProfileScreen(
+                    providerId = providerId,
+                    isStore = isStore,
+                    onBackClick = { navController.popBackStack() },
+                    onRateClick = { providerId ->
+                        navController.navigate("rate_provider/$providerId")
+                    },
+                    onMessageClick = { providerId ->
+                        // Navegar para mensagens
+                        // A abertura automática da conversa será implementada no MessagesScreen
+                        // quando receber providerId via parâmetro
+                        navController.navigate("messages")
+                    },
+                    onServiceClick = { serviceId ->
+                        navController.navigate("service_detail/$serviceId")
+                    }
+                )
+            }
+            
+            composable("discounted_products") {
+                DiscountedProductsScreen(
+                    onNavigateToProductDetail = { productId ->
+                        navController.navigate("product_detail/$productId")
+                    },
+                    onNavigateToCart = {
+                        navController.navigate("cart")
+                    },
+                    onBackClick = { navController.popBackStack() }
                 )
             }
 
@@ -327,6 +509,15 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToCreateWorkOrder = {
                         navController.navigate("create_work_order")
+                    },
+                    onNavigateToNotifications = {
+                        navController.navigate("notifications")
+                    },
+                    onNavigateToCart = {
+                        navController.navigate("cart")
+                    },
+                    onNavigateToMessages = {
+                        navController.navigate("messages")
                     }
                 )
             }
@@ -338,6 +529,15 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToCart = {
                         navController.navigate("cart")
+                    },
+                    onNavigateToAddProduct = {
+                        navController.navigate("create_product")
+                    },
+                    onNavigateToNotifications = {
+                        navController.navigate("notifications")
+                    },
+                    onNavigateToMessages = {
+                        navController.navigate("messages")
                     }
                 )
             }
@@ -361,7 +561,7 @@ fun TaskGoNavGraph(
                         navController.navigate("configuracoes")
                     },
                     onNavigateToCart = {
-                    navController.navigate("cart")
+                        navController.navigate("cart")
                     }
                 )
             }
@@ -414,16 +614,51 @@ fun TaskGoNavGraph(
                         navController.navigate("meus_servicos")
                     },
                     onNavigateToMyProducts = {
-                        navController.navigate("meus_produtos")
+                        navController.navigate("gerenciar_produtos")
+                    },
+                    onNavigateToMyServiceOrders = {
+                        navController.navigate("minhas_ordens_servico")
+                    },
+                    onNavigateToAboutMe = {
+                        navController.navigate("sobre_mim")
+                    },
+                    onNavigateToUserReviews = { userId, userName ->
+                        navController.navigate("user_reviews/$userId/$userName")
                     }
                 )
             }
 
         // Profile extras
         composable("my_data") { MyDataScreen(onNavigateBack = { navController.popBackStack() }) }
+        composable("sobre_mim") {
+            com.taskgoapp.taskgo.feature.profile.presentation.AboutMeScreen(
+                onBackClick = { navController.popBackStack() },
+                onNavigateToReviews = { userId, userName ->
+                    navController.navigate("user_reviews/$userId/$userName")
+                }
+            )
+        }
         composable("my_reviews") { MyReviewsScreen(onNavigateBack = { navController.popBackStack() }) }
+        composable("user_reviews/{userId}/{userName}") { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: ""
+            val userName = backStackEntry.arguments?.getString("userName") ?: "Usuário"
+            UserReviewsScreen(
+                userId = userId,
+                userName = userName,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
         composable("identity_verification") {
             IdentityVerificationScreen(
+                onBackClick = { navController.popBackStack() },
+                onSkipVerification = { navController.navigate("home") },
+                onVerificationComplete = { navController.navigate("home") },
+                onNavigateToFacialVerification = { navController.navigate("facial_verification") }
+            )
+        }
+        
+        composable("facial_verification") {
+            com.taskgoapp.taskgo.feature.auth.presentation.FacialVerificationScreen(
                 onBackClick = { navController.popBackStack() },
                 onVerificationComplete = { navController.popBackStack() }
             )
@@ -435,7 +670,10 @@ fun TaskGoNavGraph(
             ProductDetailScreen(
                 productId = productId,
                 onBackClick = { navController.popBackStack() },
-                onAddToCart = { navController.navigate("cart") }
+                onAddToCart = { navController.navigate("cart") },
+                onNavigateToReviews = { targetId ->
+                    navController.navigate("reviews/$targetId/PRODUCT")
+                }
             )
         }
 
@@ -456,6 +694,66 @@ fun TaskGoNavGraph(
                 onBackClick = { navController.popBackStack() },
                 onAddToCart = { navController.navigate("cart") },
                 variant = "gallery"
+            )
+        }
+        
+        // Rotas de avaliações
+        composable("reviews/{targetId}/{type}") { backStackEntry ->
+            val targetId = backStackEntry.arguments?.getString("targetId") ?: ""
+            val typeString = backStackEntry.arguments?.getString("type") ?: "PRODUCT"
+            val type = when (typeString) {
+                "PRODUCT" -> ReviewType.PRODUCT
+                "SERVICE" -> ReviewType.SERVICE
+                "PROVIDER" -> ReviewType.PROVIDER
+                else -> ReviewType.PRODUCT
+            }
+            ReviewsScreen(
+                targetId = targetId,
+                type = type,
+                targetName = "Item", // TODO: Buscar nome do target
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCreateReview = {
+                    navController.navigate("create_review/$targetId/$typeString")
+                }
+            )
+        }
+        
+        composable("create_review/{targetId}/{type}") { backStackEntry ->
+            val targetId = backStackEntry.arguments?.getString("targetId") ?: ""
+            val typeString = backStackEntry.arguments?.getString("type") ?: "PRODUCT"
+            val type = when (typeString) {
+                "PRODUCT" -> ReviewType.PRODUCT
+                "SERVICE" -> ReviewType.SERVICE
+                "PROVIDER" -> ReviewType.PROVIDER
+                else -> ReviewType.PRODUCT
+            }
+            CreateReviewScreen(
+                targetId = targetId,
+                type = type,
+                targetName = "Item", // TODO: Buscar nome do target
+                orderId = null, // TODO: Passar orderId se disponível
+                onNavigateBack = { navController.popBackStack() },
+                onReviewCreated = { navController.popBackStack() }
+            )
+        }
+        
+        composable("create_review/{targetId}/{type}/{orderId}") { backStackEntry ->
+            val targetId = backStackEntry.arguments?.getString("targetId") ?: ""
+            val typeString = backStackEntry.arguments?.getString("type") ?: "PRODUCT"
+            val orderId = backStackEntry.arguments?.getString("orderId")
+            val type = when (typeString) {
+                "PRODUCT" -> ReviewType.PRODUCT
+                "SERVICE" -> ReviewType.SERVICE
+                "PROVIDER" -> ReviewType.PROVIDER
+                else -> ReviewType.PRODUCT
+            }
+            CreateReviewScreen(
+                targetId = targetId,
+                type = type,
+                targetName = "Item", // TODO: Buscar nome do target
+                orderId = orderId,
+                onNavigateBack = { navController.popBackStack() },
+                onReviewCreated = { navController.popBackStack() }
             )
         }
 
@@ -483,52 +781,94 @@ fun TaskGoNavGraph(
         }
         
         composable("create_product") {
-            CreateProductScreen(
-                onBackClick = { navController.popBackStack() },
-                onProductCreated = { navController.navigate("manage_products") }
+            ProductFormScreen(
+                productId = null,
+                onBack = { navController.popBackStack() },
+                onSaved = { 
+                    navController.navigate("gerenciar_produtos") {
+                        popUpTo("create_product") { inclusive = true }
+                    }
+                }
             )
         }
         
         composable("edit_product/{productId}") { backStackEntry ->
             val productId = backStackEntry.arguments?.getString("productId") ?: ""
-            EditProductScreen(
+            ProductFormScreen(
                 productId = productId,
-                onBackClick = { navController.popBackStack() },
-                onProductUpdated = { navController.navigate("manage_products") },
-                onProductDeleted = { navController.navigate("manage_products") }
+                onBack = { navController.popBackStack() },
+                onSaved = { 
+                    navController.navigate("gerenciar_produtos") {
+                        popUpTo("edit_product/$productId") { inclusive = true }
+                    }
+                }
             )
         }
         
         composable("manage_products") {
-            ManageProductsScreen(
-                onBackClick = { navController.popBackStack() },
-                onCreateProduct = { navController.navigate("product_form") },
-                onEditProduct = { productId -> navController.navigate("edit_product/$productId") },
-                onDeleteProduct = { productId -> 
-                    // TODO: Implementar lógica de exclusão
-                    navController.popBackStack()
-                }
-            )
+            // Redirecionar para a tela correta
+            navController.navigate("gerenciar_produtos") {
+                popUpTo("manage_products") { inclusive = true }
+            }
         }
 
         composable("checkout") {
+            val checkoutViewModel: com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutViewModel = hiltViewModel()
             CheckoutScreen(
                 onBackClick = { navController.popBackStack() },
-                onAddressSelection = { navController.navigate("address_selection") },
-                onPaymentMethodSelection = { navController.navigate("payment_method_selection") },
-                onOrderSummary = { navController.navigate("order_summary") }
+                onAddressSelection = { 
+                    navController.navigate("address_selection") {
+                        // Garantir que o ViewModel seja compartilhado
+                        launchSingleTop = true
+                    }
+                },
+                onPaymentMethodSelection = { 
+                    navController.navigate("payment_method_selection") {
+                        launchSingleTop = true
+                    }
+                },
+                onOrderSummary = { addressId, paymentType ->
+                    val encodedAddress = Uri.encode(addressId)
+                    navController.navigate("order_summary/$encodedAddress/${paymentType.name}")
+                },
+                viewModel = checkoutViewModel
             )
         }
 
-        composable("order_summary") {
+        composable(
+            route = "order_summary/{addressId}/{paymentType}",
+            arguments = listOf(
+                navArgument("addressId") { type = NavType.StringType },
+                navArgument("paymentType") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val addressId = Uri.decode(backStackEntry.arguments?.getString("addressId").orEmpty())
+            val paymentType = backStackEntry.arguments?.getString("paymentType").orEmpty()
             OrderSummaryScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onConfirmOrder = { navController.navigate("payment_success") }
+                addressId = addressId,
+                paymentTypeName = paymentType,
+                onOrderFinished = { orderId, total, trackingCode ->
+                    val trackingParam = Uri.encode(trackingCode)
+                    navController.navigate(
+                        "payment_success?orderId=$orderId&total=$total&tracking=$trackingParam"
+                    ) {
+                        popUpTo("checkout") { inclusive = false }
+                    }
+                },
+                onNavigateToPix = { orderId, total ->
+                    val encodedOrderId = Uri.encode(orderId)
+                    navController.navigate("pix_payment/$encodedOrderId/$total") {
+                        popUpTo("checkout") { inclusive = false }
+                    }
+                }
             )
         }
 
         // Variações de método de pagamento e finalizar pedido
         composable("payment_method_two_options") {
+            // Para esta rota, criar um ViewModel temporário ou usar hiltViewModel
+            val tempViewModel: com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutViewModel = hiltViewModel()
             PaymentMethodScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onPaymentMethodSelected = { methodName ->
@@ -538,15 +878,27 @@ fun TaskGoNavGraph(
                         else -> navController.popBackStack()
                     }
                 },
-                variant = "two_options"
+                variant = "two_options",
+                viewModel = tempViewModel
             )
         }
 
         // Checkout auxiliary routes
         composable("address_selection") {
+            // Usar o mesmo ViewModel do checkout através do navController
+            val checkoutBackStackEntry = remember(navController) {
+                navController.getBackStackEntry("checkout")
+            }
+            val checkoutViewModel: com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutViewModel = 
+                viewModel(checkoutBackStackEntry)
             AddressBookScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onAddressSelected = { _ -> navController.popBackStack() }
+                onAddressSelected = { addressId ->
+                    // A seleção já foi salva no ViewModel pela AddressBookScreen
+                    navController.popBackStack()
+                },
+                onAddAddress = { navController.navigate("add_address") },
+                viewModel = checkoutViewModel
             )
         }
 
@@ -558,16 +910,25 @@ fun TaskGoNavGraph(
         }
 
         composable("payment_method_selection") {
+            // Usar o mesmo ViewModel do checkout através do navController
+            val checkoutBackStackEntry = remember(navController) {
+                navController.getBackStackEntry("checkout")
+            }
+            val checkoutViewModel: com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutViewModel = 
+                viewModel(checkoutBackStackEntry)
             PaymentMethodScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onPaymentMethodSelected = { methodName ->
+                    // A seleção já foi salva no ViewModel pela PaymentMethodScreen
                     when (methodName) {
-                        "Pix" -> navController.navigate("pix_payment")
+                        "Pix" -> navController.popBackStack() // PIX não precisa de tela adicional
                         "Cartão de Crédito" -> navController.navigate("cartao_credito")
                         "Cartão de Débito" -> navController.navigate("cartao_debito")
+                        "Google Pay" -> navController.popBackStack() // Google Pay já processado
                         else -> navController.popBackStack()
                     }
-                }
+                },
+                viewModel = checkoutViewModel
             )
         }
 
@@ -639,33 +1000,73 @@ fun TaskGoNavGraph(
             CartaoDebitoScreen(onBackClick = { navController.popBackStack() }, isAlt = true)
         }
         
-        composable("pix_payment") {
+        composable(
+            route = "pix_payment/{orderId}/{total}",
+            arguments = listOf(
+                navArgument("orderId") { type = NavType.StringType },
+                navArgument("total") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val orderId = Uri.decode(backStackEntry.arguments?.getString("orderId").orEmpty())
+            val total = backStackEntry.arguments?.getString("total")?.toDoubleOrNull() ?: 0.0
             PixPaymentScreen(
-                totalAmount = 250.0, // TODO: Passar valor real
-                onPaymentSuccess = { navController.navigate("payment_success") },
+                orderId = orderId,
+                totalAmount = total,
+                onPaymentSuccess = { 
+                    navController.navigate("payment_success?orderId=$orderId&total=$total") {
+                        popUpTo("checkout") { inclusive = false }
+                    }
+                },
                 onBackClick = { navController.popBackStack() }
             )
         }
-        composable("pix_payment_waiting") {
+        composable(
+            route = "pix_payment_waiting/{orderId}/{total}",
+            arguments = listOf(
+                navArgument("orderId") { type = NavType.StringType },
+                navArgument("total") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val orderId = Uri.decode(backStackEntry.arguments?.getString("orderId").orEmpty())
+            val total = backStackEntry.arguments?.getString("total")?.toDoubleOrNull() ?: 0.0
             PixPaymentScreen(
-                totalAmount = 250.0,
-                onPaymentSuccess = { navController.navigate("payment_success") },
+                orderId = orderId,
+                totalAmount = total,
+                onPaymentSuccess = { navController.navigate("payment_success?orderId=$orderId&total=$total") },
                 onBackClick = { navController.popBackStack() },
                 variant = "waiting"
             )
         }
-        composable("pix_payment_error") {
+        composable(
+            route = "pix_payment_error/{orderId}/{total}",
+            arguments = listOf(
+                navArgument("orderId") { type = NavType.StringType },
+                navArgument("total") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val orderId = Uri.decode(backStackEntry.arguments?.getString("orderId").orEmpty())
+            val total = backStackEntry.arguments?.getString("total")?.toDoubleOrNull() ?: 0.0
             PixPaymentScreen(
-                totalAmount = 250.0,
-                onPaymentSuccess = { navController.navigate("payment_success") },
+                orderId = orderId,
+                totalAmount = total,
+                onPaymentSuccess = { navController.navigate("payment_success?orderId=$orderId&total=$total") },
                 onBackClick = { navController.popBackStack() },
                 variant = "error"
             )
         }
-        composable("pix_payment_success") {
+        composable(
+            route = "pix_payment_success/{orderId}/{total}",
+            arguments = listOf(
+                navArgument("orderId") { type = NavType.StringType },
+                navArgument("total") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val orderId = Uri.decode(backStackEntry.arguments?.getString("orderId").orEmpty())
+            val total = backStackEntry.arguments?.getString("total")?.toDoubleOrNull() ?: 0.0
             PixPaymentScreen(
-                totalAmount = 250.0,
-                onPaymentSuccess = { navController.navigate("payment_success") },
+                orderId = orderId,
+                totalAmount = total,
+                onPaymentSuccess = { navController.navigate("payment_success?orderId=$orderId&total=$total") },
                 onBackClick = { navController.popBackStack() },
                 variant = "success"
             )
@@ -678,10 +1079,30 @@ fun TaskGoNavGraph(
             )
         }
 
-        composable("payment_success") {
+        composable(
+            route = "payment_success?orderId={orderId}&total={total}&tracking={tracking}",
+            arguments = listOf(
+                navArgument("orderId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("total") {
+                    type = NavType.FloatType
+                    defaultValue = 0f
+                },
+                navArgument("tracking") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val orderId = backStackEntry.arguments?.getString("orderId").orEmpty().ifBlank { "#TG-0000" }
+            val total = backStackEntry.arguments?.getFloat("total")?.toDouble() ?: 0.0
+            val tracking = backStackEntry.arguments?.getString("tracking").orEmpty()
             PaymentSuccessScreen(
-                totalAmount = 250.0,
-                orderId = "#TG-0001",
+                totalAmount = total,
+                orderId = orderId,
+                trackingCode = tracking,
                 onContinue = {
                     navController.navigate("home") {
                         popUpTo(navController.graph.startDestinationId) { inclusive = false }
@@ -735,27 +1156,37 @@ fun TaskGoNavGraph(
             val serviceId = backStackEntry.arguments?.getString("serviceId") ?: ""
             DetalhesServicoScreen(
                 serviceId = serviceId,
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onEditService = { serviceId ->
+                    navController.navigate("service_form/$serviceId")
+                },
+                onNavigateToReviews = { targetId ->
+                    navController.navigate("reviews/$targetId/SERVICE")
+                }
             )
         }
 
         composable("create_work_order") {
             CreateWorkOrderScreen(
                 onBackClick = { navController.popBackStack() },
-                onWorkOrderCreated = { navController.navigate("proposals_inbox") }
+                onWorkOrderCreated = { navController.navigate("minhas_ordens_servico") {
+                    popUpTo("services") { inclusive = false }
+                }},
+                onNavigateToIdentityVerification = { navController.navigate("identity_verification") }
             )
         }
         
         composable("proposals_received") {
+            val proposalsViewModel: ProposalsViewModel = hiltViewModel()
             ProposalsReceivedScreen(
                 onBackClick = { navController.popBackStack() },
                 onProposalClick = { proposalId -> navController.navigate("proposal_detail/$proposalId") },
                 onAcceptProposal = { proposalId -> 
-                    // TODO: Implementar lógica de aceitar proposta
-                    navController.navigate("proposal_detail/$proposalId")
+                    proposalsViewModel.acceptProposal(proposalId)
+                    navController.popBackStack()
                 },
                 onRejectProposal = { proposalId -> 
-                    // TODO: Implementar lógica de rejeitar proposta
+                    proposalsViewModel.rejectProposal(proposalId)
                     navController.popBackStack()
                 }
             )
@@ -763,15 +1194,16 @@ fun TaskGoNavGraph(
         
         composable("proposal_detail/{proposalId}") { backStackEntry ->
             val proposalId = backStackEntry.arguments?.getString("proposalId") ?: ""
+            val proposalsViewModel: ProposalsViewModel = hiltViewModel()
             ProposalDetailScreen(
                 proposalId = proposalId,
                 onBackClick = { navController.popBackStack() },
                 onAcceptProposal = { proposalId -> 
-                    // TODO: Implementar lógica de aceitar proposta
+                    proposalsViewModel.acceptProposal(proposalId)
                     navController.popBackStack()
                 },
                 onRejectProposal = { proposalId -> 
-                    // TODO: Implementar lógica de rejeitar proposta
+                    proposalsViewModel.rejectProposal(proposalId)
                     navController.popBackStack()
                 }
             )
@@ -799,12 +1231,34 @@ fun TaskGoNavGraph(
         
         composable("rate_provider/{serviceId}") { backStackEntry ->
             val serviceId = backStackEntry.arguments?.getString("serviceId") ?: ""
+            val createReviewViewModel: com.taskgoapp.taskgo.feature.reviews.presentation.CreateReviewViewModel = hiltViewModel()
+            val orderDetailViewModel: com.taskgoapp.taskgo.feature.services.presentation.ServiceOrderDetailViewModel = hiltViewModel()
+            
+            // Tentar buscar como ordem primeiro
+            LaunchedEffect(serviceId) {
+                orderDetailViewModel.loadOrder(serviceId)
+            }
+            
+            val orderState by orderDetailViewModel.uiState.collectAsStateWithLifecycle()
+            val providerName = orderState.order?.providerId ?: "Prestador"
+            val serviceTitle = orderState.order?.details ?: "Serviço"
+            val providerId = orderState.order?.providerId ?: serviceId
+            val orderId = if (orderState.order != null) serviceId else null
+            
+            LaunchedEffect(providerId, orderId) {
+                createReviewViewModel.initialize(
+                    targetId = providerId,
+                    type = com.taskgoapp.taskgo.core.model.ReviewType.PROVIDER,
+                    orderId = orderId
+                )
+            }
+            
             RateProviderScreen(
-                providerName = "Carlos Montador", // TODO: Buscar dados reais
-                serviceTitle = "Montagem de Guarda-roupa", // TODO: Buscar dados reais
+                providerName = providerName,
+                serviceTitle = serviceTitle,
                 onBackClick = { navController.popBackStack() },
                 onRatingSubmitted = { rating, comment -> 
-                    // TODO: Implementar lógica de envio de avaliação
+                    createReviewViewModel.createReview(rating, comment)
                     navController.popBackStack()
                 }
             )
@@ -907,22 +1361,9 @@ fun TaskGoNavGraph(
             )
         }
 
-        // Rotas de anúncios
-        composable("anuncios") {
-            AnunciosScreen(
-                onBackClick = { navController.popBackStack() },
-                onComprarBanner = { navController.navigate("comprar_banner") },
-                onVerDetalhe = { navController.navigate("anuncio_detalhe") }
-            )
-        }
-
-        composable("anuncio_detalhe") {
-            AnuncioDetalheScreen(
-                onBackClick = { navController.popBackStack() },
-                onComprarBanner = { navController.navigate("comprar_banner") }
-            )
-        }
-
+        // Rotas de anúncios - Removidas: anuncios e anuncio_detalhe não são mais usadas
+        // A navegação vai direto para comprar_banner
+        
         composable("comprar_banner") {
             ComprarBannerScreen(
                 onBackClick = { navController.popBackStack() },
@@ -930,30 +1371,7 @@ fun TaskGoNavGraph(
             )
         }
 
-        // Ads variants
-        composable("anuncios_empty") {
-            AnunciosScreen(
-                onBackClick = { navController.popBackStack() },
-                onComprarBanner = { navController.navigate("comprar_banner") },
-                onVerDetalhe = { navController.navigate("anuncio_detalhe") },
-                variant = "empty"
-            )
-        }
-        composable("anuncios_cta_secondary") {
-            AnunciosScreen(
-                onBackClick = { navController.popBackStack() },
-                onComprarBanner = { navController.navigate("comprar_banner") },
-                onVerDetalhe = { navController.navigate("anuncio_detalhe") },
-                variant = "cta_secondary"
-            )
-        }
-        composable("anuncio_detalhe_disabled") {
-            AnuncioDetalheScreen(
-                onBackClick = { navController.popBackStack() },
-                onComprarBanner = { },
-                variant = "disabled"
-            )
-        }
+        // Ads variants - Removidas: variantes de anuncios não são mais usadas
         composable("comprar_banner_disabled") {
             ComprarBannerScreen(
                 onBackClick = { navController.popBackStack() },
@@ -967,8 +1385,8 @@ fun TaskGoNavGraph(
             NotificationsScreen(
                 onBackClick = { navController.popBackStack() },
                 onNavigateToNotificationsSettings = { navController.navigate("notification_settings") },
-                onNotificationClick = { notification ->
-                    navController.navigate("notification_detail/${notification.id}")
+                onNotificationClick = { notificationId ->
+                    navController.navigate("notification_detail/$notificationId")
                 }
             )
         }
@@ -976,7 +1394,7 @@ fun TaskGoNavGraph(
             NotificationsScreen(
                 onBackClick = { navController.popBackStack() },
                 onNavigateToNotificationsSettings = { navController.navigate("notification_settings") },
-                onNotificationClick = { notification -> navController.navigate("notification_detail/${notification.id}") },
+                onNotificationClick = { notificationId -> navController.navigate("notification_detail/$notificationId") },
                 variant = "empty"
             )
         }
@@ -984,7 +1402,7 @@ fun TaskGoNavGraph(
             NotificationsScreen(
                 onBackClick = { navController.popBackStack() },
                 onNavigateToNotificationsSettings = { navController.navigate("notification_settings") },
-                onNotificationClick = { notification -> navController.navigate("notification_detail/${notification.id}") },
+                onNotificationClick = { notificationId -> navController.navigate("notification_detail/$notificationId") },
                 variant = "unread"
             )
         }
@@ -992,7 +1410,7 @@ fun TaskGoNavGraph(
             NotificationsScreen(
                 onBackClick = { navController.popBackStack() },
                 onNavigateToNotificationsSettings = { navController.navigate("notification_settings") },
-                onNotificationClick = { notification -> navController.navigate("notification_detail/${notification.id}") },
+                onNotificationClick = { notificationId -> navController.navigate("notification_detail/$notificationId") },
                 variant = "settings"
             )
         }
@@ -1020,28 +1438,34 @@ fun TaskGoNavGraph(
                 onPrivacidade = { navController.navigate("privacy") },
                 onSuporte = { navController.navigate("support") },
                 onSobre = { navController.navigate("about") },
-                onDesignReview = { navController.navigate("design_review") },
-                onTipoConta = { navController.navigate("account_type") },
                 onAiSupport = { navController.navigate("ai_support") },
                 onSeguranca = { navController.navigate("security_settings") }
             )
         }
 
-        composable("design_review") {
-            DesignReviewScreen(
-                onNavigateToRoute = { route ->
-                    navController.navigate(route)
+        // Settings routes
+        composable("account") { 
+            AccountScreen(
+                onBackClick = { navController.popBackStack() },
+                onNavigateToLogin = {
+                    navController.navigate("login_person") {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 },
-                onBackPressed = { navController.popBackStack() }
+                onNavigateToBankAccounts = { navController.navigate("bank_accounts") }
+            ) 
+        }
+        composable("bank_accounts") {
+            com.taskgoapp.taskgo.feature.settings.presentation.BankAccountScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
-
-        // Settings routes
-        composable("account") { AccountScreen(onBackClick = { navController.popBackStack() }) }
         composable("security_settings") {
             SecuritySettingsScreen(
                 onBackClick = { navController.popBackStack() },
-                onNavigateToIdentityVerification = { navController.navigate("identity_verification") }
+                onNavigateToIdentityVerification = { navController.navigate("identity_verification") },
+                onNavigateToConsentHistory = { navController.navigate("consent_history") }
             )
         }
         composable("preferences") {
@@ -1059,9 +1483,33 @@ fun TaskGoNavGraph(
                 onLogout = { /* no-op */ }
             )
         }
-        composable("privacy") { PrivacyScreen(onBackClick = { navController.popBackStack() }) }
+        composable("privacy") { 
+            PrivacyScreen(
+                onBackClick = { navController.popBackStack() },
+                onNavigateToPrivacyPolicy = { navController.navigate("privacy_policy") },
+                onNavigateToTermsOfService = { navController.navigate("terms_of_service") },
+                onNavigateToConsentHistory = { navController.navigate("consent_history") }
+            ) 
+        }
         composable("support") { SupportScreen(onBackClick = { navController.popBackStack() }) }
-        composable("about") { AboutScreen(onBackClick = { navController.popBackStack() }) }
+        composable("about") { 
+            AboutScreen(
+                onBackClick = { navController.popBackStack() },
+                onNavigateToPrivacyPolicy = { navController.navigate("privacy_policy") },
+                onNavigateToTermsOfService = { navController.navigate("terms_of_service") }
+            ) 
+        }
+        composable("privacy_policy") {
+            PrivacyPolicyScreen(onBackClick = { navController.popBackStack() })
+        }
+        composable("terms_of_service") {
+            TermsOfServiceScreen(onBackClick = { navController.popBackStack() })
+        }
+        composable("consent_history") {
+            ConsentHistoryScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
 
         // Legacy/alternate settings routes
         composable("alterar_senha") { AlterarSenhaScreen(onBackClick = { navController.popBackStack() }) }
@@ -1090,9 +1538,11 @@ fun TaskGoNavGraph(
 
         // Messages
         composable("chat/{chatId}") { backStackEntry ->
-            val chatId = backStackEntry.arguments?.getString("chatId")?.toLongOrNull() ?: 0L
+            val chatId = backStackEntry.arguments?.getString("chatId") ?: ""
+            // Converter String para Long para compatibilidade com ChatScreen
+            val threadIdLong = chatId.toLongOrNull() ?: 0L
             ChatScreen(
-                threadId = chatId,
+                threadId = threadIdLong,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -1101,8 +1551,34 @@ fun TaskGoNavGraph(
         composable("meus_servicos") {
             MeusServicosScreen(
                 onBackClick = { navController.popBackStack() },
-                onCriarServico = { navController.navigate("create_work_order") },
-                onEditarServico = { serviceId -> navController.navigate("service_detail/$serviceId") }
+                onCriarServico = { navController.navigate("service_form") },
+                onEditarServico = { serviceId -> navController.navigate("service_form/$serviceId") },
+                onViewService = { serviceId -> navController.navigate("service_detail/$serviceId") }
+            )
+        }
+        
+        composable("minhas_ordens_servico") {
+            MyServiceOrdersScreen(
+                onBackClick = { navController.popBackStack() },
+                onEditOrder = { orderId -> navController.navigate("create_work_order?orderId=$orderId") },
+                onCreateOrder = { navController.navigate("create_work_order") }
+            )
+        }
+        
+        composable("service_form") {
+            ServiceFormScreen(
+                serviceId = null,
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() }
+            )
+        }
+        
+        composable("service_form/{serviceId}") { backStackEntry ->
+            val serviceId = backStackEntry.arguments?.getString("serviceId") ?: ""
+            ServiceFormScreen(
+                serviceId = serviceId,
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() }
             )
         }
         composable("meus_produtos") {
@@ -1118,16 +1594,30 @@ fun TaskGoNavGraph(
             ProductFormScreen(
                 productId = null,
                 onBack = { navController.popBackStack() },
-                onSaved = { _ -> navController.navigate("manage_products") }
+                onSaved = { _ -> navController.navigate("gerenciar_produtos") }
             )
         }
 
         composable("ads_alt") { AdsScreen(onBackClick = { navController.popBackStack() }) }
-        composable("ai_support") { AiSupportScreen(onBackClick = { navController.popBackStack() }) }
-        composable("account_type") { 
-            AccountTypeScreen(
+        composable("ai_support") {
+            val chatListViewModel: com.taskgoapp.taskgo.feature.chatai.presentation.ChatListViewModel = hiltViewModel()
+            ChatListScreen(
                 onBackClick = { navController.popBackStack() },
-                onSaveChanges = { navController.popBackStack() }
+                onChatClick = { chatId ->
+                    navController.navigate("ai_chat/$chatId")
+                },
+                viewModel = chatListViewModel
+            )
+        }
+        composable("ai_chat/{chatId}") { backStackEntry ->
+            val chatId = backStackEntry.arguments?.getString("chatId") ?: ""
+            val chatListViewModel: com.taskgoapp.taskgo.feature.chatai.presentation.ChatListViewModel = hiltViewModel()
+            AiSupportScreen(
+                chatId = chatId,
+                onBackClick = { navController.popBackStack() },
+                onChatUpdated = { id, message, isFirstMessage ->
+                    chatListViewModel.updateChatLastMessage(id, message, isFirstMessage)
+                }
             )
         }
 
@@ -1137,6 +1627,13 @@ fun TaskGoNavGraph(
                 onBackClick = { navController.popBackStack() },
                 onOrderClick = { orderId -> 
                     navController.navigate("order_detail/$orderId")
+                },
+                onNavigateToCreateReview = { targetId, type, orderId ->
+                    if (orderId != null) {
+                        navController.navigate("create_review/$targetId/$type/$orderId")
+                    } else {
+                        navController.navigate("create_review/$targetId/$type")
+                    }
                 }
             )
         }
@@ -1146,8 +1643,9 @@ fun TaskGoNavGraph(
             DetalhesPedidoScreen(
                 orderId = orderId,
                 onBackClick = { navController.popBackStack() },
-                onRastrearPedido = { navController.navigate("order_tracking/$orderId") },
-                onVerResumo = { id -> navController.navigate("order_summary_alt/$id") }
+                onRastrearPedido = { navController.navigate("order_tracking_legacy/$it") },
+                onVerResumo = { id -> navController.navigate("order_summary_alt/$id") },
+                onEnviarPedido = { navController.navigate("shipment/$it") } // Para vendedores
             )
         }
         composable("order_detail_pending/{orderId}") { backStackEntry ->
@@ -1273,24 +1771,26 @@ fun TaskGoNavGraph(
                 onBackClick = { navController.popBackStack() }
             )
         }
-        composable("gerenciar_produtos_legacy") {
+        composable("gerenciar_produtos") {
             GerenciarProdutosScreen(
                 onBackClick = { navController.popBackStack() },
-                onCriarProduto = { navController.navigate("criar_produto_legacy") },
-                onEditarProduto = { id -> navController.navigate("editar_produto_legacy/$id") }
-            )
-        }
-        composable("criar_produto_legacy") {
-            CriarProdutoScreen(
-                onBackClick = { navController.popBackStack() },
-                onProductCreated = { navController.navigate("gerenciar_produtos_legacy") }
+                onCriarProduto = { navController.navigate("create_product") },
+                onEditarProduto = { id -> navController.navigate("edit_product/$id") }
             )
         }
         composable("order_tracking_legacy/{orderId}") { backStackEntry ->
-            val orderId = backStackEntry.arguments?.getString("orderId")?.toLongOrNull() ?: 0L
+            val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
             OrderTrackingScreen(
                 orderId = orderId,
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        composable("shipment/{orderId}") { backStackEntry ->
+            val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
+            com.taskgoapp.taskgo.feature.orders.presentation.ShipmentScreen(
+                orderId = orderId,
+                onBackClick = { navController.popBackStack() },
+                onShipmentConfirmed = { navController.popBackStack() }
             )
         }
         composable("checkout_legacy") {

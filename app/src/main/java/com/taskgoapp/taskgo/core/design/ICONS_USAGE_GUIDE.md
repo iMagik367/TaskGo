@@ -1,4 +1,6 @@
-# 🎯 Guia de Uso dos Ícones PNG - TaskGoApp
+# 🎯 Guia de Uso dos Ícones WebP/PNG - TaskGoApp
+
+> **Nota**: Os ícones estão sendo migrados de PNG para WebP para melhor qualidade e menor tamanho de arquivo. O código funciona igual para ambos os formatos.
 
 ## 📱 **Ícones Disponíveis**
 
@@ -196,18 +198,20 @@ FloatingActionButton(
 
 ## ⚠️ **Importante**
 
-1. **Sempre use `painterResource()`** para ícones PNG
-2. **Nunca use `vectorResource()`** para recursos PNG
+1. **Sempre use `painterResource()`** para ícones WebP/PNG
+2. **Nunca use `vectorResource()`** para recursos WebP/PNG
 3. **Use `TGIcons`** para referenciar os ícones
 4. **Sempre forneça `contentDescription`** para acessibilidade
 5. **Use `MaterialTheme.colorScheme`** para cores consistentes
+6. **WebP é suportado nativamente** - não precisa mudar o código
 
 ## 🔧 **Solução de Problemas**
 
 ### **Erro: "Resource not found"**
-- Verifique se o ícone existe na pasta `drawable-mdpi`
+- Verifique se o ícone existe na pasta `drawable-xxxhdpi` (WebP) ou `drawable-mdpi` (PNG antigo)
 - Confirme se o nome está correto em `TGIcons`
 - Certifique-se de que está usando `painterResource()`
+- WebP e PNG são detectados automaticamente pelo Android
 
 ### **Ícone não aparece**
 - Verifique se o `contentDescription` está definido
@@ -223,3 +227,4 @@ FloatingActionButton(
 - [Material Design Icons](https://material.io/design/iconography/system-icons.html)
 - [Jetpack Compose Icons](https://developer.android.com/jetpack/compose/graphics/images)
 - [Android Resource Types](https://developer.android.com/guide/topics/resources/providing-resources)
+- [Guia de Conversão WebP](../GUIA_CONVERSAO_WEBP.md) - Veja como converter PNG para WebP

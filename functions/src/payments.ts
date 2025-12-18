@@ -185,6 +185,116 @@ export const confirmPayment = functions.https.onCall(async (data, context) => {
 });
 
 /**
+ * Process Google Pay payment via Stripe
+ */
+export const processGooglePayPayment = functions.https.onCall(async (data, context) => {
+  try {
+    assertAuthenticated(context);
+    
+    const db = admin.firestore();
+    const {orderId, googlePayToken, amount, currency = 'brl'} = data;
+
+    if (!orderId || !googlePayToken || !amount) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Order ID, Google Pay token, and amount are required'
+      );
+    }
+
+    // Get order details
+    const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
+    if (!orderDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Order not found');
+    }
+
+    const order = orderDoc.data();
+    
+    if (order?.clientId !== context.auth!.uid) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only the order client can process payment'
+      );
+    }
+
+    // Get provider's Stripe Connect account ID (if applicable)
+    let providerStripeAccountId: string | undefined;
+    if (order?.providerId) {
+      const providerDoc = await db.collection('users').doc(order.providerId).get();
+      providerStripeAccountId = providerDoc.data()?.stripeAccountId;
+    }
+
+    // Calculate amount in cents
+    const amountCents = Math.round(amount * 100);
+    const applicationFeePercent = 0.15; // 15% platform fee
+    const applicationFeeAmount = Math.round(amountCents * applicationFeePercent);
+
+    // Create Payment Method from Google Pay token first
+    const paymentMethod = await stripe.paymentMethods.create({
+      type: 'card',
+      card: {
+        token: googlePayToken,
+      },
+    });
+
+    // Create Payment Intent with Google Pay payment method
+    const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
+      amount: amountCents + applicationFeeAmount,
+      currency: currency.toLowerCase(),
+      payment_method: paymentMethod.id,
+      confirm: true,
+      return_url: 'taskgo://payment-return',
+      metadata: {
+        orderId: orderId,
+        clientId: order.clientId,
+        paymentMethod: 'google_pay',
+      },
+    };
+
+    // Add Stripe Connect destination if provider has account
+    if (providerStripeAccountId) {
+      paymentIntentParams.application_fee_amount = applicationFeeAmount;
+      paymentIntentParams.transfer_data = {
+        destination: providerStripeAccountId,
+      };
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+
+    // Create payment document
+    await db.collection(COLLECTIONS.PAYMENTS).add({
+      orderId: orderId,
+      clientId: order.clientId,
+      providerId: order.providerId || null,
+      amount: amount,
+      applicationFee: applicationFeeAmount / 100,
+      currency: currency.toLowerCase(),
+      stripePaymentIntentId: paymentIntent.id,
+      paymentMethod: 'google_pay',
+      status: paymentIntent.status === 'succeeded' ? PAYMENT_STATUS.SUCCEEDED : PAYMENT_STATUS.PROCESSING,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Update order status
+    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+      status: paymentIntent.status === 'succeeded' ? 'paid' : 'payment_pending',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    functions.logger.info(`Google Pay payment processed for order ${orderId}`);
+    
+    return {
+      success: paymentIntent.status === 'succeeded',
+      paymentIntentId: paymentIntent.id,
+      status: paymentIntent.status,
+    };
+  } catch (error) {
+    functions.logger.error('Error processing Google Pay payment:', error);
+    throw handleError(error);
+  }
+});
+
+/**
  * Request refund for an order
  */
 export const requestRefund = functions.https.onCall(async (data, context) => {

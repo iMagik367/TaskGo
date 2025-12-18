@@ -17,6 +17,14 @@
 
 # Firebase App Check
 -keep class com.google.firebase.appcheck.** { *; }
+-keep class com.google.firebase.appcheck.debug.** { *; }
+-keep class com.google.firebase.appcheck.playintegrity.** { *; }
+
+# Play Integrity (necessário para App Check em release)
+-keep class com.google.android.play.core.integrity.** { *; }
+-keep class com.google.android.gms.playintegrity.** { *; }
+-dontwarn com.google.android.play.core.integrity.**
+-dontwarn com.google.android.gms.playintegrity.**
 
 # Hilt
 -keep class dagger.hilt.** { *; }
@@ -111,6 +119,24 @@
   **[] $VALUES;
   public *;
 }
+
+# SLF4J
+-dontwarn org.slf4j.impl.StaticLoggerBinder
+
+# Google Tink (necessário para Nimbus JOSE)
+# Manter todas as classes do Tink sem ofuscar devido a bug no R8
+-keep class com.google.crypto.tink.** { *; }
+-keep class com.google.crypto.tink.subtle.** { *; }
+-keep class com.google.crypto.tink.shaded.** { *; }
+-keepclassmembers class com.google.crypto.tink.** { *; }
+-keepclassmembers class com.google.crypto.tink.shaded.** { *; }
+-dontwarn com.google.crypto.tink.**
+-dontwarn com.google.crypto.tink.subtle.XChaCha20Poly1305
+
+# Nimbus JOSE (JWT)
+-dontwarn com.nimbusds.jose.**
+-keep class com.nimbusds.jose.** { *; }
+-keep class com.nimbusds.jwt.** { *; }
 
 # Se você usa WebView com JS, descomente:
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {

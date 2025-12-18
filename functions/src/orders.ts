@@ -3,65 +3,115 @@ import * as functions from 'firebase-functions';
 import {COLLECTIONS, ORDER_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
 
+type OrderDocument = {
+  clientId: string;
+  details: unknown;
+  location: unknown;
+  budget: number | null;
+  dueDate: string | null;
+  status: string;
+  createdAt: admin.firestore.FieldValue;
+  updatedAt: admin.firestore.FieldValue;
+  providerId?: string | null;
+  serviceId?: string;
+  category?: string;
+};
+
 /**
  * Create a new order
+ * Can be created with either:
+ * - serviceId: Direct order to a specific service (notifies only that provider)
+ * - category: Open order for any provider in that category (notifies all matching providers)
  */
 export const createOrder = functions.https.onCall(async (data, context) => {
   try {
     assertAuthenticated(context);
     
     const db = admin.firestore();
-    const {serviceId, details, location, budget, dueDate} = data;
+    const {serviceId, category, details, location, budget, dueDate} = data;
 
-    if (!serviceId || !details || !location) {
+    // Either serviceId or category must be provided
+    if (!serviceId && !category) {
       throw new functions.https.HttpsError(
         'invalid-argument',
-        'Service ID, details, and location are required'
+        'Either serviceId or category is required'
       );
     }
 
-    // Verify service exists
-    const serviceDoc = await db.collection(COLLECTIONS.SERVICES).doc(serviceId).get();
-    if (!serviceDoc.exists) {
-      throw new functions.https.HttpsError('not-found', 'Service not found');
-    }
-
-    const service = serviceDoc.data();
-    if (service?.providerId === context.auth!.uid) {
+    if (!details || !location) {
       throw new functions.https.HttpsError(
         'invalid-argument',
-        'Cannot create order for your own service'
+        'Details and location are required'
       );
     }
 
-    const orderData = {
+    const orderData: OrderDocument = {
       clientId: context.auth!.uid,
-      providerId: service?.providerId,
-      serviceId: serviceId,
       details,
       location,
-      budget,
-      dueDate,
+      budget: budget || null,
+      dueDate: dueDate || null,
       status: ORDER_STATUS.PENDING,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    const orderRef = await db.collection(COLLECTIONS.ORDERS).add(orderData);
-    
-    // Create notification for provider
-    await db.collection(COLLECTIONS.NOTIFICATIONS).add({
-      userId: service?.providerId,
-      orderId: orderRef.id,
-      type: 'order_created',
-      title: 'New Order Received',
-      message: `You have a new order for ${service?.title || 'your service'}`,
-      read: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    // If serviceId is provided, create order for specific service
+    if (serviceId) {
+      // Verify service exists
+      const serviceDoc = await db.collection(COLLECTIONS.SERVICES).doc(serviceId).get();
+      if (!serviceDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Service not found');
+      }
 
-    functions.logger.info(`Order created: ${orderRef.id}`);
-    return {orderId: orderRef.id};
+      const service = serviceDoc.data();
+      if (service?.providerId === context.auth!.uid) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Cannot create order for your own service'
+        );
+      }
+
+      orderData.providerId = service?.providerId;
+      orderData.serviceId = serviceId;
+      orderData.category = service?.category || category;
+
+      const orderRef = await db.collection(COLLECTIONS.ORDERS).add(orderData);
+      
+      // Create notification for specific provider
+      if (service?.providerId) {
+        await db.collection(COLLECTIONS.NOTIFICATIONS).add({
+          userId: service.providerId,
+          orderId: orderRef.id,
+          type: 'order_created',
+          title: 'New Order Received',
+          message: `You have a new order for ${service?.title || 'your service'}`,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      functions.logger.info(`Order created for specific service: ${orderRef.id}`);
+      return {orderId: orderRef.id};
+    }
+
+    // If category is provided, create open order (no providerId)
+    // The onServiceOrderCreated trigger will handle notifying all matching providers
+    if (category) {
+      orderData.category = category;
+      // No providerId - this is an open order
+      orderData.providerId = null;
+
+      const orderRef = await db.collection(COLLECTIONS.ORDERS).add(orderData);
+
+      functions.logger.info(`Open order created for category ${category}: ${orderRef.id}`);
+      return {orderId: orderRef.id};
+    }
+
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Either serviceId or category must be provided'
+    );
   } catch (error) {
     functions.logger.error('Error creating order:', error);
     throw handleError(error);
@@ -220,3 +270,259 @@ export const getMyOrders = functions.https.onCall(async (data, context) => {
     throw handleError(error);
   }
 });
+
+/**
+ * Trigger: Notify providers when a new service order is created
+ * This function is triggered when a new order is created in Firestore
+ * It finds all providers in the same category and region, then sends push notifications
+ */
+export const onServiceOrderCreated = functions.firestore
+  .document('orders/{orderId}')
+  .onCreate(async (snapshot, context) => {
+    const orderId = context.params.orderId;
+    const orderData = snapshot.data();
+    const db = admin.firestore();
+
+    try {
+      // Skip if order already has a providerId (it's a direct order to a specific provider)
+      if (orderData?.providerId) {
+        functions.logger.info(`Order ${orderId} already has providerId, skipping broadcast notification`);
+        return null;
+      }
+
+      // Get order details
+      const serviceId = orderData?.serviceId;
+      const category = orderData?.category; // Category can be set directly on order
+      const location = orderData?.location || '';
+      const clientId = orderData?.clientId;
+
+      let finalCategory = category;
+      let serviceTitle = 'serviço';
+
+      // If no category on order, try to get from service
+      if (!finalCategory && serviceId) {
+        const serviceDoc = await db.collection(COLLECTIONS.SERVICES).doc(serviceId).get();
+        if (serviceDoc.exists) {
+          const service = serviceDoc.data();
+          finalCategory = service?.category;
+          serviceTitle = service?.title || serviceTitle;
+        }
+      }
+      
+      if (!finalCategory) {
+        functions.logger.warn(`Order ${orderId} has no category and no serviceId with category`);
+        return null;
+      }
+
+      // Parse location to extract city and state
+      // Location format can vary, we'll try to extract city and state
+      // Common formats: "City, State" or "Address, City, State"
+      const locationParts = location.split(',').map((s: string) => s.trim());
+      let city = '';
+      let state = '';
+
+      if (locationParts.length >= 2) {
+        // Assume last part is state, second to last is city
+        state = locationParts[locationParts.length - 1];
+        city = locationParts[locationParts.length - 2];
+      } else if (locationParts.length === 1) {
+        // Only city provided
+        city = locationParts[0];
+      }
+
+      functions.logger.info(`Order ${orderId}: category=${finalCategory}, city=${city}, state=${state}`);
+
+      // Find all providers with services in this category
+      // We'll search for services with matching category
+      const servicesSnapshot = await db.collection(COLLECTIONS.SERVICES)
+        .where('category', '==', finalCategory)
+        .where('active', '==', true)
+        .get();
+
+      if (servicesSnapshot.empty) {
+        functions.logger.info(`No active services found for category ${finalCategory}`);
+        return null;
+      }
+
+      // Get unique provider IDs
+      const providerIds = new Set<string>();
+      servicesSnapshot.forEach((doc) => {
+        const providerId = doc.data()?.providerId;
+        if (providerId && providerId !== clientId) {
+          providerIds.add(providerId);
+        }
+      });
+
+      if (providerIds.size === 0) {
+        functions.logger.info(`No providers found for category ${finalCategory}`);
+        return null;
+      }
+
+      // Filter providers by location (city/state)
+      const matchingProviders: string[] = [];
+      
+      for (const providerId of providerIds) {
+        const userDoc = await db.collection(COLLECTIONS.USERS).doc(providerId).get();
+        if (!userDoc.exists) continue;
+
+        const userData = userDoc.data();
+        const userRole = userData?.role;
+        
+        // Only notify providers
+        if (userRole !== 'provider') continue;
+
+        // Check if provider has this category in their preferences
+        const preferredCategories = userData?.preferredCategories || [];
+        
+        // If provider has preferences set, only notify if category matches
+        // If no preferences set, notify all providers (backward compatibility)
+        if (preferredCategories.length > 0) {
+          // Normalize category names for comparison (case-insensitive)
+          const normalizedOrderCategory = finalCategory.toLowerCase().trim();
+          const normalizedPreferredCategories = preferredCategories.map((cat: string) => 
+            cat.toLowerCase().trim()
+          );
+          
+          // Check if order category matches any preferred category
+          const categoryMatches = normalizedPreferredCategories.includes(normalizedOrderCategory);
+          
+          if (!categoryMatches) {
+            functions.logger.info(
+              `Provider ${providerId} skipped: category ${finalCategory} ` +
+              `not in preferences [${preferredCategories.join(', ')}]`
+            );
+            continue; // Skip this provider
+          }
+        }
+
+        // Check if provider has location information
+        const userAddress = userData?.address;
+        let providerCity = '';
+        let providerState = '';
+
+        if (userAddress) {
+          // Address can be an object with city and state fields
+          providerCity = userAddress.city || userAddress.cityName || '';
+          providerState = userAddress.state || userAddress.stateName || '';
+        } else {
+          // Fallback: try to get from user profile fields
+          providerCity = userData?.city || '';
+          providerState = userData?.state || '';
+        }
+
+        // Match by city and state if both are available
+        // If only city is available, match by city
+        // If neither is available, include the provider anyway (they might be willing to travel)
+        let matches = false;
+        
+        if (city && state) {
+          // Match by both city and state
+          matches = providerCity.toLowerCase() === city.toLowerCase() && 
+                   providerState.toLowerCase() === state.toLowerCase();
+        } else if (city) {
+          // Match by city only
+          matches = providerCity.toLowerCase() === city.toLowerCase();
+        } else {
+          // No location filter, include all providers in category
+          matches = true;
+        }
+
+        if (matches) {
+          matchingProviders.push(providerId);
+        }
+      }
+
+      if (matchingProviders.length === 0) {
+        functions.logger.info(`No providers found in region for order ${orderId}`);
+        return null;
+      }
+
+      functions.logger.info(`Found ${matchingProviders.length} providers to notify for order ${orderId}`);
+
+      // Get client name for notification
+      let clientName = 'Um cliente';
+      if (clientId) {
+        const clientDoc = await db.collection(COLLECTIONS.USERS).doc(clientId).get();
+        if (clientDoc.exists) {
+          clientName = clientDoc.data()?.displayName || clientDoc.data()?.name || clientName;
+        }
+      }
+
+      // Prepare notification message
+      const notificationTitle = 'Nova Ordem de Serviço Disponível';
+      const notificationMessage = `${clientName} precisa de ${serviceTitle}${city ? ` em ${city}` : ''}`;
+
+      // Send notifications to all matching providers
+      type NotificationResult = admin.messaging.BatchResponse | {
+        successCount: number;
+        failureCount: number;
+      };
+      const notificationPromises: Array<Promise<NotificationResult>> = [];
+      const batch = db.batch();
+
+      for (const providerId of matchingProviders) {
+        // Create notification document
+        const notificationRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc();
+        batch.set(notificationRef, {
+          userId: providerId,
+          orderId: orderId,
+          type: 'new_service_order_available',
+          title: notificationTitle,
+          message: notificationMessage,
+          data: {
+            orderId: orderId,
+            category: finalCategory,
+            location: location,
+            serviceTitle: serviceTitle,
+          },
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Get provider's FCM tokens and send push notification
+        const providerDoc = await db.collection(COLLECTIONS.USERS).doc(providerId).get();
+        const fcmTokens = providerDoc.data()?.fcmTokens || [];
+
+        if (fcmTokens.length > 0) {
+          const messages = fcmTokens.map((token: string) => ({
+            notification: {
+              title: notificationTitle,
+              body: notificationMessage,
+            },
+            data: {
+              orderId: orderId,
+              category: finalCategory,
+              type: 'new_service_order_available',
+            },
+            token: token,
+          }));
+
+          notificationPromises.push(
+            admin.messaging().sendAll(messages).catch((error) => {
+              functions.logger.error(`Error sending push to provider ${providerId}:`, error);
+              return {successCount: 0, failureCount: 0};
+            })
+          );
+        }
+      }
+
+      // Commit all notification documents
+      await batch.commit();
+
+      // Send all push notifications
+      const results = await Promise.all(notificationPromises);
+      const totalSuccess = results.reduce((sum, r) => sum + (r.successCount || 0), 0);
+      const totalFailure = results.reduce((sum, r) => sum + (r.failureCount || 0), 0);
+
+      functions.logger.info(
+        `Order ${orderId}: Notified ${matchingProviders.length} providers. ` +
+        `Push notifications: ${totalSuccess} sent, ${totalFailure} failed`
+      );
+
+      return null;
+    } catch (error) {
+      functions.logger.error(`Error notifying providers for order ${orderId}:`, error);
+      // Don't throw - we don't want to fail the order creation
+      return null;
+    }
+  });

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Permitir apenas HTTPS em produção -->
+    <!-- Configuração base: permitir HTTPS e confiar em certificados do sistema e do usuário -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <!-- Confiar em certificados do sistema -->
             <certificates src="system" />
-            <!-- Confiar em certificados do usuário (para desenvolvimento) -->
+            <!-- Confiar em certificados do usuário (para desenvolvimento e certificados customizados) -->
             <certificates src="user" />
         </trust-anchors>
     </base-config>
@@ -17,7 +17,7 @@
         <domain includeSubdomains="true">127.0.0.1</domain>
     </domain-config>
     
-    <!-- Configuração específica para domínios do Firebase/Google -->
+    <!-- Configuração específica para domínios do Firebase/Google com confiança total -->
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">firebase.googleapis.com</domain>
         <domain includeSubdomains="true">firebaseappcheck.googleapis.com</domain>
@@ -25,10 +25,14 @@
         <domain includeSubdomains="true">identitytoolkit.googleapis.com</domain>
         <domain includeSubdomains="true">securetoken.googleapis.com</domain>
         <domain includeSubdomains="true">www.googleapis.com</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
         <domain includeSubdomains="true">www.google.com</domain>
         <domain includeSubdomains="true">google.com</domain>
         <domain includeSubdomains="true">gstatic.com</domain>
         <domain includeSubdomains="true">recaptcha.net</domain>
+        <domain includeSubdomains="true">googleusercontent.com</domain>
+        <domain includeSubdomains="true">googletagmanager.com</domain>
+        <domain includeSubdomains="true">google-analytics.com</domain>
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />

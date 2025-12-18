@@ -43,6 +43,21 @@ fun LanguageScreen(
             else -> Language.PORTUGUESE
         }
     ) }
+    
+    // Salvar automaticamente quando sair da tela
+    androidx.compose.runtime.DisposableEffect(selectedLanguage) {
+        onDispose {
+            val code = when (selectedLanguage) {
+                Language.ENGLISH -> "en"
+                Language.SPANISH -> "es"
+                Language.FRENCH -> "fr"
+                Language.ITALIAN -> "it"
+                Language.GERMAN -> "de"
+                else -> "pt"
+            }
+            viewModel.saveLanguage(code)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -52,6 +67,7 @@ fun LanguageScreen(
         // Header
         AppTopBar(
             title = "Idioma",
+            subtitle = "Defina o idioma exibido no aplicativo",
             onBackClick = onBackClick,
             backgroundColor = TaskGoGreen,
             titleColor = Color.White,
@@ -83,40 +99,6 @@ fun LanguageScreen(
         }
 
         Spacer(modifier = Modifier.weight(1f))
-
-        // Save + Logout
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .background(color = TaskGoGreen, shape = RoundedCornerShape(8.dp))
-                    .clickable {
-                        val code = when (selectedLanguage) {
-                            Language.ENGLISH -> "en"
-                            Language.SPANISH -> "es"
-                            Language.FRENCH -> "fr"
-                            Language.ITALIAN -> "it"
-                            Language.GERMAN -> "de"
-                            else -> "pt"
-                        }
-                        viewModel.saveLanguage(code)
-                        onBackClick()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Salvar",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
     }
 }
 

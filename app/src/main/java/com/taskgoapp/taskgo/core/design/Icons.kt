@@ -1,6 +1,14 @@
 ﻿package com.taskgoapp.taskgo.core.design
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.taskgoapp.taskgo.R
 
 object TGIcons {
@@ -50,4 +58,38 @@ object TGIcons {
     @DrawableRes val AlterarSenha = R.drawable.alterar_senha
     @DrawableRes val Package = R.drawable.ic_produtos // Using products icon for package
     @DrawableRes val Google = R.drawable.ic_google_logo // Google logo para login
+    
+    // Banners promocionais
+    @DrawableRes val BannerLocalProviders = R.drawable.banner_prestadores_locais // Banner de prestadores locais
+    @DrawableRes val BannerDiscountedProducts = R.drawable.banner_produtos_descontos // Banner de produtos com descontos
+    @DrawableRes val BannerServiceOrders = R.drawable.banner_ordens_servico // Banner de ordens de serviço
+    
+    // Tamanhos padrão para ícones
+    object Sizes {
+        val Small = 18.dp      // Para ícones pequenos em listas
+        val Medium = 24.dp     // Tamanho padrão (mais usado)
+        val Large = 28.dp      // Para ícones em top bars
+        val ExtraLarge = 32.dp // Para ícones grandes
+        val Navigation = 24.dp // Para bottom navigation
+    }
+}
+
+/**
+ * Componente helper para ícones padronizados com tamanho consistente
+ * Garante que todos os ícones tenham o mesmo tamanho visual independente do tamanho do arquivo WebP
+ */
+@Composable
+fun TGIcon(
+    @DrawableRes iconRes: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    size: Dp = TGIcons.Sizes.Medium,
+    tint: Color = Color.Unspecified
+) {
+    Icon(
+        painter = painterResource(id = iconRes),
+        contentDescription = contentDescription,
+        modifier = modifier.size(size),
+        tint = tint
+    )
 }

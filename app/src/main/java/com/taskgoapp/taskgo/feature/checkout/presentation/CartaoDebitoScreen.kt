@@ -8,19 +8,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskgoapp.taskgo.core.theme.*
 
 @Composable
 fun CartaoDebitoScreen(
     onBackClick: () -> Unit,
-    isAlt: Boolean = false
+    isAlt: Boolean = false,
+    viewModel: CardFormViewModel = hiltViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    
     var nome by remember { mutableStateOf("") }
     var numero by remember { mutableStateOf("") }
     var validade by remember { mutableStateOf("") }
     var cvv by remember { mutableStateOf("") }
-    var erro by remember { mutableStateOf(false) }
-    val enabled = nome.isNotBlank() && numero.length == 16 && validade.length == 5 && cvv.length == 3
+    
+    // Observar sucesso e navegar de volta
+    LaunchedEffect(uiState.success) {
+        if (uiState.success) {
+            onBackClick()
+        }
+    }
+    
+    val enabled = nome.isNotBlank() && numero.replace(Regex("[^0-9]"), "").length >= 13 && 
+                 validade.length >= 5 && cvv.length >= 3
     val bg = if(isAlt) TaskGoSurfaceGrayBg else TaskGoSurface
     Column(
         Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally
@@ -39,9 +52,11 @@ fun CartaoDebitoScreen(
                 OutlinedTextField(
                     value = numero,
                     onValueChange = {
-                        if(it.length <= 16) numero = it.filter { c -> c.isDigit() }
+                        val cleanValue = it.replace(Regex("[^0-9]"), "")
+                        numero = cleanValue.chunked(4).joinToString(" ")
                     },
                     label = { Text("Número do cartão") },
+                    placeholder = { Text("0000 0000 0000 0000") },
                     singleLine = true,
                     visualTransformation = VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth()
@@ -50,9 +65,14 @@ fun CartaoDebitoScreen(
                     OutlinedTextField(
                         value = validade,
                         onValueChange = {
-                            if(it.length <= 5) validade = it
+                            val cleanValue = it.replace(Regex("[^0-9]"), "")
+                            validade = when {
+                                cleanValue.length <= 2 -> cleanValue
+                                else -> "${cleanValue.take(2)}/${cleanValue.drop(2).take(2)}"
+                            }
                         },
                         label = { Text("Validade (MM/AA)") },
+                        placeholder = { Text("MM/AA") },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
@@ -69,9 +89,50 @@ fun CartaoDebitoScreen(
                 }
             }
         }
+        // Mostrar erro do ViewModel
+        uiState.error?.let { error ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = error,
+                color = TaskGoError,
+                style = FigmaProductDescription
+            )
+        }
+        
         Spacer(Modifier.height(28.dp))
-        Button(onClick={erro = !enabled}, enabled=enabled, modifier=Modifier.fillMaxWidth()) { Text("Confirmar") }
-        if(erro) Text("Preencha corretamente todos os campos.", color = TaskGoError, style=FigmaProductDescription)
+        Button(
+            onClick = {
+                val validadeParts = validade.split("/")
+                val expMonth = validadeParts.getOrNull(0)?.toIntOrNull() ?: 0
+                val expYear = if (validadeParts.getOrNull(1)?.length == 2) {
+                    2000 + (validadeParts[1].toIntOrNull() ?: 0)
+                } else {
+                    validadeParts.getOrNull(1)?.toIntOrNull() ?: 0
+                }
+                
+                viewModel.saveCard(
+                    holder = nome,
+                    cardNumber = numero.replace(Regex("[^0-9]"), ""),
+                    expMonth = expMonth,
+                    expYear = expYear,
+                    cvc = cvv,
+                    type = "Débito"
+                )
+            },
+            enabled = enabled && !uiState.isLoading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (uiState.isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Salvando...")
+            } else {
+                Text("Confirmar")
+            }
+        }
         OutlinedButton(onClick=onBackClick, modifier=Modifier.fillMaxWidth()) { Text("Voltar") }
     }
 }

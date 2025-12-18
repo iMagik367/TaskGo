@@ -13,7 +13,11 @@ data class ProductFirestore(
     val category: String? = null,
     val tags: List<String> = emptyList(),
     val active: Boolean = true,
+    val featured: Boolean = false, // Produto em destaque/promocional
     val createdAt: Date? = null,
-    val updatedAt: Date? = null
+    val updatedAt: Date? = null,
+    val rating: Double? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 

@@ -42,10 +42,14 @@ fun ImageEditor(
     var editingImageIndex by remember { mutableStateOf<Int?>(null) }
     var showSimpleCropper by remember { mutableStateOf(false) }
     var pendingGalleryAction by remember { mutableStateOf(false) }
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     
     // Verificar permissão de imagem
     val hasImagePermission = remember {
         PermissionHandler.hasImageReadPermission(context)
+    }
+    val hasCameraPermission = remember {
+        PermissionHandler.hasCameraPermission(context)
     }
 
     // Launcher para galeria
@@ -66,15 +70,7 @@ fun ImageEditor(
         }
     )
     
-    // Executar ação da galeria quando permissão for concedida
-    LaunchedEffect(pendingGalleryAction) {
-        if (pendingGalleryAction && PermissionHandler.hasImageReadPermission(context)) {
-            galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            pendingGalleryAction = false
-        }
-    }
-
-    // Launcher para edição de imagem
+    // Launcher para edição de imagem (definido antes por dependência do cameraLauncher)
     val cropImageLauncher = rememberLauncherForActivityResult(
         contract = CropImageContract()
     ) { result ->
@@ -84,11 +80,51 @@ fun ImageEditor(
                     val newImages = selectedImageUris.toMutableList()
                     newImages[index] = uri
                     onImagesChanged(newImages)
+                } ?: run {
+                    // Edição inicial (vindo da câmera): adicionar ao final
+                    val newImages = selectedImageUris.toMutableList()
+                    newImages.add(uri)
+                    onImagesChanged(newImages.take(maxImages))
                 }
                 editingImageIndex = null
             }
         }
     }
+    
+    // Launcher de câmera
+    val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && tempCameraUri != null) {
+            // Abrir cropper para a foto tirada
+            cropImageLauncher.launch(
+                CropImageContractOptions(
+                    uri = tempCameraUri,
+                    cropImageOptions = CropImageConfig.createDefaultOptions()
+                )
+            )
+        }
+    }
+    val cameraPermissionLauncher = com.taskgoapp.taskgo.core.permissions.rememberCameraPermissionLauncher(
+        onPermissionGranted = {
+            val imageFile = java.io.File(context.cacheDir, "camera_${System.currentTimeMillis()}.jpg")
+            tempCameraUri = Uri.fromFile(imageFile)
+            cameraLauncher.launch(tempCameraUri!!)
+        },
+        onPermissionDenied = {
+            // Sem ação
+        }
+    )
+    
+    // Executar ação da galeria quando permissão for concedida
+    LaunchedEffect(pendingGalleryAction) {
+        if (pendingGalleryAction && PermissionHandler.hasImageReadPermission(context)) {
+            galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            pendingGalleryAction = false
+        }
+    }
+
+    
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -112,11 +148,7 @@ fun ImageEditor(
                 )
                 .clickable { 
                     if (selectedImageUris.size < maxImages) {
-                        if (hasImagePermission) {
-                            showSimpleCropper = true
-                        } else {
-                            imagePermissionLauncher.launch(PermissionHandler.getImageReadPermission())
-                        }
+                        showImageSourceDialog = true
                     }
                 },
             contentAlignment = Alignment.Center
@@ -174,11 +206,7 @@ fun ImageEditor(
                     item {
                         AddMoreButton(
                             onClick = {
-                                if (hasImagePermission) {
-                                    showSimpleCropper = true
-                                } else {
-                                    imagePermissionLauncher.launch(PermissionHandler.getImageReadPermission())
-                                }
+                                showImageSourceDialog = true
                             }
                         )
                     }
@@ -187,7 +215,7 @@ fun ImageEditor(
         }
     }
 
-    // Dialog para escolher fonte da imagem
+    // Dialog para escolher fonte da imagem (Galeria/Câmera)
     if (showImageSourceDialog) {
         AlertDialog(
             onDismissRequest = { showImageSourceDialog = false },
@@ -198,7 +226,7 @@ fun ImageEditor(
                     onClick = {
                         showImageSourceDialog = false
                         if (hasImagePermission) {
-                            galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            showSimpleCropper = true
                         } else {
                             imagePermissionLauncher.launch(PermissionHandler.getImageReadPermission())
                         }
@@ -211,9 +239,16 @@ fun ImageEditor(
                 TextButton(
                     onClick = {
                         showImageSourceDialog = false
+                        if (hasCameraPermission) {
+                            val imageFile = java.io.File(context.cacheDir, "camera_${System.currentTimeMillis()}.jpg")
+                            tempCameraUri = Uri.fromFile(imageFile)
+                            cameraLauncher.launch(tempCameraUri!!)
+                        } else {
+                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                        }
                     }
                 ) {
-                    Text("Cancelar")
+                    Text("Câmera")
                 }
             }
         )

@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.hilt.android)
     kotlin("kapt")
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics") version "3.0.2"
 }
 
 // Load apiBaseUrl from local.properties for physical devices; fallback to 10.0.2.2
@@ -21,67 +22,195 @@ val localProps = Properties().apply {
     }
 }
 val apiBaseUrl = (localProps.getProperty("apiBaseUrl") ?: "http://10.0.2.2:8091/v1/").trim()
+val defaultDebugAppCheckTokenName = "TaskGo"
+val defaultDebugAppCheckToken = "4D4F1322-E272-454F-9396-ED80E3DBDBD7"
+
+val firebaseDebugAppCheckTokenName =
+    (localProps.getProperty("firebaseDebugAppCheckTokenName") ?: defaultDebugAppCheckTokenName).trim()
+val firebaseDebugAppCheckToken =
+    (localProps.getProperty("firebaseDebugAppCheckToken") ?: defaultDebugAppCheckToken).trim()
+val escapedFirebaseDebugAppCheckToken =
+    firebaseDebugAppCheckToken.replace("\\", "\\\\").replace("\"", "\\\"")
+val escapedFirebaseDebugAppCheckTokenName =
+    firebaseDebugAppCheckTokenName.replace("\\", "\\\\").replace("\"", "\\\"")
+
+val enableAppCheckProp = localProps.getProperty("enableAppCheck") ?: "true"
+val enableAppCheck = enableAppCheckProp.trim().lowercase() != "false"
+
+val useFirebaseEmulatorProp = localProps.getProperty("useFirebaseEmulator") ?: "false"
+val useFirebaseEmulator = useFirebaseEmulatorProp.trim().lowercase() == "true"
 
 // Load keystore.properties for release signing
-// Descomente estas linhas após criar o keystore e o arquivo keystore.properties
-/*
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    try {
+        // Carregar usando FileInputStream e remover BOM se existir
+        FileInputStream(keystorePropertiesFile).use { stream ->
+            keystoreProperties.load(stream)
+        }
+        // Remover BOM de todas as chaves (se houver)
+        val keysToFix = keystoreProperties.keys.toList()
+        keysToFix.forEach { key ->
+            val cleanKey = key.toString().replace("\uFEFF", "").trim() // Remove BOM
+            if (cleanKey != key.toString()) {
+                val value = keystoreProperties.remove(key)
+                if (value != null) {
+                    keystoreProperties.setProperty(cleanKey, value.toString().trim())
+                }
+            } else {
+                val value = keystoreProperties.getProperty(key.toString())
+                if (value != null) {
+                    keystoreProperties.setProperty(cleanKey, value.trim())
+                }
+            }
+        }
+        println("keystore.properties carregado com sucesso")
+        println("Propriedades encontradas: ${keystoreProperties.keys.size}")
+        keystoreProperties.keys.forEach { key ->
+            println("  - '$key'")
+        }
+    } catch (e: Exception) {
+        println("ERRO ao carregar keystore.properties: ${e.message}")
+        e.printStackTrace()
+    }
+} else {
+    println("WARNING: keystore.properties não encontrado em: ${keystorePropertiesFile.absolutePath}")
 }
-*/
 
 android {
     namespace = "com.taskgoapp.taskgo"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.taskgoapp.taskgo"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.1"
+        targetSdk = 35
+        versionCode = 18
+        versionName = "1.0.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         buildConfigField("boolean", "USE_FIREBASE", "true")
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl}\"")
         buildConfigField("boolean", "USE_REMOTE_API", "true")
-        buildConfigField("boolean", "USE_EMULATOR", "false") // Set to true to use Firebase Emulator
+        buildConfigField("boolean", "USE_EMULATOR", useFirebaseEmulator.toString())
         buildConfigField("String", "FIREBASE_FUNCTIONS_REGION", "\"us-central1\"")
+        buildConfigField(
+            "String",
+            "FIREBASE_DEBUG_APP_CHECK_TOKEN",
+            "\"${escapedFirebaseDebugAppCheckToken}\""
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_DEBUG_APP_CHECK_TOKEN_NAME",
+            "\"${escapedFirebaseDebugAppCheckTokenName}\""
+        )
+        buildConfigField(
+            "boolean",
+            "FIREBASE_APP_CHECK_ENABLED",
+            enableAppCheck.toString()
+        )
     }
-
+    
+    // Signing configs - deve estar antes de buildTypes
+    signingConfigs {
+        if (keystorePropertiesFile.exists() && keystoreProperties.isNotEmpty()) {
+            println("=== CONFIGURANDO SIGNING ===")
+            // Usar getProperty() em vez de [] para garantir leitura correta
+            val keyAlias = keystoreProperties.getProperty("TASKGO_RELEASE_KEY_ALIAS")?.trim()
+            val keyPassword = keystoreProperties.getProperty("TASKGO_RELEASE_KEY_PASSWORD")?.trim()
+            val storeFile = keystoreProperties.getProperty("TASKGO_RELEASE_STORE_FILE")?.trim()
+            val storePassword = keystoreProperties.getProperty("TASKGO_RELEASE_STORE_PASSWORD")?.trim()
+            
+            println("keyAlias: ${keyAlias ?: "NULL"} (${keyAlias != null})")
+            println("keyPassword: ${if (keyPassword != null) "***" else "NULL"} (${keyPassword != null})")
+            println("storeFile: $storeFile (${storeFile != null})")
+            println("storePassword: ${if (storePassword != null) "***" else "NULL"} (${storePassword != null})")
+            
+            if (keyAlias != null && keyPassword != null && storeFile != null && storePassword != null) {
+                // Usar caminho absoluto diretamente - Gradle aceita tanto / quanto \
+                val keystoreFile = file(storeFile)
+                println("Caminho do keystore: ${keystoreFile.absolutePath}")
+                println("Keystore existe: ${keystoreFile.exists()}")
+                
+                // Verificar se o arquivo existe antes de criar o signingConfig
+                if (keystoreFile.exists()) {
+                create("release") {
+                    this.keyAlias = keyAlias
+                    this.keyPassword = keyPassword
+                        this.storeFile = keystoreFile
+                    this.storePassword = storePassword
+                }
+                    println("✅ SigningConfig 'release' criado com sucesso!")
+                    println("=== SIGNING CONFIGURADO ===")
+                } else {
+                    println("❌ ERRO: Keystore file não encontrado em: ${keystoreFile.absolutePath}")
+                }
+            } else {
+                println("❌ ERRO: Propriedades faltando:")
+                if (keyAlias == null) println("  - TASKGO_RELEASE_KEY_ALIAS")
+                if (keyPassword == null) println("  - TASKGO_RELEASE_KEY_PASSWORD")
+                if (storeFile == null) println("  - TASKGO_RELEASE_STORE_FILE")
+                if (storePassword == null) println("  - TASKGO_RELEASE_STORE_PASSWORD")
+            }
+        } else {
+            println("❌ ERRO: keystore.properties não encontrado ou vazio")
+        }
+    }
+    
     buildTypes {
         debug {
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8091/v1/\"")
-            buildConfigField("boolean", "USE_EMULATOR", "true")
+            buildConfigField("boolean", "USE_EMULATOR", useFirebaseEmulator.toString())
+            buildConfigField(
+                "String",
+                "FIREBASE_DEBUG_APP_CHECK_TOKEN",
+                "\"${escapedFirebaseDebugAppCheckToken}\""
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_DEBUG_APP_CHECK_TOKEN_NAME",
+                "\"${escapedFirebaseDebugAppCheckTokenName}\""
+            )
+            buildConfigField(
+                "boolean",
+                "FIREBASE_APP_CHECK_ENABLED",
+                enableAppCheck.toString()
+            )
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             buildConfigField("String", "API_BASE_URL", "\"https://api.taskgo.com/v1/\"")
             buildConfigField("boolean", "USE_EMULATOR", "false")
+            buildConfigField(
+                "String",
+                "FIREBASE_DEBUG_APP_CHECK_TOKEN",
+                "\"${escapedFirebaseDebugAppCheckToken}\""
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_DEBUG_APP_CHECK_TOKEN_NAME",
+                "\"${escapedFirebaseDebugAppCheckTokenName}\""
+            )
+            buildConfigField(
+                "boolean",
+                "FIREBASE_APP_CHECK_ENABLED",
+                enableAppCheck.toString()
+            )
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Descomente a linha abaixo após configurar o signingConfigs
-            // signingConfig = signingConfigs.getByName("release")
+            // Aplicar signing config se existir
+            signingConfigs.findByName("release")?.let {
+                signingConfig = it
+                println("SigningConfig 'release' aplicado ao buildType release")
+            } ?: run {
+                println("WARNING: SigningConfig 'release' não encontrado - AAB não será assinado!")
+            }
         }
-    }
-    
-    // Signing configs - será configurado após criar keystore
-    // Descomente o bloco abaixo após criar o keystore e o arquivo keystore.properties
-    signingConfigs {
-        /*
-        create("release") {
-            keyAlias = keystoreProperties["TASKGO_RELEASE_KEY_ALIAS"] as String
-            keyPassword = keystoreProperties["TASKGO_RELEASE_KEY_PASSWORD"] as String
-            storeFile = file(keystoreProperties["TASKGO_RELEASE_STORE_FILE"] as String)
-            storePassword = keystoreProperties["TASKGO_RELEASE_STORE_PASSWORD"] as String
-        }
-        */
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -101,10 +230,27 @@ android {
         kotlinCompilerExtensionVersion = "1.5.10"
     }
 
+    packaging {
+        jniLibs {
+            // Use o empacotamento moderno (recomendado para compatibilidade futura)
+            useLegacyPackaging = false
+        }
+        resources {
+            excludes += setOf(
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1"
+            )
+        }
+    }
+
     sourceSets {
         getByName("main") {
             java.srcDirs("src/main/java")
         }
+    }
+    
+    lint {
+        disable += "RemoveWorkManagerInitializer"
     }
 }
 
@@ -125,6 +271,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
+    implementation("androidx.compose.foundation:foundation")
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     kapt(libs.androidx.room.compiler)
@@ -147,6 +294,7 @@ dependencies {
     // ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.8.0")
     
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.8.2")
@@ -162,6 +310,11 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp)
+    
+    // ExoPlayer for video playback
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-ui:1.2.1")
+    implementation("androidx.media3:media3-common:1.2.1")
     implementation(libs.okhttp.logging)
     
     // Image loading
@@ -172,6 +325,23 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("com.github.bumptech.glide:compose:1.0.0-beta01")
     
+    // CameraX
+    val cameraxVersion = "1.3.0"
+    implementation("androidx.camera:camera-core:${cameraxVersion}")
+    implementation("androidx.camera:camera-camera2:${cameraxVersion}")
+    implementation("androidx.camera:camera-lifecycle:${cameraxVersion}")
+    implementation("androidx.camera:camera-view:${cameraxVersion}")
+    implementation("androidx.camera:camera-extensions:${cameraxVersion}")
+    
+    // Guava for ListenableFuture support
+    implementation("com.google.guava:guava:31.1-android")
+    
+    // PDF Generation
+    implementation("com.itextpdf:itext7-core:7.2.5") {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15on")
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+    }
+    
     // Firebase dependencies
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
@@ -179,12 +349,36 @@ dependencies {
     implementation(libs.firebase.functions)
     implementation(libs.firebase.storage)
     implementation(libs.firebase.messaging)
+    implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-appcheck-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
     implementation("com.google.firebase:firebase-appcheck-debug")
+    // Firebase Crashlytics
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
     
     // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:20.7.0")
+    
+    // Google Maps
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+    
+    // QR Code generation
+    implementation("com.google.zxing:core:3.5.2")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    
+    // Stripe Payment Sheet
+    implementation("com.stripe:stripe-android:20.37.1") {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15on")
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+    }
+    
+    // Google Tink (necessário para Nimbus JOSE usado pelo Stripe)
+    // Atualizado para versão mais recente para evitar bug no R8
+    implementation("com.google.crypto.tink:tink-android:1.14.1")
+    implementation("com.google.maps.android:maps-compose:4.3.0")
+    implementation("com.google.maps.android:maps-compose-utils:4.3.0")
+    implementation("com.google.maps.android:maps-compose-widgets:4.3.0")
     
     // Biometric Authentication
     implementation("androidx.biometric:biometric:1.1.0")
@@ -196,8 +390,17 @@ dependencies {
     // Google Pay
     implementation("com.google.android.gms:play-services-wallet:19.2.0")
     
+    // ML Kit Face Detection para validação facial
+    implementation("com.google.mlkit:face-detection:16.1.7")
+    
     // Google Play Services Location
     implementation("com.google.android.gms:play-services-location:21.0.1")
+    
+    // Accompanist Permissions
+    implementation("com.google.accompanist:accompanist-permissions:0.34.0")
+    
+    // ExifInterface para leitura de metadados de imagens
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     
     // Temporariamente comentado para corrigir erro D8BackportedMethodsGenerator
     // Reabilitar após sincronização bem-sucedida se necessário
@@ -219,3 +422,7 @@ dependencies {
 tasks.register("testClasses") {
     dependsOn("testDebugUnitTest")
 }
+
+// Nota: Símbolos de depuração nativos
+// O Android Gradle Plugin extrai automaticamente os símbolos durante o bundleRelease
+// Se necessário, execute o script: .\gerar-simbolos.ps1

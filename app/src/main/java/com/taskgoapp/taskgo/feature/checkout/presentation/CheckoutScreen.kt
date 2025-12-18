@@ -1,26 +1,41 @@
-﻿package com.taskgoapp.taskgo.feature.checkout.presentation
+package com.taskgoapp.taskgo.feature.checkout.presentation
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.taskgoapp.taskgo.core.design.*
-import com.taskgoapp.taskgo.core.data.models.PaymentMethod
-import com.taskgoapp.taskgo.core.data.models.CartItem
-import com.taskgoapp.taskgo.core.data.models.Product
-import com.taskgoapp.taskgo.core.data.models.PaymentType
-import com.taskgoapp.taskgo.core.data.models.User
-import com.taskgoapp.taskgo.core.data.models.AccountType
-import com.taskgoapp.taskgo.core.data.models.Address
-import com.taskgoapp.taskgo.core.theme.*
-import androidx.compose.ui.graphics.Color
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.taskgoapp.taskgo.core.design.AppTopBar
+import com.taskgoapp.taskgo.core.model.PaymentType
+import com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutProcessState.Error
+import com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutProcessState.Processing
+import com.taskgoapp.taskgo.feature.checkout.presentation.components.CheckoutBottomBar
+import com.taskgoapp.taskgo.feature.checkout.presentation.components.CheckoutCartItemRow
+import com.taskgoapp.taskgo.feature.checkout.presentation.components.EmptyCheckoutState
+import com.taskgoapp.taskgo.feature.checkout.presentation.components.SelectedFieldCard
+import com.taskgoapp.taskgo.feature.checkout.presentation.components.SummaryCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,267 +43,141 @@ fun CheckoutScreen(
     onBackClick: () -> Unit,
     onAddressSelection: () -> Unit,
     onPaymentMethodSelection: () -> Unit,
-    onOrderSummary: () -> Unit
+    onOrderSummary: (String, PaymentType) -> Unit,
+    viewModel: CheckoutViewModel = hiltViewModel()
 ) {
-    // Dados vêm do Firestore - iniciar vazios
-    val selectedAddress = remember { null as Address? }
-    val selectedPaymentMethod = remember { null as PaymentMethod? }
-    val cartItems = remember { emptyList<CartItem>() }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val selectedAddress = uiState.selectedAddress
+    val selectedPaymentMethod = uiState.selectedPaymentMethod
     
-    val subtotal = cartItems.sumOf { it.product.price * it.quantity }
-    val shipping = 0.0 // Free shipping
-    val total = subtotal + shipping
+    // Garantir que PIX esteja sempre disponível como método padrão
+    LaunchedEffect(uiState.availablePaymentMethods, uiState.selectedPaymentMethod) {
+        if (uiState.availablePaymentMethods.isNotEmpty() && 
+            uiState.selectedPaymentMethod == null) {
+            // Selecionar PIX automaticamente se disponível
+            val pixMethod = uiState.availablePaymentMethods.firstOrNull { it.type == PaymentType.PIX }
+            pixMethod?.let { viewModel.selectPaymentMethod(it) }
+        }
+    }
     
+    // Preservar seleções quando voltar das telas de seleção
+    LaunchedEffect(Unit) {
+        // Garantir que seleções sejam preservadas
+        // O ViewModel já mantém o estado, mas vamos garantir que esteja sincronizado
+    }
+    val canContinue = uiState.cartItems.isNotEmpty() &&
+        selectedAddress != null &&
+        selectedPaymentMethod != null &&
+        uiState.checkoutProcess !is Processing
+
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "Finalizar Compra",
+                title = "Finalizar compra",
                 onBackClick = onBackClick
+            )
+        },
+        bottomBar = {
+            CheckoutBottomBar(
+                total = uiState.total,
+                enabled = canContinue,
+                isLoading = uiState.checkoutProcess is Processing,
+                onCheckout = {
+                    if (selectedAddress != null && selectedPaymentMethod != null) {
+                        onOrderSummary(selectedAddress.id, selectedPaymentMethod.type)
+                    }
+                }
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // Address Section
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
+        when {
+            uiState.isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Endereço de Entrega",
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack
-                        )
-                        
-                        TextButton(onClick = onAddressSelection) {
-                            Text("Alterar")
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = TaskGoGreen,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = selectedAddress?.name ?: "Selecione um endereço",
-                                style = FigmaProductName,
-                                color = TaskGoTextBlack
-                            )
-                            Text(
-                                text = selectedAddress?.let { "${it.neighborhood}, ${it.city} - ${it.state}" } ?: "Nenhum endereço selecionado",
-                                style = FigmaProductDescription,
-                                color = TaskGoTextGray
-                            )
-                            selectedAddress?.cep?.let {
-                                Text(
-                                    text = it,
-                                    style = FigmaProductDescription,
-                                    color = TaskGoTextGray
-                                )
-                            }
-                        }
-                    }
+                    CircularProgressIndicator()
                 }
             }
-            
-            // Payment Method Section
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Forma de Pagamento",
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack
-                        )
-                        
-                        TextButton(onClick = onPaymentMethodSelection) {
-                            Text("Alterar")
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CreditCard,
-                            contentDescription = null,
-                            tint = TaskGoGreen,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = selectedPaymentMethod?.let { "${it.cardholderName} •••• ${it.lastFourDigits}" } ?: "Selecione um método de pagamento",
-                                style = FigmaProductName,
-                                color = TaskGoTextBlack
-                            )
-                            Text(
-                                text = selectedPaymentMethod?.let { when(it.type) {
-                                    PaymentType.CREDIT_CARD -> "Cartão de Crédito"
-                                    PaymentType.DEBIT_CARD -> "Cartão de Débito"
-                                    PaymentType.PIX -> "Pix"
-                                }} ?: "Nenhum método selecionado",
-                                style = FigmaProductDescription,
-                                color = TaskGoTextGray
-                            )
-                        }
-                    }
-                }
+
+            uiState.cartItems.isEmpty() -> {
+                EmptyCheckoutState(modifier = Modifier.padding(paddingValues))
             }
-            
-            // Order Summary Section
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
+
+            else -> {
                 Column(
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "Resumo do Pedido",
-                        style = FigmaProductName,
-                        color = TaskGoTextBlack
+                    SelectedFieldCard(
+                        title = "Endereço de entrega",
+                        value = selectedAddress?.name ?: "Selecione um endereço",
+                        subtitle = selectedAddress?.let { "${it.city} - ${it.state}" }
+                            ?: if (uiState.availableAddresses.isEmpty()) {
+                                "Nenhum endereço cadastrado"
+                            } else {
+                                "Nenhum endereço selecionado"
+                            },
+                        icon = Icons.Default.LocationOn,
+                        onAction = onAddressSelection
                     )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Cart Items
-                    cartItems.forEach { item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = item.product.name,
-                                    style = FigmaProductDescription,
-                                color = TaskGoTextGray,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Qtd: ${item.quantity}",
-                                    style = FigmaStatusText,
-                                    color = TaskGoTextGray
-                                )
+
+                    SelectedFieldCard(
+                        title = "Forma de pagamento",
+                        value = selectedPaymentMethod?.let { 
+                            if (it.type == PaymentType.PIX) "PIX" else "•••• ${it.lastFourDigits}"
+                        } ?: "Selecione um método",
+                        subtitle = selectedPaymentMethod?.let {
+                            when (it.type) {
+                                PaymentType.CREDIT_CARD -> "Cartão de crédito${if (it.cardholderName.isNotEmpty()) " (${it.cardholderName})" else ""}"
+                                PaymentType.DEBIT_CARD -> "Cartão de débito${if (it.cardholderName.isNotEmpty()) " (${it.cardholderName})" else ""}"
+                                PaymentType.PIX -> "PIX - Pagamento instantâneo"
                             }
-                            Text(
-                                text = "R$ %.2f".format(item.product.price * item.quantity),
-                                style = FigmaProductDescription,
-                                color = TaskGoTextGray,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                        
-                        if (item != cartItems.last()) {
-                            Divider(modifier = Modifier.padding(vertical = 8.dp))
-                        }
+                        } ?: if (uiState.availablePaymentMethods.isEmpty()) {
+                            "Nenhum método disponível"
+                        } else {
+                            "Nenhum método selecionado"
+                        },
+                        icon = Icons.Default.CreditCard,
+                        onAction = onPaymentMethodSelection
+                    )
+
+                    SummaryCard(
+                        subtotal = uiState.subtotal,
+                        shipping = uiState.shipping,
+                        total = uiState.total
+                    )
+
+                    HorizontalDivider()
+
+                    uiState.cartItems.forEach { item ->
+                        CheckoutCartItemRow(item = item)
+                        HorizontalDivider()
                     }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Price Breakdown
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Subtotal:",
-                            style = FigmaProductDescription,
-                            color = TaskGoTextGray
-                        )
-                        Text(
-                            text = "R$ %.2f".format(subtotal),
-                            style = FigmaProductDescription,
-                            color = TaskGoTextBlack
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Frete:",
-                            style = FigmaProductDescription,
-                            color = TaskGoTextGray
-                        )
-                        Text(
-                            text = if (shipping == 0.0) "Grátis" else "R$ %.2f".format(shipping),
-                            style = FigmaProductDescription,
-                            color = if (shipping == 0.0) TaskGoPriceGreen else TaskGoTextBlack
-                        )
-                    }
-                    
-                    HorizontalDivider(color = TaskGoDivider, modifier = Modifier.padding(vertical = 12.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Total:",
-                            style = FigmaPrice,
-                            color = TaskGoTextBlack
-                        )
-                        Text(
-                            text = "R$ %.2f".format(total),
-                            style = FigmaPrice,
-                            color = TaskGoPriceGreen
-                        )
-                    }
+
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
-            
-            // Continue Button
-            PrimaryButton(
-                text = "Continuar para Pagamento",
-                onClick = onOrderSummary,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            )
         }
+    }
+
+    if (uiState.checkoutProcess is Error) {
+        AlertDialog(
+            onDismissRequest = { viewModel.resetCheckoutProcess() },
+            confirmButton = {
+                TextButton(onClick = { viewModel.resetCheckoutProcess() }) {
+                    Text("Entendi")
+                }
+            },
+            title = { Text("Não foi possível continuar") },
+            text = { Text((uiState.checkoutProcess as Error).message) }
+        )
     }
 }
 

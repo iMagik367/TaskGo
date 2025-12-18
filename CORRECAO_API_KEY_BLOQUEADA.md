@@ -45,7 +45,7 @@ Requests to this API firebaseappcheck.googleapis.com are blocked.
    - https://console.cloud.google.com/apis/credentials?project=605187481719
 
 2. **Encontre a API Key:**
-   - Procure por: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
+a   - Procure por: `AIzaSyA7podhNipqILvMV7mwZJc7ZYgd-f16TAw`
    - Clique na chave para editar
 
 3. **Verifique "API restrictions":**
@@ -74,7 +74,7 @@ Requests to this API firebaseappcheck.googleapis.com are blocked.
 
 ### Passo 3: Adicionar Token de Debug no Firebase Console
 
-**Token de debug gerado:** `8c4aab63-0f88-4a42-a909-28f25d93a956`
+**Token de debug gerado:** `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 
 1. **Acesse Firebase Console:**
    - https://console.firebase.google.com/project/task-go-ee85f/appcheck
@@ -86,7 +86,7 @@ Requests to this API firebaseappcheck.googleapis.com are blocked.
 
 3. **Adicione o token:**
    - Clique em **"Add debug token"**
-   - Cole: `8c4aab63-0f88-4a42-a909-28f25d93a956`
+   - Cole: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
    - Clique em **"Add"**
 
 ---
@@ -135,7 +135,7 @@ Após fazer todas as correções acima:
 - [ ] Firebase App Check API habilitada
 - [ ] Firebase Authentication API habilitada
 - [ ] API Key sem restrições bloqueantes OU com APIs corretas na lista
-- [ ] Token de debug adicionado no Firebase Console: `8c4aab63-0f88-4a42-a909-28f25d93a956`
+- [ ] Token de debug adicionado no Firebase Console: `4D4F1322-E272-454F-9396-ED80E3DBDBD7`
 - [ ] Billing habilitado (se necessário)
 - [ ] Permissões de administrador verificadas
 - [ ] Aguardado 5-10 minutos após mudanças

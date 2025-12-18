@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.res.painterResource
 import com.taskgoapp.taskgo.core.design.TGIcons
 import androidx.compose.material3.*
@@ -57,43 +59,20 @@ fun MessagesScreen(
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.messages_title),
-                onBackClick = null, // Removido botão de voltar
-                actions = {
-                    IconButton(
-                        onClick = onNavigateToNotifications,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(TGIcons.Bell),
-                            contentDescription = stringResource(R.string.notifications_title),
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = onNavigateToCart,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(TGIcons.Cart),
-                            contentDescription = stringResource(R.string.ui_cart),
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = { onNavigateToChat(0L) },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(TGIcons.Messages),
-                            contentDescription = stringResource(R.string.messages_title),
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
+                onBackClick = null // Sem botão de voltar
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { onNavigateToChat(0L) },
+                containerColor = TaskGoGreen
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Nova Mensagem",
+                    tint = Color.White
+                )
+            }
         }
     ) { paddingValues ->
         Column(

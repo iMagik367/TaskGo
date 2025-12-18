@@ -10,8 +10,12 @@ import com.google.android.gms.common.api.ApiException
 
 class GoogleSignInHelper(context: Context) {
     private val googleSignInClient: GoogleSignInClient by lazy {
+        // Obter Web Client ID do google-services.json
+        // O Web Client ID é o client_id com client_type 3 (web client)
+        val webClientId = "1093466748007-bk95o4ouk4966bvgqbm98n5h8js8m28v.apps.googleusercontent.com"
+        
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken("154959127714-mvime4hhraia9s2eldrtifsv0a2hb51d.apps.googleusercontent.com")
+            .requestIdToken(webClientId)
             .requestEmail()
             .build()
         GoogleSignIn.getClient(context, gso)

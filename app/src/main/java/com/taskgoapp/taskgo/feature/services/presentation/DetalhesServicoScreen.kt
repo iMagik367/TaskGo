@@ -1,68 +1,54 @@
 ﻿package com.taskgoapp.taskgo.feature.services.presentation
-import com.taskgoapp.taskgo.core.theme.*
 
+import android.util.Log
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.taskgoapp.taskgo.core.design.AppTopBar
+import com.taskgoapp.taskgo.core.theme.*
+import java.text.NumberFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetalhesServicoScreen(
     serviceId: String,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onEditService: (String) -> Unit = {},
+    onNavigateToReviews: ((String) -> Unit)? = null,
+    viewModel: ServiceDetailViewModel = hiltViewModel()
 ) {
-    // Dados do serviço (em uma implementação real, viria de um ViewModel)
-    val serviceData = when (serviceId) {
-        "1" -> ServiceDetails(
-            title = "Montagem de Móveis",
-            providerName = "Rodrigo Silva",
-            providerPhone = "(11) 99999-9999",
-            providerEmail = "rodrigo@email.com",
-            price = "R$ 150,00",
-            completionDate = "15/12/2024",
-            description = "Montagem profissional de móveis com garantia de 30 dias. Inclui desembalagem, montagem, ajustes e limpeza do local.",
-            location = "São Paulo, SP",
-            rating = 4.8,
-            reviewCount = 156
-        )
-        "2" -> ServiceDetails(
-            title = "Limpeza Residencial",
-            providerName = "Maria Santos",
-            providerPhone = "(11) 88888-8888",
-            providerEmail = "maria@email.com",
-            price = "R$ 80,00",
-            completionDate = "10/12/2024",
-            description = "Limpeza completa da residência incluindo todos os cômodos, banheiros, cozinha e áreas comuns.",
-            location = "São Paulo, SP",
-            rating = 4.6,
-            reviewCount = 89
-        )
-        else -> ServiceDetails(
-            title = "Serviço",
-            providerName = "Prestador",
-            providerPhone = "(11) 00000-0000",
-            providerEmail = "prestador@email.com",
-            price = "R$ 0,00",
-            completionDate = "01/01/2024",
-            description = "Descrição do serviço",
-            location = "Local",
-            rating = 5.0,
-            reviewCount = 0
-        )
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val scrollState = rememberScrollState()
+
+    LaunchedEffect(serviceId) {
+        if (serviceId.isNotBlank()) {
+            Log.d("DetalhesServicoScreen", "Carregando serviço: $serviceId")
+            viewModel.loadService(serviceId)
+        }
     }
 
     Scaffold(
@@ -71,172 +57,314 @@ fun DetalhesServicoScreen(
                 title = "Detalhes do Serviço",
                 onBackClick = onBackClick
             )
+        },
+        floatingActionButton = {
+            if (uiState.service != null) {
+                FloatingActionButton(
+                    onClick = { onEditService(serviceId) },
+                    containerColor = TaskGoGreen
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Editar Serviço",
+                        tint = Color.White
+                    )
+                }
+            }
         }
     ) { paddingValues ->
+        when {
+            uiState.isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = TaskGoGreen)
+                }
+            }
+            uiState.error != null -> {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            // Card principal do serviço
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = TaskGoSurface
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    // Título e preço
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = serviceData.title,
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = serviceData.price,
-                            style = FigmaPrice,
-                            color = TaskGoPriceGreen,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Text(
+                        text = uiState.error ?: "Erro desconhecido",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            }
+            uiState.service != null -> {
+                val service = uiState.service!!
+                val priceFormat = NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
+                
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .verticalScroll(scrollState)
+                ) {
+                    // Imagens do serviço
+                    if (service.images.isNotEmpty()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp)
+                                .padding(16.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(8.dp)
+                            ) {
+                                items(service.images) { imageUrl ->
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(imageUrl)
+                                            .size(600)
+                                            .build(),
+                                        contentDescription = "Imagem do serviço",
+                                        modifier = Modifier
+                                            .fillMaxHeight()
+                                            .width(280.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                        }
                     }
 
-                    // Status de conclusão
+                    // Informações principais
                     Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = TaskGoSuccessGreen.copy(alpha = 0.1f)
-                        )
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Título
+                            Text(
+                                text = service.title.ifEmpty { "Sem título" },
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TaskGoTextBlack
+                            )
+
+                            // Preço
+                            Text(
+                                text = priceFormat.format(service.price),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TaskGoPriceGreen
+                            )
+
+                            // Status
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    color = if (service.active) TaskGoSuccess.copy(alpha = 0.1f) else TaskGoError.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (service.active) "Ativo" else "Inativo",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (service.active) TaskGoSuccess else TaskGoError,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                
+                                if (service.category.isNotBlank()) {
+                                    Surface(
+                                        color = TaskGoGreen.copy(alpha = 0.1f),
+                                        shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = "✓ Concluído em ${serviceData.completionDate}",
-                            modifier = Modifier.padding(12.dp),
-                            style = FigmaStatusText,
-                            color = TaskGoSuccessGreen,
-                            fontWeight = FontWeight.Medium
-                        )
+                                            text = service.category,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TaskGoGreen,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Descrição
+                    if (service.description.isNotBlank()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                     Text(
-                        text = "Descrição:",
-                        style = FigmaSectionTitle,
-                        color = TaskGoTextBlack,
-                        fontWeight = FontWeight.Bold
+                                    text = "Descrição",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TaskGoTextBlack
                     )
                     Text(
-                        text = serviceData.description,
-                        style = FigmaProductDescription,
+                                    text = service.description,
+                                    style = MaterialTheme.typography.bodyMedium,
                         color = TaskGoTextGray
                     )
                 }
             }
+                    }
 
-            // Card do prestador
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Vídeos
+                    if (service.videos.isNotEmpty()) {
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = TaskGoSurface
-                )
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Prestador do Serviço",
-                        style = FigmaSectionTitle,
-                        color = TaskGoTextBlack,
-                        fontWeight = FontWeight.Bold
-                    )
+                                    text = "Vídeos",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TaskGoTextBlack
+                                )
+                                
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(service.videos) { videoUrl ->
+                                        VideoThumbnailCard(
+                                            videoUrl = videoUrl,
+                                            modifier = Modifier.size(200.dp, 150.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                    // Nome e avaliação
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Tags
+                    if (service.tags.isNotEmpty()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = serviceData.providerName,
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack,
-                            fontWeight = FontWeight.Bold
+                                    text = "Tags",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TaskGoTextBlack
                         )
                         Row(
-                            verticalAlignment = Alignment.CenterVertically
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    service.tags.forEach { tag ->
+                                        Surface(
+                                            color = TaskGoGreen.copy(alpha = 0.1f),
+                                            shape = RoundedCornerShape(16.dp)
+                                        ) {
+                                            Text(
+                                                text = tag,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TaskGoGreen,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Informações de data
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (service.createdAt != null) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Star,
+                                        imageVector = Icons.Default.DateRange,
                                 contentDescription = null,
-                                tint = TaskGoStarYellow,
+                                        tint = TaskGoTextGray,
                                 modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "${serviceData.rating} (${serviceData.reviewCount} avaliações)",
-                                style = FigmaProductDescription,
+                                        text = "Criado em: ${java.text.SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(service.createdAt)}",
+                                        style = MaterialTheme.typography.bodySmall,
                                 color = TaskGoTextGray
                             )
                         }
                     }
 
-                    // Informações de contato
-                    ContactInfoItem(
-                        icon = Icons.Default.Call,
-                        text = serviceData.providerPhone
-                    )
-                    ContactInfoItem(
-                        icon = Icons.Default.Email,
-                        text = serviceData.providerEmail
-                    )
-                    ContactInfoItem(
-                        icon = Icons.Default.LocationOn,
-                        text = serviceData.location
-                    )
-                }
-            }
+                            if (service.updatedAt != null) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = TaskGoTextGray,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = "Atualizado em: ${java.text.SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(service.updatedAt)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TaskGoTextGray
+                                    )
+                                }
+                            }
+                        }
+                    }
 
-            // Botões de ação
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { /* Implementar contato */ },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color.Transparent
-                    ),
-                    border = BorderStroke(1.dp, TaskGoGreen)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Call,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = TaskGoGreen
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Contatar", style=FigmaButtonText, color=TaskGoGreen)
-                }
-
-                Button(
-                    onClick = { /* Implementar nova solicitação */ },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = TaskGoGreen
-                    )
-                ) {
-                    Text("Solicitar Novamente", style=FigmaButtonText, color=TaskGoBackgroundWhite)
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
         }
@@ -244,38 +372,100 @@ fun DetalhesServicoScreen(
 }
 
 @Composable
-private fun ContactInfoItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    text: String
+private fun VideoThumbnailCard(
+    videoUrl: String,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 4.dp)
+    var showVideoPlayer by remember { mutableStateOf(false) }
+    
+    Card(
+        modifier = modifier.clickable { showVideoPlayer = true },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundGray)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = TaskGoGreen,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = text,
-            style = FigmaProductDescription,
-            color = TaskGoTextGray
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Videocam,
+                    contentDescription = "Vídeo",
+                    modifier = Modifier.size(48.dp),
+                    tint = TaskGoGreen
+                )
+                Text(
+                    text = "Tocar vídeo",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TaskGoTextGray
+                )
+            }
+        }
+    }
+    
+    if (showVideoPlayer) {
+        VideoPlayerDialog(
+            videoUrl = videoUrl,
+            onDismiss = { showVideoPlayer = false }
         )
     }
 }
 
-data class ServiceDetails(
-    val title: String,
-    val providerName: String,
-    val providerPhone: String,
-    val providerEmail: String,
-    val price: String,
-    val completionDate: String,
-    val description: String,
-    val location: String,
-    val rating: Double,
-    val reviewCount: Int
-)
+@Composable
+private fun VideoPlayerDialog(
+    videoUrl: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val exoPlayer = remember {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            val mediaItem = androidx.media3.common.MediaItem.fromUri(videoUrl)
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+        }
+    }
+    
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column {
+                androidx.compose.ui.viewinterop.AndroidView(
+                    factory = { ctx ->
+                        androidx.media3.ui.PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = true
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                )
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Fechar")
+                    }
+                }
+            }
+        }
+    }
+}

@@ -23,7 +23,11 @@ data class ProductEntity(
     val title: String,
     val price: Double,
     val description: String?,
-    val sellerName: String?
+    val sellerName: String?,
+    val rating: Double? = null, // Avaliação média do produto
+    val latitude: Double? = null, // Latitude da localização do produto
+    val longitude: Double? = null, // Longitude da localização do produto
+    val featured: Boolean = false // Produto em destaque
 )
 
 @Entity(tableName = "product_image")

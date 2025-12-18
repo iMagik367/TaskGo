@@ -4,15 +4,9 @@ import java.time.Instant
 
 data class Order(
     val id: Long,
-    val items: List<OrderItem>,
+    val items: List<com.taskgoapp.taskgo.core.model.OrderItem>,
     val total: Double,
     val status: String,
     val createdAt: Instant
-)
-
-data class OrderItem(
-    val productId: Long,
-    val quantity: Int,
-    val price: Double
 )
 

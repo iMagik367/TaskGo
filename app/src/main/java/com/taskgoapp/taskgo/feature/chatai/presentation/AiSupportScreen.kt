@@ -1,54 +1,79 @@
 ﻿package com.taskgoapp.taskgo.feature.chatai.presentation
 
+import android.Manifest
+import android.content.Context
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.rememberAsyncImagePainter
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.PermissionStatus
+import com.google.accompanist.permissions.rememberPermissionState
 import com.taskgoapp.taskgo.core.design.*
+import com.taskgoapp.taskgo.core.theme.*
+import com.taskgoapp.taskgo.feature.chatai.presentation.AttachmentPreview
+import com.taskgoapp.taskgo.feature.chatai.presentation.AttachmentSelectionDialog
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun AiSupportScreen(
-    onBackClick: () -> Unit
+    chatId: String,
+    onBackClick: () -> Unit,
+    onChatUpdated: ((String, String, Boolean) -> Unit)? = null, // chatId, lastMessage, isFirstMessage
+    viewModel: ChatAIViewModel = hiltViewModel()
 ) {
-    var messageText by remember { mutableStateOf("") }
-    var messages by remember { mutableStateOf(listOf<AiMessage>()) }
+    val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val recordAudioPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
     
-    // Sem mensagens mockadas iniciais
+    var showLanguageMenu by remember { mutableStateOf(false) }
     
-    fun sendMessage() {
-        if (messageText.isBlank()) return
-        
-        val userMessage = AiMessage(
-            id = messages.size + 1L,
-            text = messageText,
-            isFromAi = false,
-            timestamp = System.currentTimeMillis()
-        )
-        
-        messages = messages + userMessage
-        messageText = ""
-        
-        // TODO: Integrar com backend/serviço real de IA se aplicável
+    // Inicializar chat quando o chatId mudar
+    LaunchedEffect(chatId) {
+        viewModel.initializeChat(chatId)
+    }
+    
+    LaunchedEffect(uiState.messages.size) {
+        if (uiState.messages.isNotEmpty()) {
+            listState.animateScrollToItem(uiState.messages.size - 1)
+        }
     }
     
     Scaffold(
         topBar = {
             AppTopBar(
                 title = "AI TaskGo",
-                onBackClick = onBackClick
+                onBackClick = onBackClick,
+                actions = {
+                    IconButton(onClick = { showLanguageMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Translate,
+                            contentDescription = "Traduzir",
+                            tint = TaskGoBackgroundWhite
+                        )
+                    }
+                }
             )
         }
     ) { paddingValues ->
@@ -65,25 +90,128 @@ fun AiSupportScreen(
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages) { message ->
-                    AiMessageBubble(message = message)
+                items(uiState.messages) { message ->
+                    AiMessageBubble(
+                        message = message,
+                        onTranslate = { viewModel.translateMessage(message, uiState.targetLanguage) }
+                    )
+                }
+                
+                if (uiState.isLoading) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier.widthIn(max = 280.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "AI está digitando...",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Error message
+            uiState.error?.let { error ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(12.dp)
+                    )
                 }
             }
             
             // Input Area
-            InputMessage(
-                message = messageText,
-                onMessageChange = { messageText = it },
-                onSend = { sendMessage() },
+            EnhancedInputMessage(
+                onSend = { text, attachments -> 
+                    val isFirstMessage = uiState.messages.isEmpty()
+                    viewModel.sendMessage(text, attachments) { title ->
+                        // Quando a primeira mensagem for enviada, atualizar o título do chat
+                        onChatUpdated?.invoke(chatId, text, isFirstMessage)
+                    }
+                },
+                onMicClick = {
+                    if (recordAudioPermission.status is PermissionStatus.Granted) {
+                        // TODO: Implementar gravação de áudio
+                        viewModel.setRecording(!uiState.isRecording)
+                    } else {
+                        recordAudioPermission.launchPermissionRequest()
+                    }
+                },
+                isRecording = uiState.isRecording,
                 modifier = Modifier.padding(16.dp)
             )
         }
+    }
+    
+    // Language selection menu
+    if (showLanguageMenu) {
+        AlertDialog(
+            onDismissRequest = { showLanguageMenu = false },
+            title = { Text("Selecionar Idioma") },
+            text = {
+                Column {
+                    listOf("pt" to "Português", "en" to "Inglês", "es" to "Espanhol").forEach { (code, name) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .clickable {
+                                    viewModel.setTargetLanguage(code)
+                                    showLanguageMenu = false
+                                }
+                        ) {
+                            RadioButton(
+                                selected = uiState.targetLanguage == code,
+                                onClick = {
+                                    viewModel.setTargetLanguage(code)
+                                    showLanguageMenu = false
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguageMenu = false }) {
+                    Text("Fechar")
+                }
+            }
+        )
     }
 }
 
 @Composable
 fun AiMessageBubble(
     message: AiMessage,
+    onTranslate: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val dateFormat = remember { SimpleDateFormat("HH:mm", Locale("pt", "BR")) }
@@ -124,14 +252,82 @@ fun AiMessageBubble(
                     }
                 }
                 
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (message.isFromAi) 
-                        MaterialTheme.colorScheme.onSurfaceVariant 
-                    else 
-                        MaterialTheme.colorScheme.onPrimary
-                )
+                // Exibir anexos
+                if (message.attachments.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.padding(bottom = if (message.text.isNotBlank()) 8.dp else 0.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        message.attachments.forEach { attachment ->
+                            when (attachment.type) {
+                                com.taskgoapp.taskgo.feature.chatai.data.AttachmentType.IMAGE -> {
+                                    Image(
+                                        painter = rememberAsyncImagePainter(attachment.uri),
+                                        contentDescription = "Imagem",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 200.dp)
+                                            .clip(MaterialTheme.shapes.small),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
+                                com.taskgoapp.taskgo.feature.chatai.data.AttachmentType.DOCUMENT -> {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Description,
+                                            contentDescription = null,
+                                            tint = if (message.isFromAi) 
+                                                MaterialTheme.colorScheme.onSurfaceVariant 
+                                            else 
+                                                MaterialTheme.colorScheme.onPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = attachment.fileName ?: "Documento",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (message.isFromAi) 
+                                                MaterialTheme.colorScheme.onSurfaceVariant 
+                                            else 
+                                                MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (message.text.isNotBlank()) {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (message.isFromAi) 
+                            MaterialTheme.colorScheme.onSurfaceVariant 
+                        else 
+                            MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                
+                if (message.isFromAi) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextButton(
+                        onClick = onTranslate,
+                        modifier = Modifier.padding(0.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Translate,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Traduzir", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
         
@@ -146,31 +342,128 @@ fun AiMessageBubble(
     }
 }
 
-fun generateAiResponse(userMessage: String): AiMessage {
-    val responses = listOf(
-        "Entendo sua dúvida! Deixe-me ajudar você com isso.",
-        "Ótima pergunta! Aqui está a resposta que você precisa:",
-        "Vou te explicar como funciona:",
-        "Para resolver isso, você pode seguir estes passos:",
-        "Essa é uma dúvida comum. Aqui está a solução:",
-        "Perfeito! Deixe-me te orientar sobre isso.",
-        "Vou te dar algumas dicas importantes:",
-        "Essa é uma excelente pergunta! Aqui está a resposta:"
-    )
+@Composable
+fun EnhancedInputMessage(
+    onSend: (String, List<com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment>) -> Unit,
+    onMicClick: () -> Unit,
+    isRecording: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var text by remember { mutableStateOf("") }
+    var attachments by remember { mutableStateOf<List<com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment>>(emptyList()) }
+    var showAttachmentMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     
-    val randomResponse = responses.random()
+    Column(modifier = modifier) {
+        // Preview de anexos
+        if (attachments.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                attachments.forEach { attachment ->
+                    AttachmentPreview(
+                        attachment = attachment,
+                        onRemove = {
+                            attachments = attachments.filter { it.id != attachment.id }
+                        }
+                    )
+                }
+            }
+        }
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            IconButton(onClick = onMicClick) {
+                Icon(
+                    imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                    contentDescription = "Microfone",
+                    tint = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                )
+            }
+            
+            // Botão de anexar
+            IconButton(onClick = { showAttachmentMenu = true }) {
+                Icon(
+                    imageVector = Icons.Default.AttachFile,
+                    contentDescription = "Anexar",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("Digite sua mensagem...") },
+                maxLines = Int.MAX_VALUE,
+                singleLine = false,
+                shape = MaterialTheme.shapes.medium,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = TaskGoGreen,
+                    unfocusedBorderColor = TaskGoBorder,
+                    cursorColor = TaskGoGreen
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            FloatingActionButton(
+                onClick = {
+                    if (text.isNotBlank() || attachments.isNotEmpty()) {
+                        onSend(text, attachments)
+                        text = ""
+                        attachments = emptyList()
+                    }
+                },
+                containerColor = TaskGoGreen
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "Enviar",
+                    tint = androidx.compose.ui.graphics.Color.White
+                )
+            }
+        }
+    }
     
-    return AiMessage(
-        id = System.currentTimeMillis(),
-        text = randomResponse,
-        isFromAi = true,
-        timestamp = System.currentTimeMillis()
-    )
+    // Menu de seleção de anexos
+    if (showAttachmentMenu) {
+        AttachmentSelectionDialog(
+            onDismiss = { showAttachmentMenu = false },
+            onImageSelected = { uri, mimeType ->
+                val attachment = com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment(
+                    id = System.currentTimeMillis().toString(),
+                    uri = uri,
+                    type = com.taskgoapp.taskgo.feature.chatai.data.AttachmentType.IMAGE,
+                    mimeType = mimeType
+                )
+                attachments = attachments + attachment
+                showAttachmentMenu = false
+            },
+            onDocumentSelected = { uri, fileName, mimeType ->
+                val attachment = com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment(
+                    id = System.currentTimeMillis().toString(),
+                    uri = uri,
+                    type = com.taskgoapp.taskgo.feature.chatai.data.AttachmentType.DOCUMENT,
+                    fileName = fileName,
+                    mimeType = mimeType
+                )
+                attachments = attachments + attachment
+                showAttachmentMenu = false
+            }
+        )
+    }
 }
 
 data class AiMessage(
     val id: Long,
     val text: String,
     val isFromAi: Boolean,
-    val timestamp: Long
+    val timestamp: Long,
+    val attachments: List<com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment> = emptyList()
 )

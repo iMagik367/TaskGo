@@ -37,17 +37,83 @@ fun MeusDadosScreen(
         mutableStateOf(state.profileImages.map { Uri.parse(it) }) 
     }
 
-    // Usar SimpleImageCropper para seleção e corte de imagem
-    if (showPhotoDialog) {
-        SimpleImageCropper(
-            onImageCropped = { croppedUri ->
-                println("DEBUG: Imagem cortada recebida: $croppedUri")
+    // Camera/Galeria + Crop para avatar
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val cropLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = com.canhub.cropper.CropImageContract()
+    ) { result ->
+        if (result.isSuccessful) {
+            result.uriContent?.let { croppedUri ->
                 viewModel.onAvatarSelected(croppedUri.toString())
-                showPhotoDialog = false
+            }
+        }
+        showPhotoDialog = false
+    }
+    val galleryLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            cropLauncher.launch(
+                com.canhub.cropper.CropImageContractOptions(
+                    uri = it,
+                    cropImageOptions = com.taskgoapp.taskgo.core.design.CropImageConfig.createDefaultOptions()
+                )
+            )
+        } ?: run { showPhotoDialog = false }
+    }
+    val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && tempCameraUri != null) {
+            cropLauncher.launch(
+                com.canhub.cropper.CropImageContractOptions(
+                    uri = tempCameraUri,
+                    cropImageOptions = com.taskgoapp.taskgo.core.design.CropImageConfig.createDefaultOptions()
+                )
+            )
+        } else {
+            showPhotoDialog = false
+        }
+    }
+    val cameraPermissionLauncher = com.taskgoapp.taskgo.core.permissions.rememberCameraPermissionLauncher(
+        onPermissionGranted = {
+            val imageFile = java.io.File(context.cacheDir, "avatar_${System.currentTimeMillis()}.jpg")
+            tempCameraUri = Uri.fromFile(imageFile)
+            cameraLauncher.launch(tempCameraUri!!)
+        },
+        onPermissionDenied = { showPhotoDialog = false }
+    )
+    val imagePermissionLauncher = com.taskgoapp.taskgo.core.permissions.rememberImageReadPermissionLauncher(
+        onPermissionGranted = {
+            galleryLauncher.launch("image/*")
+        },
+        onPermissionDenied = { showPhotoDialog = false }
+    )
+    if (showPhotoDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showPhotoDialog = false },
+            title = { androidx.compose.material3.Text("Selecionar imagem") },
+            text = { androidx.compose.material3.Text("Escolha a origem da sua foto de perfil") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    if (com.taskgoapp.taskgo.core.permissions.PermissionHandler.hasImageReadPermission(context)) {
+                        galleryLauncher.launch("image/*")
+                    } else {
+                        imagePermissionLauncher.launch(com.taskgoapp.taskgo.core.permissions.PermissionHandler.getImageReadPermission())
+                    }
+                }) { androidx.compose.material3.Text("Galeria") }
             },
-            onCancel = {
-                println("DEBUG: Crop cancelado")
-                showPhotoDialog = false
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    if (com.taskgoapp.taskgo.core.permissions.PermissionHandler.hasCameraPermission(context)) {
+                        val imageFile = java.io.File(context.cacheDir, "avatar_${System.currentTimeMillis()}.jpg")
+                        tempCameraUri = Uri.fromFile(imageFile)
+                        cameraLauncher.launch(tempCameraUri!!)
+                    } else {
+                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                    }
+                }) { androidx.compose.material3.Text("Câmera") }
             }
         )
     }

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskgoapp.taskgo.core.model.UserType
+import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
@@ -36,7 +37,9 @@ class SignupViewModel @Inject constructor(
         phone: String,
         password: String,
         userType: UserType,
+        accountType: AccountType? = null,
         cpf: String? = null,
+        rg: String? = null,
         cnpj: String? = null,
         birthDate: Date? = null,
         address: com.taskgoapp.taskgo.core.model.Address? = null,
@@ -82,9 +85,15 @@ class SignupViewModel @Inject constructor(
                                 Log.d("SignupViewModel", "Perfil do Firebase Auth atualizado")
                                 
                                 // 3. Criar/atualizar perfil no Firestore
-                                val role = when (userType) {
-                                    UserType.CLIENT -> "client"
-                                    UserType.PROVIDER -> "provider"
+                                // Priorizar accountType se fornecido, senão usar userType
+                                val role = when (accountType) {
+                                    AccountType.PRESTADOR -> "provider"
+                                    AccountType.VENDEDOR -> "seller"
+                                    AccountType.CLIENTE -> "client"
+                                    null -> when (userType) {
+                                        UserType.CLIENT -> "client"
+                                        UserType.PROVIDER -> "provider"
+                                    }
                                 }
 
                                 val userFirestore = UserFirestore(
@@ -99,6 +108,7 @@ class SignupViewModel @Inject constructor(
                                     updatedAt = Date(),
                                     phone = phone,
                                     cpf = cpf,
+                                    rg = rg,
                                     cnpj = cnpj,
                                     birthDate = birthDate,
                                     address = address,
@@ -130,16 +140,25 @@ class SignupViewModel @Inject constructor(
 
                                 if (existingUser != null) {
                                     Log.d("SignupViewModel", "Usuário existente encontrado, atualizando...")
-                                    // Atualizar documento existente
+                                    Log.d("SignupViewModel", "Atualizando role de '${existingUser.role}' para '$role' (accountType: $accountType)")
+                                    // Atualizar documento existente - CRÍTICO: sempre atualizar o role com o accountType selecionado
                                     val updatedUser = existingUser.copy(
                                         displayName = name,
                                         phone = phone,
-                                        role = role,
+                                        role = role, // CRÍTICO: Sempre usar o role baseado no accountType selecionado
+                                        cpf = cpf,
+                                        rg = rg,
+                                        cnpj = cnpj,
+                                        birthDate = birthDate,
+                                        address = address,
+                                        biometricEnabled = biometricEnabled,
+                                        twoFactorEnabled = twoFactorEnabled,
+                                        twoFactorMethod = twoFactorMethod,
                                         updatedAt = Date()
                                     )
                                     firestoreUserRepository.updateUser(updatedUser).fold(
                                         onSuccess = {
-                                            Log.d("SignupViewModel", "Perfil atualizado com sucesso")
+                                            Log.d("SignupViewModel", "Perfil atualizado com sucesso com role: $role")
                                             _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
                                         },
                                         onFailure = { exception ->

@@ -243,7 +243,7 @@ fun CheckoutScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                     }
                     
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     
                     // Totals
                     Row(
@@ -272,7 +272,7 @@ fun CheckoutScreen(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween

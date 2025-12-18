@@ -2,8 +2,6 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11,7 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
@@ -26,34 +24,39 @@ fun ComprarBannerScreen(
 ) {
 	var plano by remember { mutableStateOf("pequeno") }
 
-	Column(
-		modifier = Modifier
-			.fillMaxSize()
-			.background(TaskGoBackgroundWhite)
-	) {
-		TopAppBar(
-			title = { Text("Anúncios", color = TaskGoTextBlack, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
-			navigationIcon = {
-                IconButton(onClick = onBackClick) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = TaskGoTextBlack)
-                }
-			},
-			colors = TopAppBarDefaults.topAppBarColors(containerColor = TaskGoBackgroundWhite)
-		)
+	Scaffold(
+		topBar = {
+			AppTopBar(
+				title = "Comprar Banner",
+				onBackClick = onBackClick
+			)
+		}
+	) { paddingValues ->
 
-		Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-			Text("Escolha seu plano de banner", color = TaskGoTextBlack, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+		Column(
+			modifier = Modifier
+				.fillMaxSize()
+				.padding(paddingValues)
+				.padding(16.dp),
+			verticalArrangement = Arrangement.spacedBy(16.dp)
+		) {
+			Text(
+				text = "Escolha seu plano de banner",
+				color = TaskGoTextBlack,
+				style = MaterialTheme.typography.headlineSmall,
+				fontWeight = FontWeight.Bold
+			)
 			Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
 				Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
 					Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
 						Text("Pequeno", color = TaskGoTextGray)
-						Text("R$ 50/dia", color = TaskGoTextBlack, fontWeight = FontWeight.Bold)
+						Text("R$ 50/mês", color = TaskGoTextBlack, fontWeight = FontWeight.Bold)
 					}
                     RadioButtonRow("pequeno", plano) { plano = it }
                     HorizontalDivider()
 					Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
 						Text("Grande", color = TaskGoTextGray)
-						Text("R$ 90/dia", color = TaskGoTextBlack, fontWeight = FontWeight.Bold)
+						Text("R$ 100/mês", color = TaskGoTextBlack, fontWeight = FontWeight.Bold)
 					}
 					RadioButtonRow("grande", plano) { plano = it }
 				}

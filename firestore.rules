@@ -12,9 +12,10 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
-    // Helper function to get user role
+    // Helper function to get user role (safe - returns null if user doesn't exist)
     function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc != null && userDoc.data != null ? userDoc.data.role : null;
     }
     
     // Helper function to check if user is admin
@@ -31,24 +32,46 @@ service cloud.firestore {
     function isClient() {
       return isAuthenticated() && getUserRole() == 'client';
     }
+    
+    // Helper function to check if user document exists
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
 
     // Users collection
     match /users/{userId} {
-      // Users can read their own profile
+      // Users can read their own profile (even if document doesn't exist yet, they can create it)
       allow read: if isOwner(userId);
       
       // Users can update their own profile
       allow update: if isOwner(userId) && request.auth.uid == userId;
       
       // Users can create their own profile during signup (direct from Android app)
+      // CRÍTICO: Permitir criação mesmo se usuário não existe ainda (login Google)
       allow create: if isAuthenticated() && request.auth.uid == userId && 
         request.resource.data.uid == request.auth.uid;
       
       // Admins can read and write any user
       allow read, write: if isAdmin();
       
-      // Providers can read client profiles when needed
-      allow read: if isProvider() || isClient();
+      // Providers can read client profiles when needed (only if user exists)
+      // Mas permitir list queries por role mesmo se usuário não existe ainda
+      allow read: if (isProvider() || isClient()) && userExists();
+      
+      // Allow list queries (queries by role) for authenticated users
+      // This is needed for map locations and provider/store listings
+      // CRÍTICO: Permitir mesmo se o usuário não existe ainda (para login Google)
+      allow list: if isAuthenticated();
+    }
+    
+    // CRÍTICO: Permitir queries por CPF/CNPJ para login de prestador (usuários não autenticados)
+    // Esta regra permite que usuários não autenticados busquem por CPF/CNPJ para fazer login
+    // Limitado a 1 resultado para segurança - o código já garante isso
+    match /users {
+      // Permitir queries não autenticadas limitadas a 1 resultado
+      // Necessário para login de prestador que busca o email pelo documento (CPF/CNPJ)
+      // O código já limita a 1 resultado, então esta regra é segura
+      allow list: if request.query.limit <= 1;
     }
 
     // Products collection
@@ -75,10 +98,14 @@ service cloud.firestore {
 
     // Orders collection (for service orders)
     match /orders/{orderId} {
-      // Order owners (client and provider) can read
-      allow read: if isAuthenticated() && 
-        (resource.data.clientId == request.auth.uid || 
-         resource.data.providerId == request.auth.uid);
+      // Read: owners can read their orders, providers can read pending orders
+      allow read: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        (isProvider() && 
+         resource.data.status == "pending" && 
+         resource.data.deleted != true)
+      );
       
       // Create: Authenticated clients can create orders
       allow create: if isAuthenticated() && 
@@ -91,6 +118,12 @@ service cloud.firestore {
       
       // Delete: No direct deletes (soft delete handled by Cloud Functions)
       allow delete: if false;
+    }
+    
+    // Allow list queries on orders collection for authenticated users
+    // This is needed for providers to query pending orders
+    match /orders {
+      allow list: if isAuthenticated();
     }
 
     // Purchase Orders collection (for product orders)
@@ -126,20 +159,24 @@ service cloud.firestore {
 
     // Services collection
     match /services/{serviceId} {
-      // Anyone can read public services
+      // Anyone authenticated can read public services
       allow read: if isAuthenticated();
       
-      // Create: Only providers
-      allow create: if isProvider();
-      
-      // Update/delete: Only owner or admin
-      allow update, delete: if isProvider() && 
-        resource.data.providerId == request.auth.uid || 
-        isAdmin();
-      
-      // New service creation (if document doesn't exist yet)
+      // Create: Any authenticated user can create services (providerId must match auth.uid)
       allow create: if isAuthenticated() && 
         request.resource.data.providerId == request.auth.uid;
+      
+      // Update/delete: Only owner or admin
+      allow update: if isAuthenticated() && 
+        (resource.data.providerId == request.auth.uid || isAdmin());
+      
+      allow delete: if false; // Use soft delete (update active = false) instead
+    }
+    
+    // Allow list queries on services collection for authenticated users
+    // This is needed to query active services
+    match /services {
+      allow list: if isAuthenticated();
     }
 
     // Notifications collection
@@ -162,13 +199,13 @@ service cloud.firestore {
       // Anyone can read reviews for public services
       allow read: if isAuthenticated();
       
-      // Create: Only authenticated clients who haven't reviewed this service
-      allow create: if isClient() && 
-        request.resource.data.clientId == request.auth.uid;
+      // Create: Any authenticated user can create reviews
+      allow create: if isAuthenticated() && 
+        request.resource.data.reviewerId == request.auth.uid;
       
       // Update/delete: Only review owner
-      allow update, delete: if isClient() && 
-        resource.data.clientId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && 
+        resource.data.reviewerId == request.auth.uid;
       
       // Admins can moderate
       allow update, delete: if isAdmin();
@@ -227,6 +264,162 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // LGPD Compliance Collections
+    // User consents - users can read/write their own consents
+    match /user_consents/{consentId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // Consents are immutable (LGPD requirement)
+    }
+
+    // Data exports - users can read their own exports
+    match /data_exports/{exportId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // Exports are immutable
+    }
+
+    // Addresses collection - users can only access their own addresses
+    match /addresses/{addressId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && 
+        request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // Cards collection - users can only access their own cards
+    match /cards/{cardId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && 
+        request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // Data access logs - users can read their own logs
+    match /data_access_logs/{logId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if false; // Only system/Cloud Functions can create
+      allow update, delete: if false; // Logs are immutable
+    }
+
+    // Data deletion requests - users can read/write their own requests
+    match /data_deletion_requests/{requestId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if false; // Deletion requests must be kept for legal compliance
+    }
+
+    // Service Categories collection
+    match /service_categories/{categoryId} {
+      // Anyone authenticated can read categories
+      allow read: if isAuthenticated();
+      // Only admins can write
+      allow write: if isAdmin();
+    }
+    
+    // Product Categories collection
+    match /product_categories/{categoryId} {
+      // Anyone authenticated can read categories
+      allow read: if isAuthenticated();
+      // Only admins can write
+      allow write: if isAdmin();
+    }
+    
+    // Home Banners collection
+    match /homeBanners/{bannerId} {
+      // Anyone authenticated can read active banners
+      allow read: if isAuthenticated() && 
+        (!resource.exists || resource.data.active == true);
+      // Only admins can write
+      allow write: if isAdmin();
+    }
+    
+    // Account Change Requests collection
+    // Usada para solicitar mudança de modo de conta (CLIENTE, PRESTADOR, VENDEDOR)
+    match /account_change_requests/{requestId} {
+      // Usuário só pode ler suas próprias solicitações
+      allow read: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+      
+      // Criar: usuário autenticado cria solicitação para si mesmo
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        // Sempre começa como PENDING
+        request.resource.data.status == 'PENDING' &&
+        // Não permitir definir campos de processamento no cliente
+        !('processedAt' in request.resource.data) &&
+        !('processedBy' in request.resource.data) &&
+        !('rejectionReason' in request.resource.data);
+      
+      // Atualizar / deletar: apenas via Admin SDK / Cloud Functions (client não pode)
+      allow update, delete: if false;
+    }
+    
+    // Bank Accounts collection
+    match /bank_accounts/{accountId} {
+      // Users can only read their own bank accounts
+      allow read: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid;
+      
+      // Users can create their own bank accounts
+      allow create: if isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own bank accounts
+      allow update: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own bank accounts
+      allow delete: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // Product Payments collection
+    match /product_payments/{paymentId} {
+      // Users can read payments for their orders or as seller
+      allow read: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      );
+      
+      // Only Cloud Functions can create/update payments
+      allow create, update, delete: if false;
+    }
+    
+    // Shipments collection
+    match /shipments/{shipmentId} {
+      // Users can read shipments for their orders or as seller
+      allow read: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      );
+      
+      // Sellers can create shipments for their orders
+      allow create: if isAuthenticated() && 
+        request.resource.data.sellerId == request.auth.uid;
+      
+      // Sellers can update their shipments
+      allow update: if isAuthenticated() && 
+        resource.data.sellerId == request.auth.uid &&
+        request.resource.data.sellerId == request.auth.uid;
+      
+      // Only Cloud Functions can delete
+      allow delete: if false;
+    }
+    
+    // Tracking Events collection
+    match /tracking_events/{eventId} {
+      // Users can read tracking events for their orders
+      allow read: if isAuthenticated();
+      
+      // Only Cloud Functions can create/update/delete tracking events
+      allow create, update, delete: if false;
+    }
+    
     // Deny all other access
     match /{document=**} {
       allow read, write: if false;

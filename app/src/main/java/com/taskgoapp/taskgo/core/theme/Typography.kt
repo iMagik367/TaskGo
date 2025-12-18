@@ -213,3 +213,12 @@ val FigmaStatusText = TextStyle(
     lineHeight = 16.sp,
     letterSpacing = 0.sp
 )
+
+// Texto de avaliação/rating
+val FigmaRatingText = TextStyle(
+    fontFamily = FontFamily.Default,
+    fontSize = 14.sp,
+    fontWeight = FontWeight.Medium,
+    lineHeight = 20.sp,
+    letterSpacing = 0.sp
+)

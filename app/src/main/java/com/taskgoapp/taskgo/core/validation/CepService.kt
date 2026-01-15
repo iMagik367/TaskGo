@@ -85,10 +85,11 @@ class CepService {
                     return@withContext Result.failure(Exception("CEP não encontrado"))
                 }
                 
+                val complementoValue = json.optString("complemento", "")
                 val cepResult = CepResult(
                     cep = json.optString("cep", cleanCep),
                     logradouro = json.optString("logradouro", ""),
-                    complemento = json.optString("complemento", null).takeIf { it.isNotEmpty() },
+                    complemento = complementoValue.takeIf { it.isNotEmpty() },
                     bairro = json.optString("bairro", ""),
                     localidade = json.optString("localidade", ""),
                     uf = json.optString("uf", ""),

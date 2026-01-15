@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.di
+package com.taskgoapp.taskgo.di
 
 import com.taskgoapp.taskgo.BuildConfig
 import com.taskgoapp.taskgo.data.repository.*
@@ -15,6 +15,7 @@ import android.content.Context
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.storage.FirebaseStorage
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.taskgoapp.taskgo.core.sync.SyncManager
@@ -149,11 +150,20 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideFirestoreOrderRepository(
+        firestore: FirebaseFirestore,
+        authRepository: FirebaseAuthRepository
+    ): com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository {
+        return com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository(firestore, authRepository)
+    }
+    
+    @Provides
+    @Singleton
     fun provideServiceRepository(
         serviceOrderDao: ServiceOrderDao,
         proposalDao: ProposalDao,
         functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
-        orderRepository: FirestoreOrderRepository
+        orderRepository: com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository
     ): ServiceRepository {
         return ServiceRepositoryImpl(serviceOrderDao, proposalDao, functionsService, orderRepository)
     }
@@ -164,8 +174,8 @@ object AppModule {
         messageDao: MessageDao,
         database: FirebaseDatabase,
         firebaseAuth: FirebaseAuth
-    ): MessageRepository {
-        return MessageRepositoryImpl(messageDao, database, firebaseAuth)
+    ): com.taskgoapp.taskgo.domain.repository.MessageRepository {
+        return com.taskgoapp.taskgo.data.repository.MessageRepositoryImpl(messageDao, database, firebaseAuth)
     }
 
     @Provides
@@ -371,9 +381,55 @@ object AppModule {
     @Singleton
     fun provideServicesRepository(
         firestore: FirebaseFirestore,
-        realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository
+        realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository,
+        authRepository: FirebaseAuthRepository
     ): com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository {
-        return com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository(firestore, realtimeRepository)
+        return com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository(
+            firestore = firestore,
+            realtimeRepository = realtimeRepository,
+            authRepository = authRepository,
+            useLocalCache = false // desabilita cache local de serviços
+        )
+    }
+    
+    @Provides
+    @Singleton
+    fun provideFirestoreProductsRepository(
+        firestore: FirebaseFirestore,
+        authRepository: FirebaseAuthRepository
+    ): com.taskgoapp.taskgo.data.repository.FirestoreProductsRepository {
+        return com.taskgoapp.taskgo.data.repository.FirestoreProductsRepository(
+            firestore,
+            authRepository
+        )
+    }
+    
+    @Provides
+    @Singleton
+    fun provideFeedRepository(
+        firestore: FirebaseFirestore,
+        authRepository: FirebaseAuthRepository
+    ): com.taskgoapp.taskgo.domain.repository.FeedRepository {
+        return com.taskgoapp.taskgo.data.repository.FirestoreFeedRepository(firestore, authRepository)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideStoriesRepository(
+        firestore: FirebaseFirestore,
+        authRepository: FirebaseAuthRepository
+    ): com.taskgoapp.taskgo.domain.repository.StoriesRepository {
+        return com.taskgoapp.taskgo.data.repository.FirestoreStoriesRepository(firestore, authRepository)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideFeedMediaRepository(
+        storage: FirebaseStorage,
+        authRepository: FirebaseAuthRepository,
+        @ApplicationContext context: Context
+    ): com.taskgoapp.taskgo.data.repository.FeedMediaRepository {
+        return com.taskgoapp.taskgo.data.repository.FeedMediaRepository(storage, authRepository, context)
     }
     
     @Provides

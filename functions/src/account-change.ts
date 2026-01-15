@@ -40,7 +40,13 @@ export const onAccountChangeRequestWrite = functions.firestore
         return;
       }
 
-      const allowedAccountTypes = ['PRESTADOR', 'VENDEDOR', 'CLIENTE'];
+      // Incluir PARCEIRO e manter legacy para migração
+      const allowedAccountTypes = [
+        'PARCEIRO',
+        'PRESTADOR',
+        'VENDEDOR',
+        'CLIENTE'
+      ];
       if (
         !allowedAccountTypes.includes(currentAccountType) ||
         !allowedAccountTypes.includes(requestedAccountType)

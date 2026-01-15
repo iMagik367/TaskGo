@@ -35,7 +35,8 @@ data class ServiceFormState(
     val isSaving: Boolean = false,
     val uploadProgress: Float = 0f,
     val error: String? = null,
-    val isSaved: Boolean = false
+    val isSaved: Boolean = false,
+    val accountType: com.taskgoapp.taskgo.core.model.AccountType? = null
 )
 
 @HiltViewModel
@@ -57,6 +58,16 @@ class ServiceFormViewModel @Inject constructor(
             try {
                 val service = servicesRepository.getService(serviceId)
                 val currentUser = firebaseAuth.currentUser
+                
+                // Verificar se o serviço pertence ao usuário atual
+                if (service != null && currentUser != null && service.providerId != currentUser.uid) {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Você não tem permissão para editar este serviço",
+                        isLoading = false
+                    )
+                    return@launch
+                }
+                
                 var preferredCategories = emptySet<String>()
                 
                 // Carregar categorias preferidas do usuário
@@ -107,8 +118,20 @@ class ServiceFormViewModel @Inject constructor(
             try {
                 val user = firestoreUserRepository.getUser(currentUser.uid)
                 val preferredCategories = user?.preferredCategories?.toSet() ?: emptySet()
-                _uiState.value = _uiState.value.copy(selectedCategories = preferredCategories)
-                Log.d("ServiceFormViewModel", "Categorias preferidas carregadas: $preferredCategories")
+                
+                // Converter role (String) para AccountType (enum)
+                val accountType = when (user?.role) {
+                    "provider" -> com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR
+                    "seller" -> com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR
+                    "client" -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
+                    else -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
+                }
+                
+                _uiState.value = _uiState.value.copy(
+                    selectedCategories = preferredCategories,
+                    accountType = accountType
+                )
+                Log.d("ServiceFormViewModel", "Categorias preferidas carregadas: $preferredCategories, AccountType: $accountType")
             } catch (e: Exception) {
                 Log.w("ServiceFormViewModel", "Erro ao carregar categorias preferidas: ${e.message}")
             }
@@ -155,12 +178,20 @@ class ServiceFormViewModel @Inject constructor(
 
     fun canSave(): Boolean {
         val state = _uiState.value
-        return state.title.isNotBlank() &&
+        val basicFieldsValid = state.title.isNotBlank() &&
                 state.description.isNotBlank() &&
-                state.category.isNotBlank() &&
-                state.price.isNotBlank() &&
-                state.price.toDoubleOrNull() != null &&
-                state.price.toDouble() > 0
+                state.category.isNotBlank()
+        
+        // Preço só é obrigatório se NÃO for prestador
+        val priceValid = if (state.accountType == com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR) {
+            true // Prestadores não precisam de preço
+        } else {
+            state.price.isNotBlank() &&
+            state.price.toDoubleOrNull() != null &&
+            state.price.toDouble() > 0
+        }
+        
+        return basicFieldsValid && priceValid
     }
 
     fun saveService(onSuccess: () -> Unit) {
@@ -252,13 +283,30 @@ class ServiceFormViewModel @Inject constructor(
                 }
 
                 // Criar ou atualizar serviço
+                // Prestadores não têm preço, então usar 0.0
+                val priceValue = if (_uiState.value.accountType == com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR) {
+                    0.0
+                } else {
+                    try {
+                        val unformatted = com.taskgoapp.taskgo.core.utils.TextFormatters.unformatPrice(_uiState.value.price)
+                        if (unformatted.isNotEmpty()) {
+                            unformatted.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        } else {
+                            0.0
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ServiceFormViewModel", "Erro ao converter preço: ${e.message}", e)
+                        0.0
+                    }
+                }
+                
                 val service = ServiceFirestore(
                     id = serviceId,
                     providerId = providerId,
                     title = _uiState.value.title.trim(),
                     description = _uiState.value.description.trim(),
                     category = _uiState.value.category,
-                    price = _uiState.value.price.toDoubleOrNull() ?: 0.0,
+                    price = priceValue,
                     images = allImageUrls,
                     videos = allVideoUrls,
                     tags = _uiState.value.tags,

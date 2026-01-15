@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.core.design
+package com.taskgoapp.taskgo.core.design
 
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -34,9 +34,9 @@ val bottomBarItems = listOf(
         iconResId = R.drawable.ic_produtos // Usando novo ícone PNG
     ),
     BottomBarItem(
-        route = "messages",
-        titleResId = R.string.nav_messages,
-        iconResId = R.drawable.ic_mensagens // Usando novo ícone PNG
+        route = "feed",
+        titleResId = R.string.nav_feed,
+        iconResId = R.drawable.ic_feed
     ),
     BottomBarItem(
         route = "profile",

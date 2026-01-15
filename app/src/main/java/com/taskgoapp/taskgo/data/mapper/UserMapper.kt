@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.data.mapper
+package com.taskgoapp.taskgo.data.mapper
 
 import com.taskgoapp.taskgo.data.local.entity.UserProfileEntity
 import com.taskgoapp.taskgo.core.model.UserProfile
@@ -26,8 +26,9 @@ object UserMapper {
             city = this.city,
             profession = this.profession,
             accountType = when (this.accountType) {
-                "PRESTADOR" -> AccountType.PRESTADOR
-                "VENDEDOR" -> AccountType.VENDEDOR
+                "PRESTADOR" -> AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
+                "VENDEDOR" -> AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
+                "PARCEIRO" -> AccountType.PARCEIRO
                 "CLIENTE" -> AccountType.CLIENTE
                 else -> AccountType.CLIENTE
             },
@@ -57,9 +58,12 @@ object UserMapper {
     }
     
     fun UserFirestore.toModel(): UserProfile {
+        // Mapear role string para AccountType enum
+        // Suporta legacy roles (provider, seller) mapeando para PARCEIRO
         val accountType = when (this.role.lowercase()) {
-            "provider" -> AccountType.PRESTADOR
-            "seller" -> AccountType.VENDEDOR
+            "provider" -> AccountType.PARCEIRO // Legacy - migrar para partner
+            "seller" -> AccountType.PARCEIRO // Legacy - migrar para partner
+            "partner" -> AccountType.PARCEIRO
             "client" -> AccountType.CLIENTE
             else -> AccountType.CLIENTE
         }

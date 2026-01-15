@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.data.local.dao
+package com.taskgoapp.taskgo.data.local.dao
 
 import androidx.room.*
 import com.taskgoapp.taskgo.data.local.entity.*
@@ -6,10 +6,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ProductDao {
-    @Query("SELECT * FROM product ORDER BY title")
+    @Query("SELECT * FROM product WHERE active = 1 ORDER BY title")
     fun observeAll(): Flow<List<ProductEntity>>
 
-    @Query("SELECT * FROM product ORDER BY title")
+    @Query("SELECT * FROM product WHERE active = 1 ORDER BY title")
     suspend fun getAll(): List<ProductEntity>
 
     @Transaction
@@ -202,12 +202,18 @@ interface CardDao {
 
 @Dao
 interface UserProfileDao {
-    @Query("SELECT * FROM user_profile LIMIT 1")
-    fun observeCurrent(): Flow<UserProfileEntity?>
+    @Query("SELECT * FROM user_profile WHERE id = :userId LIMIT 1")
+    fun observeCurrent(userId: String): Flow<UserProfileEntity?>
+
+    @Query("SELECT * FROM user_profile WHERE id = :userId LIMIT 1")
+    suspend fun getCurrent(userId: String): UserProfileEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(profile: UserProfileEntity)
 
     @Query("DELETE FROM user_profile")
     suspend fun clear()
+    
+    @Query("DELETE FROM user_profile WHERE id != :userId")
+    suspend fun clearOtherUsers(userId: String)
 }

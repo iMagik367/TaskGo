@@ -1,9 +1,10 @@
-﻿package com.taskgoapp.taskgo.feature.products.presentation
+package com.taskgoapp.taskgo.feature.products.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskgoapp.taskgo.core.model.Product
 import com.taskgoapp.taskgo.domain.repository.ProductsRepository
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +22,8 @@ data class GerenciarProdutosState(
 
 @HiltViewModel
 class GerenciarProdutosViewModel @Inject constructor(
-    private val productsRepository: ProductsRepository
+    private val productsRepository: ProductsRepository,
+    private val firebaseAuth: FirebaseAuth
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GerenciarProdutosState())
@@ -35,22 +37,23 @@ class GerenciarProdutosViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             
-            // Usar getMyProducts que já retorna produtos do usuário
-            // e observar mudanças em tempo real
-            try {
-                // Carregar produtos imediatamente do cache
-                val initialProducts = productsRepository.getMyProducts()
+            val currentUserId = firebaseAuth.currentUser?.uid
+            if (currentUserId == null) {
                 _uiState.value = _uiState.value.copy(
-                    products = initialProducts,
                     isLoading = false,
-                    error = null
+                    error = "Usuário não autenticado"
                 )
-                
-                // Observar mudanças em tempo real
+                return@launch
+            }
+            
+            try {
+                // Observar mudanças em tempo real - filtrar apenas produtos do usuário atual
                 productsRepository.observeProducts()
                     .onEach { allProducts ->
-                        // Filtrar apenas produtos do usuário atual usando getMyProducts
-                        val myProducts = productsRepository.getMyProducts()
+                        // Filtrar apenas produtos do usuário atual baseado no sellerId
+                        val myProducts = allProducts.filter { product ->
+                            product.sellerId == currentUserId
+                        }
                         _uiState.value = _uiState.value.copy(
                             products = myProducts,
                             isLoading = false,

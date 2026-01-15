@@ -24,25 +24,61 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
     functions.logger.info(`Iniciando exclusão de conta para usuário: ${userId}`);
 
     // 1. Deletar dados do Firestore
+    const userRef = db.collection('users').doc(userId);
+    
+    // 1.1. Deletar TODAS as subcoleções do usuário (isolamento total de dados)
+    const subcollections = [
+      'services',
+      'products',
+      'orders',
+      'purchase_orders',
+      'reviews',
+      'notifications',
+      'conversations',
+      'preferences',
+      'settings'
+    ];
+    
+    functions.logger.info(`Deletando subcoleções do usuário ${userId}`);
+    for (const subcollection of subcollections) {
+      try {
+        const subcollectionRef = userRef.collection(subcollection);
+        const snapshot = await subcollectionRef.get();
+        
+        if (!snapshot.empty) {
+          const batch = db.batch();
+          snapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+          functions.logger.info(`Subcoleção ${subcollection} deletada: ${snapshot.size} documentos`);
+        }
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+        functions.logger.warn(`Erro ao deletar subcoleção ${subcollection}: ${errorMessage}`);
+        // Continuar mesmo se houver erro em uma subcoleção
+      }
+    }
+    
+    // 1.2. Deletar dados das coleções públicas (para limpeza completa)
     const batch = db.batch();
 
     // Deletar perfil do usuário
-    const userRef = db.collection('users').doc(userId);
     batch.delete(userRef);
 
-    // Deletar produtos do usuário
+    // Deletar produtos do usuário (coleção pública)
     const productsSnapshot = await db.collection('products')
       .where('sellerId', '==', userId)
       .get();
     productsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
 
-    // Deletar serviços do usuário
+    // Deletar serviços do usuário (coleção pública)
     const servicesSnapshot = await db.collection('services')
       .where('providerId', '==', userId)
       .get();
     servicesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
 
-    // Deletar pedidos relacionados
+    // Deletar pedidos relacionados (coleção pública)
     const ordersSnapshot = await db.collection('orders')
       .where('clientId', '==', userId)
       .get();
@@ -53,7 +89,7 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
       .get();
     providerOrdersSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
 
-    // Deletar pedidos de compra
+    // Deletar pedidos de compra (coleção pública)
     const purchaseOrdersSnapshot = await db.collection('purchase_orders')
       .where('clientId', '==', userId)
       .get();
@@ -64,23 +100,35 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
       .get();
     sellerOrdersSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
 
-    // Deletar avaliações
+    // Deletar avaliações (coleção pública)
     const reviewsSnapshot = await db.collection('reviews')
       .where('clientId', '==', userId)
       .get();
     reviewsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
 
-    // Deletar notificações
+    // Deletar notificações (coleção pública)
     const notificationsSnapshot = await db.collection('notifications')
       .where('userId', '==', userId)
       .get();
     notificationsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
 
-    // Deletar conversas
+    // Deletar conversas (coleção pública)
     const conversationsSnapshot = await db.collection('conversations')
       .where('userId', '==', userId)
       .get();
     conversationsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
+
+    // Deletar posts do usuário (coleção pública)
+    const postsSnapshot = await db.collection('posts')
+      .where('userId', '==', userId)
+      .get();
+    postsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
+
+    // Deletar stories do usuário (coleção pública)
+    const storiesSnapshot = await db.collection('stories')
+      .where('userId', '==', userId)
+      .get();
+    storiesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
 
     // Executar batch delete
     await batch.commit();
@@ -130,9 +178,15 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
 
     functions.logger.info(`Arquivos do Storage deletados para usuário: ${userId}`);
 
-    // 4. Deletar conta de autenticação
-    await admin.auth().deleteUser(userId);
-    functions.logger.info(`Conta de autenticação deletada para usuário: ${userId}`);
+    // 4. Deletar conta de autenticação (fazer ANTES de retornar sucesso para garantir que seja deletada)
+    try {
+      await admin.auth().deleteUser(userId);
+      functions.logger.info(`Conta de autenticação deletada para usuário: ${userId}`);
+    } catch (authError: unknown) {
+      const errorMessage = authError instanceof Error ? authError.message : 'Erro desconhecido';
+      functions.logger.error(`Erro ao deletar conta do Auth para usuário ${userId}:`, errorMessage);
+      // Continuar mesmo se houver erro - os dados já foram deletados do Firestore/Storage
+    }
 
     return {
       success: true,

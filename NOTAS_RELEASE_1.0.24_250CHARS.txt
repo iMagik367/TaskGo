@@ -1,0 +1,10 @@
+Corrigido cadastro para definir corretamente modo de conta (prestador/vendedor/cliente). Adicionadas regras Firestore para emails 2FA. Criado guia para traduzir templates Firebase para português. Melhorias na função onUserCreate para preservar role.
+
+
+
+
+
+
+
+
+

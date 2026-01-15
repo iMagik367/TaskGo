@@ -3,6 +3,7 @@ package com.taskgoapp.taskgo.data.repository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.taskgoapp.taskgo.core.model.Result
 import com.taskgoapp.taskgo.data.firestore.models.NotificationFirestore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -50,7 +51,7 @@ class FirestoreNotificationRepository @Inject constructor(
         return try {
             val currentUser = auth.currentUser
             if (currentUser == null) {
-                return Result.failure(Exception("Usuário não autenticado"))
+                return Result.Error(Exception("Usuário não autenticado"))
             }
 
             notificationsCollection
@@ -58,9 +59,9 @@ class FirestoreNotificationRepository @Inject constructor(
                 .update("read", true, "readAt", com.google.firebase.firestore.FieldValue.serverTimestamp())
                 .await()
 
-            Result.success(Unit)
+            Result.Success(Unit)
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 
@@ -74,7 +75,7 @@ class FirestoreNotificationRepository @Inject constructor(
         return try {
             val currentUser = auth.currentUser
             if (currentUser == null) {
-                return Result.failure(Exception("Usuário não autenticado"))
+                return Result.Error(Exception("Usuário não autenticado"))
             }
 
             val notification = NotificationFirestore(
@@ -89,9 +90,9 @@ class FirestoreNotificationRepository @Inject constructor(
             )
 
             val docRef = notificationsCollection.add(notification).await()
-            Result.success(docRef.id)
+            Result.Success(docRef.id)
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.settings.presentation
+package com.taskgoapp.taskgo.feature.settings.presentation
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -6,11 +6,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.theme.*
+import com.taskgoapp.taskgo.core.model.AccountType
+import com.taskgoapp.taskgo.feature.profile.presentation.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,8 +28,14 @@ fun ConfiguracoesScreen(
     onSuporte: () -> Unit,
     onSobre: () -> Unit,
     onAiSupport: () -> Unit,
-    onSeguranca: () -> Unit = {}
+    onSeguranca: () -> Unit = {},
+    viewModel: ProfileViewModel = hiltViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+    val accountType = uiState.accountType
+    val isPartner = accountType == AccountType.PARCEIRO || 
+                    accountType == AccountType.PRESTADOR || 
+                    accountType == AccountType.VENDEDOR
     Scaffold(
         topBar = {
             AppTopBar(
@@ -88,26 +98,29 @@ fun ConfiguracoesScreen(
                         )
                     }
                     HorizontalDivider(thickness = 0.5.dp, color = TaskGoDivider)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPreferencias() }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Preferências",
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = TaskGoTextGray
-                        )
+                    // Preferências: remover para modo PARCEIRO
+                    if (!isPartner) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPreferencias() }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Preferências",
+                                style = FigmaProductName,
+                                color = TaskGoTextBlack,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = TaskGoTextGray
+                            )
+                        }
+                        HorizontalDivider(thickness = 0.5.dp, color = TaskGoDivider)
                     }
-                    HorizontalDivider(thickness = 0.5.dp, color = TaskGoDivider)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -127,26 +140,7 @@ fun ConfiguracoesScreen(
                             tint = TaskGoTextGray
                         )
                     }
-                    HorizontalDivider(thickness = 0.5.dp, color = TaskGoDivider)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onIdioma() }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Idioma",
-                            style = FigmaProductName,
-                            color = TaskGoTextBlack,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = TaskGoTextGray
-                        )
-                    }
+                    // Idioma removido
                     HorizontalDivider(thickness = 0.5.dp, color = TaskGoDivider)
                     Row(
                         modifier = Modifier

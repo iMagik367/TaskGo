@@ -4,26 +4,92 @@ import * as functions from 'firebase-functions';
 /**
  * Triggered when a new user is created in Firebase Auth
  * Creates corresponding user document in Firestore
+ * IMPORTANTE: Usa merge para não sobrescrever campos já definidos pelo app (como role)
  */
 export const onUserCreate = functions.auth.user().onCreate(async (user) => {
   const db = admin.firestore();
   
   try {
-    const userData = {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      photoURL: user.photoURL,
-      role: 'client', // Default role
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      profileComplete: false,
-      verified: false,
-    };
-
-    await db.collection('users').doc(user.uid).set(userData);
+    const userRef = db.collection('users').doc(user.uid);
     
-    functions.logger.info(`User document created for ${user.uid}`);
+    // Verificar se o documento já existe (pode ter sido criado pelo app antes da função executar)
+    const userDoc = await userRef.get();
+    
+    if (userDoc.exists) {
+      // Documento já existe - fazer merge apenas dos campos básicos que podem estar faltando
+      // CRÍTICO: NÃO sobrescrever role, pendingAccountType ou outros campos já definidos pelo app
+      const existingData = userDoc.data();
+      const updateData: { [key: string]: unknown } = {
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      
+      // Só atualizar campos que não existem ou são null
+      if (!existingData?.email && user.email) {
+        updateData.email = user.email;
+      }
+      if (!existingData?.displayName && user.displayName) {
+        updateData.displayName = user.displayName;
+      }
+      if (!existingData?.photoURL && user.photoURL) {
+        updateData.photoURL = user.photoURL;
+      }
+      if (!existingData?.createdAt) {
+        updateData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+      if (existingData?.profileComplete === undefined) {
+        updateData.profileComplete = false;
+      }
+      if (existingData?.verified === undefined) {
+        updateData.verified = false;
+      }
+      
+      // CRÍTICO: NÃO atualizar role ou pendingAccountType - deixar o que já foi definido pelo app
+      // Se o usuário já tem role definido (não é "client" padrão) ou pendingAccountType == false,
+      // significa que já passou pelo primeiro login e selecionou o tipo de conta
+      const hasDefinedRole = existingData?.role && existingData.role !== 'client';
+      const isAccountTypeDefined = existingData?.pendingAccountType === false;
+      
+      if (hasDefinedRole || isAccountTypeDefined) {
+        const roleInfo = existingData?.role || 'undefined';
+        const pendingInfo = existingData?.pendingAccountType;
+        functions.logger.info(
+          'User ' + user.uid + ' already has account type defined ' +
+          '(role: ' + roleInfo + ', pendingAccountType: ' + pendingInfo + '). ' +
+          'Skipping update to preserve user choice.'
+        );
+        return null;
+      }
+      
+      if (Object.keys(updateData).length > 1) { // Mais que apenas updatedAt
+        await userRef.update(updateData);
+        const rolePreserved = existingData?.role || 'undefined';
+        const pendingPreserved = existingData?.pendingAccountType;
+        functions.logger.info(
+          'User document merged for ' + user.uid + ', ' +
+          'role preserved: ' + rolePreserved + ', ' +
+          'pendingAccountType preserved: ' + pendingPreserved
+        );
+      }
+    } else {
+      // Documento não existe - criar com flag pendingAccountType para indicar que o app precisa mostrar dialog
+      // O app vai atualizar o role correto após o usuário selecionar o tipo de conta
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        role: 'client', // Default role - será atualizado pelo app se accountType for diferente
+        pendingAccountType: true, // Flag para indicar que o app precisa mostrar dialog de seleção
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        profileComplete: false,
+        verified: false,
+      };
+
+      await userRef.set(userData, { merge: true });
+      functions.logger.info(`User document created for ${user.uid} with pendingAccountType flag`);
+    }
+    
     return null;
   } catch (error) {
     functions.logger.error('Error creating user document:', error);

@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.settings.presentation
+package com.taskgoapp.taskgo.feature.settings.presentation
 
 import android.Manifest
 import android.os.Build
@@ -123,6 +123,18 @@ fun NotificationsSettingsScreen(
     LaunchedEffect(pushNotifications, soundEnabled, showOnLockScreen, promotionalNotifications, emailNotifications, smsNotifications) {
         if (hasInitialized) {
             queueSave()
+        }
+    }
+    
+    // Atualizar estado após salvar (sincronizar com backend)
+    LaunchedEffect(settings.pushEnabled, settings.soundEnabled, settings.lockscreenEnabled, settings.promosEnabled, settings.emailNotificationsEnabled, settings.smsNotificationsEnabled) {
+        if (hasInitialized) {
+            pushNotifications = settings.pushEnabled
+            soundEnabled = settings.soundEnabled
+            showOnLockScreen = settings.lockscreenEnabled
+            promotionalNotifications = settings.promosEnabled
+            emailNotifications = settings.emailNotificationsEnabled
+            smsNotifications = settings.smsNotificationsEnabled
         }
     }
 

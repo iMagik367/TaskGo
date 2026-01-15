@@ -1,15 +1,18 @@
-﻿package com.taskgoapp.taskgo.feature.messages.presentation
+package com.taskgoapp.taskgo.feature.messages.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.core.model.ChatMessage
 import com.taskgoapp.taskgo.core.model.MessageThread
 import com.taskgoapp.taskgo.domain.repository.MessageRepository
+import com.taskgoapp.taskgo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -29,8 +32,18 @@ data class ChatUiState(
 
 @HiltViewModel
 class MessagesViewModel @Inject constructor(
-    private val messageRepository: MessageRepository
+    private val messageRepository: MessageRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
+    
+    val accountType: StateFlow<AccountType> = userRepository
+        .observeCurrentUser()
+        .map { user -> user?.accountType ?: AccountType.CLIENTE }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            AccountType.CLIENTE
+        )
 
     private val _uiState = MutableStateFlow(MessagesUiState())
     val uiState: StateFlow<MessagesUiState> = _uiState.asStateFlow()

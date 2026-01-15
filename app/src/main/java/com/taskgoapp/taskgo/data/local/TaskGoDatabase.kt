@@ -27,7 +27,7 @@ import com.taskgoapp.taskgo.data.local.converter.Converters
         CardEntity::class,
         SyncQueueEntity::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

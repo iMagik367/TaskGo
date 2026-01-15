@@ -89,12 +89,19 @@ class MyServiceOrdersViewModel @Inject constructor(
             try {
                 // Soft delete - atualizar status para cancelled
                 val result = orderRepository.updateOrderStatus(orderId, "cancelled")
-                if (result.isFailure) {
-                    _uiState.value = _uiState.value.copy(
-                        error = "Erro ao excluir ordem: ${result.exceptionOrNull()?.message ?: "Erro desconhecido"}"
-                    )
+                when (result) {
+                    is com.taskgoapp.taskgo.core.model.Result.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            error = "Erro ao excluir ordem: ${result.exception.message ?: "Erro desconhecido"}"
+                        )
+                    }
+                    is com.taskgoapp.taskgo.core.model.Result.Success -> {
+                        // Sucesso - a lista será atualizada automaticamente via observeOrders
+                    }
+                    is com.taskgoapp.taskgo.core.model.Result.Loading -> {
+                        // Nada a fazer
+                    }
                 }
-                // A lista será atualizada automaticamente via observeOrders
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     error = "Erro ao excluir ordem: ${e.message}"

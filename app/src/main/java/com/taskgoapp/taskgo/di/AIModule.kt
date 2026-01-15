@@ -1,9 +1,11 @@
 package com.taskgoapp.taskgo.di
 
 import android.content.Context
+import com.taskgoapp.taskgo.core.ai.AudioRecorderManager
 import com.taskgoapp.taskgo.core.ai.GoogleCloudAIService
 import com.taskgoapp.taskgo.core.ai.GoogleSpeechToTextService
 import com.taskgoapp.taskgo.core.ai.GoogleTranslationService
+import com.taskgoapp.taskgo.core.ai.TextToSpeechManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -49,6 +51,22 @@ object AIModule {
         @ApplicationContext context: Context
     ): GoogleSpeechToTextService {
         return GoogleSpeechToTextService(apiKey, context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideAudioRecorderManager(
+        @ApplicationContext context: Context
+    ): AudioRecorderManager {
+        return AudioRecorderManager(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideTextToSpeechManager(
+        @ApplicationContext context: Context
+    ): TextToSpeechManager {
+        return TextToSpeechManager(context)
     }
 }
 

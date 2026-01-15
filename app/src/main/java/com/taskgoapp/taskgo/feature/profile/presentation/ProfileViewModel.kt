@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.profile.presentation
+package com.taskgoapp.taskgo.feature.profile.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -108,38 +108,7 @@ class ProfileViewModel @Inject constructor(
             try {
                 Log.d(TAG, "Carregando perfil do usuário: ${currentUser.uid}")
                 
-                // PRIMEIRO: Carregar do banco local (instantâneo)
-                val localUser = userRepository.observeCurrentUser().first()
-                if (localUser != null) {
-                    Log.d(TAG, "Perfil carregado do banco local: ${localUser.name}, accountType: ${localUser.accountType}")
-                    // CRÍTICO: Verificar se o avatarUri salvo pertence ao usuário atual
-                    val savedAvatarUri = preferencesManager.getUserAvatarUri()
-                    val profileImages = preferencesManager.getUserProfileImages()
-                    
-                    // Se o avatarUri salvo não pertence ao usuário atual, limpar
-                    val finalLocalAvatarUri = if (savedAvatarUri != null && localUser.avatarUri != null && savedAvatarUri != localUser.avatarUri) {
-                        Log.w(TAG, "AvatarUri salvo não corresponde ao usuário atual, usando do banco local")
-                        localUser.avatarUri
-                    } else {
-                        savedAvatarUri ?: localUser.avatarUri
-                    }
-                    
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        id = localUser.id,
-                        name = localUser.name,
-                        email = localUser.email,
-                        phone = localUser.phone.orEmpty(),
-                        city = localUser.city.orEmpty(),
-                        profession = localUser.profession.orEmpty(),
-                        accountType = localUser.accountType,
-                        rating = localUser.rating,
-                        avatarUri = finalLocalAvatarUri,
-                        profileImages = profileImages.ifEmpty { localUser.profileImages ?: emptyList() }
-                    )
-                }
-                
-                // DEPOIS: Sincronizar com Firestore em background
+                // CRÍTICO: Buscar diretamente do Firestore, não usar cache local
                 val userFirestore = firestoreUserRepository.getUser(currentUser.uid)
                 val savedAvatarUri = preferencesManager.getUserAvatarUri()
                 val profileImages = preferencesManager.getUserProfileImages()
@@ -147,34 +116,36 @@ class ProfileViewModel @Inject constructor(
                 if (userFirestore != null) {
                     Log.d(TAG, "Usuário encontrado no Firestore: ${userFirestore.displayName}")
                     
-                    // CRÍTICO: Priorizar foto do Firestore do usuário atual, não de usuários anteriores
-                    // Se não houver foto no Firestore, usar a do Firebase Auth do usuário atual
-                    val finalAvatarUri = userFirestore.photoURL ?: currentUser.photoUrl?.toString()
-                    
-                    // Se a foto do Firestore existe e é diferente da salva no PreferencesManager, atualizar
-                    if (finalAvatarUri != null && finalAvatarUri != savedAvatarUri) {
-                        preferencesManager.saveUserAvatarUri(finalAvatarUri)
-                        Log.d(TAG, "Foto de perfil atualizada do Firestore: $finalAvatarUri")
-                    } else if (finalAvatarUri == null && savedAvatarUri != null) {
-                        // Se não há foto no Firestore mas há uma salva, pode ser de outro usuário - limpar
-                        Log.w(TAG, "Foto salva não corresponde ao usuário atual, limpando")
-                        preferencesManager.saveUserAvatarUri("")
+                    // CRÍTICO: Verificar se o usuário do Firestore pertence ao usuário autenticado
+                    if (userFirestore.uid != currentUser.uid) {
+                        Log.e(TAG, "ERRO CRÍTICO: Usuário do Firestore não corresponde ao usuário autenticado: ${userFirestore.uid} != ${currentUser.uid}")
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = "Erro ao carregar perfil: dados de usuário incorretos"
+                        )
+                        return@launch
                     }
                     
-                    val accountType = when (userFirestore.role) {
-                        "provider" -> AccountType.PRESTADOR
-                        "seller" -> AccountType.VENDEDOR
+                    // CRÍTICO: Usar apenas dados do Firestore do usuário atual
+                    val finalAvatarUri = userFirestore.photoURL ?: currentUser.photoUrl?.toString()
+                    
+                    val roleString = userFirestore.role?.lowercase() ?: ""
+                    val accountType = when (roleString) {
+                        "provider" -> AccountType.PARCEIRO // Legacy - migrar para partner
+                        "seller" -> AccountType.PARCEIRO // Legacy - migrar para partner
+                        "partner" -> AccountType.PARCEIRO // Novo role unificado
                         else -> AccountType.CLIENTE
                     }
                     
-                    // Atualizar estado com dados do Firestore (mais atualizados)
+                    // Atualizar estado com dados do Firestore (fonte de verdade)
                     _uiState.value = _uiState.value.copy(
+                        isLoading = false,
                         id = currentUser.uid,
                         name = userFirestore.displayName ?: currentUser.displayName ?: "",
-                        email = userFirestore.email.ifBlank { currentUser.email ?: "" },
+                        email = (userFirestore.email ?: currentUser.email ?: "").ifBlank { currentUser.email ?: "" },
                         phone = userFirestore.phone ?: currentUser.phoneNumber ?: "",
                         avatarUri = finalAvatarUri,
-                        profileImages = profileImages.ifEmpty { emptyList() },
+                        profileImages = emptyList(), // Não usar cache local
                         cpf = userFirestore.cpf ?: "",
                         rg = userFirestore.rg ?: "",
                         city = userFirestore.address?.city ?: "",
@@ -189,23 +160,8 @@ class ProfileViewModel @Inject constructor(
                         rating = userFirestore.rating,
                         accountType = accountType
                     )
-                    
-                    // Atualizar banco local com dados do Firestore
-                    val user = UserProfile(
-                        id = currentUser.uid,
-                        name = userFirestore.displayName ?: currentUser.displayName ?: "",
-                        email = userFirestore.email.ifBlank { currentUser.email ?: "" },
-                        phone = userFirestore.phone ?: currentUser.phoneNumber,
-                        city = userFirestore.address?.city,
-                        profession = null,
-                        accountType = accountType,
-                        rating = userFirestore.rating,
-                        avatarUri = finalAvatarUri,
-                        profileImages = profileImages
-                    )
-                    userRepository.updateUser(user)
-                } else if (localUser == null) {
-                    // Se não existe no Firestore nem no banco local, usar dados do Firebase Auth
+                } else {
+                    // Se não existe no Firestore, usar dados do Firebase Auth
                     Log.d(TAG, "Usuário não encontrado no Firestore, usando Firebase Auth")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -213,8 +169,8 @@ class ProfileViewModel @Inject constructor(
                         name = currentUser.displayName ?: "",
                         email = currentUser.email ?: "",
                         phone = currentUser.phoneNumber ?: "",
-                        avatarUri = savedAvatarUri ?: currentUser.photoUrl?.toString(),
-                        profileImages = profileImages,
+                        avatarUri = currentUser.photoUrl?.toString(),
+                        profileImages = emptyList(), // Não usar cache local
                         accountType = AccountType.CLIENTE
                     )
                 }
@@ -365,8 +321,9 @@ class ProfileViewModel @Inject constructor(
                 // Buscar usuário atual do Firestore ou criar novo
                 val existingUser = firestoreUserRepository.getUser(currentUser.uid)
                 val role = when (s.accountType) {
-                    AccountType.PRESTADOR -> "provider"
-                    AccountType.VENDEDOR -> "seller"
+                    AccountType.PARCEIRO -> "partner" // Novo role unificado
+                    AccountType.PRESTADOR -> "partner" // Legacy - migrar para partner
+                    AccountType.VENDEDOR -> "partner" // Legacy - migrar para partner
                     AccountType.CLIENTE -> "client"
                 }
                 

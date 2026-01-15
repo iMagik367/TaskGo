@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.products.presentation
+package com.taskgoapp.taskgo.feature.products.presentation
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -171,11 +171,18 @@ class ProductFormViewModel @Inject constructor(
         try {
             val s = _uiState.value
             val titleOk = s.title.trim().isNotEmpty()
-            val priceOk = Validators.isValidPrice(s.price)
+            // Preço: aceitar formato com separadores (mínimo 3 dígitos) ou validação padrão
+            val cleanPrice = s.price.replace(Regex("[^0-9]"), "")
+            val priceOk = Validators.isValidPrice(s.price) || cleanPrice.length >= 3
+            // Imagem obrigatória
             val imagesOk = s.imageUris.isNotEmpty()
-            Log.d("ProductFormViewModel", "Validation - Title: $titleOk, Price: $priceOk, Images: $imagesOk")
+            // Desconto: válido somente se > 0
+            val discountValue = s.discountPercentage.replace(Regex("[^0-9]"), "").toDoubleOrNull()?.let { it / 100 }
+            val discountOk = !s.featured || (discountValue != null && discountValue > 0.0)
+
+            Log.d("ProductFormViewModel", "Validation - Title: $titleOk, Price: $priceOk, ImagesOk=$imagesOk")
             _uiState.value = s.copy(
-                canSave = titleOk && priceOk && imagesOk,
+                canSave = titleOk && priceOk && imagesOk && discountOk,
                 error = null
             )
         } catch (e: Exception) {
@@ -227,32 +234,55 @@ class ProductFormViewModel @Inject constructor(
                     }
                 }
                 
-                // Capturar localização
-                var latitude: Double? = null
-                var longitude: Double? = null
-                try {
-                    val location = locationManager.getCurrentLocation()
-                    location?.let {
-                        latitude = it.latitude
-                        longitude = it.longitude
-                    }
-                } catch (e: Exception) {
-                    // Ignora erro de localização
-                }
+                // Capturar localização (obrigatória)
+                val location = locationManager.getCurrentLocation()
+                val latitude: Double = location?.latitude
+                    ?: throw IllegalStateException("Localização não disponível. Ative o GPS e tente novamente.")
+                val longitude: Double = location?.longitude
+                    ?: throw IllegalStateException("Localização não disponível. Ative o GPS e tente novamente.")
                 
+                val currentUser = authRepository.getCurrentUser()
                 val product = Product(
                     id = productId,
                     title = s.title.trim(),
-                    price = s.price.replace(",", ".").toDouble(),
+                    price = try {
+                        // Formato esperado: "8.000,00" ou "8000,00" ou "8000"
+                        // Remove tudo exceto dígitos
+                        val cleanPrice = s.price.replace(Regex("[^0-9]"), "")
+                        if (cleanPrice.isNotEmpty()) {
+                            // Se há vírgula no formato original, os últimos 2 dígitos são centavos
+                            val hasComma = s.price.contains(",")
+                            val priceValue = if (hasComma && cleanPrice.length >= 2) {
+                                // Dividir por 100 para converter centavos em reais
+                                // Exemplo: "800000" (de "8.000,00") -> 8000.00
+                                cleanPrice.toDoubleOrNull()?.div(100.0) ?: 0.0
+                            } else {
+                                // Se não tem vírgula, tratar como valor inteiro em reais
+                                // Exemplo: "8000" -> 8000.0
+                                cleanPrice.toDoubleOrNull() ?: 0.0
+                            }
+                            priceValue
+                        } else {
+                            0.0
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ProductFormViewModel", "Erro ao converter preço: ${e.message}", e)
+                        0.0
+                    },
                     description = s.description.ifBlank { null },
+                    sellerId = currentUser?.uid,
                     sellerName = s.sellerName.ifBlank { null },
                     imageUris = imageUrls,
-                    featured = s.featured,
+                    featured = s.featured && s.discountPercentage.replace(Regex("[^0-9]"), "").toDoubleOrNull()?.let { it > 0 } == true,
+                    discountPercentage = s.discountPercentage.replace(Regex("[^0-9]"), "").toDoubleOrNull()?.let { it / 100 },
                     latitude = latitude,
                     longitude = longitude
                 )
                 
+                Log.d("ProductFormViewModel", "Salvando produto no repositório: id=$productId, title=${product.title}, price=${product.price}")
                 productsRepository.upsertProduct(product)
+                Log.d("ProductFormViewModel", "Produto salvo com sucesso no repositório")
+                
                 _uiState.value = _uiState.value.copy(isSaving = false, saved = true)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

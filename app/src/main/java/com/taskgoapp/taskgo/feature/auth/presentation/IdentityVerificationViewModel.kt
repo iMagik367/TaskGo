@@ -9,6 +9,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.taskgoapp.taskgo.core.security.FaceVerificationManager
 import com.taskgoapp.taskgo.data.repository.FirebaseStorageRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
+import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,7 +31,9 @@ data class IdentityVerificationUiState(
     val selfieUrl: String? = null,
     val addressProofUrl: String? = null,
     val faceVerificationResult: String? = null,
-    val isVerifyingFace: Boolean = false
+    val isVerifyingFace: Boolean = false,
+    val faceVerificationSuccess: Boolean? = null, // null = não verificado, true = sucesso, false = falha
+    val faceVerificationError: String? = null // Mensagem de erro da verificação facial
 )
 
 @HiltViewModel
@@ -38,6 +41,7 @@ class IdentityVerificationViewModel @Inject constructor(
     private val storageRepository: FirebaseStorageRepository,
     private val firestoreRepository: FirestoreUserRepository,
     private val auth: FirebaseAuth,
+    private val functionsService: FirebaseFunctionsService,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     
@@ -69,15 +73,38 @@ class IdentityVerificationViewModel @Inject constructor(
         val state = _uiState.value
         // Garantir que temos URI do documento. Se não, tentar baixar pela URL salva no Firestore
         val docUri = state.documentFrontUri ?: run {
-            val url = state.documentFrontUrl ?: tryFetchUserDocumentFrontUrl() ?: return false
-            val downloaded = tryDownloadToCache(url) ?: return false
+            val url = state.documentFrontUrl ?: tryFetchUserDocumentFrontUrl() ?: run {
+                _uiState.value = _uiState.value.copy(
+                    faceVerificationSuccess = false,
+                    faceVerificationError = "Documento não encontrado. Por favor, faça upload do documento primeiro."
+                )
+                return false
+            }
+            val downloaded = tryDownloadToCache(url) ?: run {
+                _uiState.value = _uiState.value.copy(
+                    faceVerificationSuccess = false,
+                    faceVerificationError = "Erro ao baixar documento para validação."
+                )
+                return false
+            }
             _uiState.value = _uiState.value.copy(documentFrontUri = downloaded)
             downloaded
         }
-        val selfie = state.selfieUri ?: return false
+        val selfie = state.selfieUri ?: run {
+            _uiState.value = _uiState.value.copy(
+                faceVerificationSuccess = false,
+                faceVerificationError = "Selfie não encontrada."
+            )
+            return false
+        }
 
         return try {
-            _uiState.value = state.copy(isVerifyingFace = true, faceVerificationResult = null)
+            _uiState.value = state.copy(
+                isVerifyingFace = true, 
+                faceVerificationResult = null,
+                faceVerificationSuccess = null,
+                faceVerificationError = null
+            )
             
             val result = faceVerificationManager.compareFaces(
                 selfieUri = selfie,
@@ -86,18 +113,33 @@ class IdentityVerificationViewModel @Inject constructor(
             
             _uiState.value = state.copy(
                 isVerifyingFace = false,
-                faceVerificationResult = result.message
+                faceVerificationResult = result.message,
+                faceVerificationSuccess = result.success,
+                faceVerificationError = if (result.success) null else result.message
             )
             
             result.success
         } catch (e: Exception) {
             Log.e("IdentityVerificationViewModel", "Erro na verificação facial: ${e.message}", e)
+            val errorMsg = "Erro na verificação facial: ${e.message}"
             _uiState.value = state.copy(
                 isVerifyingFace = false,
-                faceVerificationResult = "Erro na verificação facial: ${e.message}"
+                faceVerificationResult = errorMsg,
+                faceVerificationSuccess = false,
+                faceVerificationError = errorMsg
             )
             false
         }
+    }
+    
+    /**
+     * Limpa o estado de erro da verificação facial para permitir nova tentativa
+     */
+    fun clearFaceVerificationError() {
+        _uiState.value = _uiState.value.copy(
+            faceVerificationSuccess = null,
+            faceVerificationError = null
+        )
     }
 
     private suspend fun tryFetchUserDocumentFrontUrl(): String? {
@@ -111,12 +153,14 @@ class IdentityVerificationViewModel @Inject constructor(
         }
     }
 
-    private fun tryDownloadToCache(url: String): Uri? {
+    private suspend fun tryDownloadToCache(url: String): Uri? {
         return try {
-            val input = java.net.URL(url).openStream()
-            val file = java.io.File(context.cacheDir, "doc_front_${System.currentTimeMillis()}.jpg")
-            file.outputStream().use { out -> input.copyTo(out) }
-            Uri.fromFile(file)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val input = java.net.URL(url).openStream()
+                val file = java.io.File(context.cacheDir, "doc_front_${System.currentTimeMillis()}.jpg")
+                file.outputStream().use { out -> input.copyTo(out) }
+                Uri.fromFile(file)
+            }
         } catch (e: Exception) {
             Log.e("IdentityVerificationViewModel", "Erro ao baixar documento: ${e.message}", e)
             null
@@ -234,15 +278,41 @@ class IdentityVerificationViewModel @Inject constructor(
                 
                 firestoreRepository.updateUser(updatedUser).fold(
                     onSuccess = {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            isSuccess = true,
+                        // Chamar Cloud Function para processar verificação facial
+                        val verificationResult = functionsService.startIdentityVerification(
                             documentFrontUrl = documentFrontUrl,
                             documentBackUrl = documentBackUrl,
                             selfieUrl = selfieUrl,
                             addressProofUrl = addressProofUrl
                         )
-                        Log.d("IdentityVerificationViewModel", "Verificação enviada com sucesso")
+                        
+                        verificationResult.fold(
+                            onSuccess = { data ->
+                                val success = data["success"] as? Boolean ?: false
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    isSuccess = success,
+                                    documentFrontUrl = documentFrontUrl,
+                                    documentBackUrl = documentBackUrl,
+                                    selfieUrl = selfieUrl,
+                                    addressProofUrl = addressProofUrl
+                                )
+                                Log.d("IdentityVerificationViewModel", "Verificação processada com sucesso")
+                            },
+                            onFailure = { exception ->
+                                // Mesmo se a função falhar, os documentos foram salvos
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    isSuccess = true, // Documentos salvos, verificação será processada em background
+                                    documentFrontUrl = documentFrontUrl,
+                                    documentBackUrl = documentBackUrl,
+                                    selfieUrl = selfieUrl,
+                                    addressProofUrl = addressProofUrl,
+                                    errorMessage = "Documentos salvos, mas verificação será processada em background"
+                                )
+                                Log.w("IdentityVerificationViewModel", "Função de verificação falhou, mas documentos foram salvos", exception)
+                            }
+                        )
                     },
                     onFailure = { exception ->
                         _uiState.value = _uiState.value.copy(

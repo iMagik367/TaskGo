@@ -5,9 +5,11 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# Preservar line numbers para stack traces
+# Preservar line numbers e atributos importantes para stack traces
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+-keepattributes *Annotation*,InnerClasses,EnclosingMethod,Signature
+-keepattributes Exceptions
 
 # Firebase
 -keep class com.google.firebase.** { *; }
@@ -33,6 +35,68 @@
 -keepclasseswithmembers class * {
     @dagger.hilt.android.internal.managers.ViewComponentManager$FragmentContextWrapper <methods>;
 }
+
+# Hilt Modules - manter todos os módulos e providers
+-keep @dagger.Module class * { *; }
+-keep @dagger.hilt.InstallIn class * { *; }
+-keep @javax.inject.Singleton class * { *; }
+-keepclassmembers class * {
+    @dagger.Provides <methods>;
+    @dagger.Binds <methods>;
+}
+
+# Hilt Generated Classes - manter classes geradas pelo Hilt
+-keep class com.taskgoapp.taskgo.Hilt_* { *; }
+
+# Manter Application e Activities com Hilt
+-keep @dagger.hilt.android.HiltAndroidApp class * extends android.app.Application { *; }
+-keep @dagger.hilt.android.AndroidEntryPoint class * extends android.app.Activity { *; }
+-keep @dagger.hilt.android.AndroidEntryPoint class * extends androidx.fragment.app.Fragment { *; }
+-keep @dagger.hilt.android.AndroidEntryPoint class * extends androidx.fragment.app.DialogFragment { *; }
+-keep @dagger.hilt.android.AndroidEntryPoint class * extends android.view.View { *; }
+-keep @dagger.hilt.android.AndroidEntryPoint class * extends android.view.ViewGroup { *; }
+-keep @dagger.hilt.android.AndroidEntryPoint class * extends android.widget.ViewAnimator { *; }
+-keep @dagger.hilt.android.AndroidEntryPoint class * extends android.widget.ViewSwitcher { *; }
+
+# Manter classes principais do app - CRÍTICO: Preservar completamente TaskGoApp e sua classe gerada pelo Hilt
+-keep class com.taskgoapp.taskgo.TaskGoApp { *; }
+-keep class com.taskgoapp.taskgo.Hilt_TaskGoApp { *; }
+-keepclassmembers class com.taskgoapp.taskgo.TaskGoApp {
+    <init>(...);
+    <methods>;
+    <fields>;
+}
+-keepclassmembers class com.taskgoapp.taskgo.Hilt_TaskGoApp {
+    <init>(...);
+    <methods>;
+    <fields>;
+}
+-keep class com.taskgoapp.taskgo.MainActivity { *; }
+
+# Hilt WorkManager e Workers - CRÍTICO: Preservar workers e seus construtores AssistedInject
+-keep class androidx.hilt.work.** { *; }
+-keep class com.taskgoapp.taskgo.core.sync.SyncWorker { *; }
+-keep class com.taskgoapp.taskgo.core.work.AccountChangeProcessorWorker { *; }
+-keep class com.taskgoapp.taskgo.core.sync.SyncWorker$* { *; }
+-keep class com.taskgoapp.taskgo.core.work.AccountChangeProcessorWorker$* { *; }
+-keepclassmembers class com.taskgoapp.taskgo.core.sync.SyncWorker {
+    <init>(...);
+    <methods>;
+    <fields>;
+}
+-keepclassmembers class com.taskgoapp.taskgo.core.work.AccountChangeProcessorWorker {
+    <init>(...);
+    <methods>;
+    <fields>;
+}
+-keep class dagger.assisted.** { *; }
+-keep @dagger.assisted.AssistedInject class * { *; }
+-keepclassmembers class * {
+    @dagger.assisted.AssistedInject <init>(...);
+}
+# Manter todas as classes HiltWorker para evitar problemas de instanciação
+-keep @androidx.hilt.work.HiltWorker class * extends androidx.work.CoroutineWorker { *; }
+-keep @androidx.hilt.work.HiltWorker class * extends androidx.work.Worker { *; }
 
 # Retrofit
 -keepattributes Signature, InnerClasses, EnclosingMethod
@@ -87,12 +151,17 @@
 -keep class androidx.compose.runtime.** { *; }
 -dontwarn androidx.compose.**
 
+# Navigation Compose com Hilt
+-keep class androidx.navigation.** { *; }
+-keep class androidx.hilt.navigation.compose.** { *; }
+
 # Data classes do projeto - manter para serialização
 -keep class com.taskgoapp.taskgo.data.firestore.models.** { *; }
 -keep class com.taskgoapp.taskgo.core.model.** { *; }
 -keep class com.taskgoapp.taskgo.data.local.** { *; }
 
-# ViewModels e UiState
+# ViewModels e UiState - manter ViewModels com Hilt (regra específica primeiro)
+-keep @dagger.hilt.android.lifecycle.HiltViewModel class * extends androidx.lifecycle.ViewModel { *; }
 -keep class * extends androidx.lifecycle.ViewModel { *; }
 -keep class * extends androidx.lifecycle.ViewModel$* { *; }
 
@@ -137,6 +206,43 @@
 -dontwarn com.nimbusds.jose.**
 -keep class com.nimbusds.jose.** { *; }
 -keep class com.nimbusds.jwt.** { *; }
+
+# R8 Fix - Evitar ClassCastException LinkedList to z2
+# Solução conservadora: Manter apenas estruturas essenciais sem desabilitar otimizações
+# Isso evita crash do JVM durante a compilação R8 mantendo funcionalidade
+-keep class java.util.LinkedList { *; }
+-keep class java.util.ArrayList { *; }
+-keep class java.util.List { *; }
+-keep class java.util.Collection { *; }
+-keep class java.util.AbstractList { *; }
+-keep class java.util.AbstractCollection { *; }
+# Preservar atributos essenciais para stack traces e reflexão
+-keepattributes Exceptions,InnerClasses,Signature,EnclosingMethod,SourceFile,LineNumberTable
+
+# Proteger classes de validação para evitar problemas durante análise estática do R8
+-keep class com.taskgoapp.taskgo.core.validation.DocumentValidator { *; }
+-keep class com.taskgoapp.taskgo.core.validation.PasswordValidator { *; }
+-keep class com.taskgoapp.taskgo.core.validation.CepService { *; }
+-keep class com.taskgoapp.taskgo.core.utils.TextFormatters { *; }
+# Proteger Regex para evitar problemas durante análise estática
+-keep class kotlin.text.Regex { *; }
+-keepclassmembers class kotlin.text.Regex { *; }
+
+# Proteger classes de repositório de mídia para evitar problemas durante análise estática
+-keep class com.taskgoapp.taskgo.data.repository.FeedMediaRepository { *; }
+-keepclassmembers class com.taskgoapp.taskgo.data.repository.FeedMediaRepository { *; }
+# Proteger métodos de upload que podem causar problemas durante análise estática
+-keepclassmembers class com.taskgoapp.taskgo.data.repository.FeedMediaRepository {
+    <methods>;
+}
+# Proteger Uri e ContentResolver para evitar problemas durante análise estática
+-keep class android.net.Uri { *; }
+-keep class android.content.ContentResolver { *; }
+-keep class android.os.ParcelFileDescriptor { *; }
+
+# R8 Fix - Corrigir erro de referência java.lang.Obzect (typo detectado pelo R8)
+# Adicionado conforme sugerido pelo R8 em missing_rules.txt
+-dontwarn java.lang.Obzect
 
 # Se você usa WebView com JS, descomente:
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {

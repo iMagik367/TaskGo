@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.profile.presentation
+package com.taskgoapp.taskgo.feature.profile.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -238,7 +238,8 @@ private fun ProfileMenu(
     modifier: Modifier = Modifier
 ) {
     val menuItems = when (accountType) {
-        AccountType.PRESTADOR -> listOf(
+        AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> listOf(
+            // Unificar menu items para Parceiro: Serviços + Produtos
             ProfileMenuItem(
                 title = "Meus Serviços",
                 icon = Icons.Default.Build,
@@ -254,28 +255,7 @@ private fun ProfileMenu(
                 icon = Icons.Default.ShoppingBag,
                 onClick = onNavigateToMyOrders
             ),
-            ProfileMenuItem(
-                title = "Configurações",
-                icon = Icons.Default.Settings,
-                onClick = onNavigateToSettings
-            )
-        )
-        AccountType.VENDEDOR -> listOf(
-            ProfileMenuItem(
-                title = "Meus Produtos",
-                icon = Icons.Default.Inventory,
-                onClick = onNavigateToMyProducts
-            ),
-            ProfileMenuItem(
-                title = "Minhas Ordens de Serviço",
-                icon = Icons.AutoMirrored.Filled.Assignment,
-                onClick = onNavigateToMyServiceOrders
-            ),
-            ProfileMenuItem(
-                title = "Meus Pedidos",
-                icon = Icons.Default.ShoppingBag,
-                onClick = onNavigateToMyOrders
-            ),
+            // Removido "Minhas Ordens de Serviço" - parceiros não geram ordens, apenas recebem
             ProfileMenuItem(
                 title = "Configurações",
                 icon = Icons.Default.Settings,

@@ -1,10 +1,12 @@
-﻿package com.taskgoapp.taskgo.di
+package com.taskgoapp.taskgo.di
 
 import com.taskgoapp.taskgo.BuildConfig
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import dagger.hilt.android.qualifiers.ApplicationContext
+import android.content.Context
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -18,8 +20,11 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideAuthTokenProvider(prefs: com.taskgoapp.taskgo.core.data.PreferencesManager): AuthTokenProvider = object: AuthTokenProvider {
-        override fun getToken(): String? = prefs.getAuthToken()
+    fun provideAuthTokenProvider(@ApplicationContext context: Context): AuthTokenProvider = object: AuthTokenProvider {
+        override fun getToken(): String? {
+            val prefs = context.getSharedPreferences("taskgo_prefs", Context.MODE_PRIVATE)
+            return prefs.getString("auth_token", null)
+        }
     }
 
     @Provides

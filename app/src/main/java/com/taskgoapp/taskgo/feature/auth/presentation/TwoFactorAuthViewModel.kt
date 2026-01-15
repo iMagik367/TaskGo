@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
+import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,14 +26,12 @@ data class TwoFactorAuthUiState(
 class TwoFactorAuthViewModel @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    private val userRepository: FirestoreUserRepository
+    private val userRepository: FirestoreUserRepository,
+    private val functionsService: FirebaseFunctionsService
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TwoFactorAuthUiState())
     val uiState: StateFlow<TwoFactorAuthUiState> = _uiState.asStateFlow()
-    
-    private var verificationCode: String? = null
-    private var codeExpirationTime: Long = 0
     
     init {
         loadVerificationMethod()
@@ -71,48 +70,27 @@ class TwoFactorAuthViewModel @Inject constructor(
                     return@launch
                 }
                 
-                val user = userRepository.getUser(currentUser.uid) ?: run {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Usuário não encontrado"
-                    )
-                    return@launch
-                }
+                // Chamar Cloud Function para enviar código
+                val result = functionsService.sendTwoFactorCode()
                 
-                // Gerar código de 6 dígitos
-                verificationCode = generateVerificationCode()
-                codeExpirationTime = System.currentTimeMillis() + (10 * 60 * 1000) // 10 minutos
-                
-                // Enviar código via email ou SMS
-                val success = if (user.phone != null) {
-                    sendSmsCode(user.phone, verificationCode!!)
-                } else if (user.email != null) {
-                    sendEmailCode(user.email, verificationCode!!)
-                } else {
-                    false
-                }
-                
-                if (success) {
-                    // Salvar código no Firestore para verificação
-                    firestore.collection("twoFactorCodes")
-                        .document(currentUser.uid)
-                        .set(mapOf(
-                            "code" to verificationCode,
-                            "expiresAt" to codeExpirationTime,
-                            "createdAt" to System.currentTimeMillis()
-                        ))
-                        .await()
-                    
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        codeSent = true
-                    )
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Erro ao enviar código de verificação"
-                    )
-                }
+                result.fold(
+                    onSuccess = { data ->
+                        val method = data["method"] as? String ?: "email"
+                        val message = data["message"] as? String ?: "Código enviado"
+                        
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            codeSent = true,
+                            verificationMethod = message
+                        )
+                    },
+                    onFailure = { exception ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = "Erro ao enviar código: ${exception.message}"
+                        )
+                    }
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -139,50 +117,35 @@ class TwoFactorAuthViewModel @Inject constructor(
                     return@launch
                 }
                 
-                // Buscar código do Firestore
-                val codeDoc = firestore.collection("twoFactorCodes")
-                    .document(currentUser.uid)
-                    .get()
-                    .await()
+                // Chamar Cloud Function para verificar código
+                val result = functionsService.verifyTwoFactorCode(code)
                 
-                if (!codeDoc.exists()) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Código não encontrado. Solicite um novo código."
-                    )
-                    return@launch
-                }
-                
-                val storedCode = codeDoc.getString("code")
-                val expiresAt = codeDoc.getLong("expiresAt") ?: 0L
-                
-                // Verificar se código expirou
-                if (System.currentTimeMillis() > expiresAt) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Código expirado. Solicite um novo código."
-                    )
-                    return@launch
-                }
-                
-                // Verificar código
-                if (code == storedCode) {
-                    // Código válido - remover do Firestore
-                    firestore.collection("twoFactorCodes")
-                        .document(currentUser.uid)
-                        .delete()
-                        .await()
-                    
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        isVerified = true
-                    )
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Código inválido. Tente novamente."
-                    )
-                }
+                result.fold(
+                    onSuccess = { data ->
+                        val verified = data["verified"] as? Boolean ?: false
+                        if (verified) {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                isVerified = true
+                            )
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "Código inválido"
+                            )
+                        }
+                    },
+                    onFailure = { exception ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = when {
+                                exception.message?.contains("expirado") == true -> "Código expirado. Solicite um novo código."
+                                exception.message?.contains("inválido") == true -> "Código inválido. Tente novamente."
+                                else -> "Erro ao verificar código: ${exception.message}"
+                            }
+                        )
+                    }
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -192,55 +155,6 @@ class TwoFactorAuthViewModel @Inject constructor(
         }
     }
     
-    private fun generateVerificationCode(): String {
-        return (100000..999999).random().toString()
-    }
-    
-    private suspend fun sendEmailCode(email: String, code: String): Boolean {
-        return try {
-            // Usar Firebase Cloud Functions ou serviço de email
-            // Por enquanto, simular envio (em produção, usar Cloud Functions)
-            firestore.collection("emailQueue")
-                .add(mapOf(
-                    "to" to email,
-                    "subject" to "Código de Verificação - TaskGo",
-                    "body" to """
-                        Olá,
-                        
-                        Seu código de verificação de duas etapas é: $code
-                        
-                        Este código expira em 10 minutos.
-                        
-                        Se você não solicitou este código, ignore este email.
-                        
-                        Atenciosamente,
-                        Equipe TaskGo
-                    """.trimIndent(),
-                    "createdAt" to System.currentTimeMillis()
-                ))
-                .await()
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-    
-    private suspend fun sendSmsCode(phoneNumber: String, code: String): Boolean {
-        return try {
-            // Usar Firebase Cloud Functions ou serviço de SMS
-            // Por enquanto, simular envio (em produção, usar Cloud Functions)
-            firestore.collection("smsQueue")
-                .add(mapOf(
-                    "to" to phoneNumber,
-                    "message" to "Seu código de verificação TaskGo é: $code. Válido por 10 minutos.",
-                    "createdAt" to System.currentTimeMillis()
-                ))
-                .await()
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
     
     private fun maskEmail(email: String): String {
         val parts = email.split("@")

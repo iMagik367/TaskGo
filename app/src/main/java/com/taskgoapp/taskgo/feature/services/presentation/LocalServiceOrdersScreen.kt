@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
@@ -366,18 +367,20 @@ private fun LocalServiceOrdersCategoryCard(
                     .background(TaskGoGreen.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = when (category.icon) {
-                        "build" -> "🔧"
-                        "home" -> "🏠"
-                        "eco" -> "🌱"
-                        "flash_on" -> "⚡"
-                        "plumbing" -> "🔧"
-                        "format_paint" -> "🎨"
-                        "cleaning_services" -> "🧹"
-                        else -> "📋"
+                Icon(
+                    imageVector = when (category.icon) {
+                        "build" -> Icons.Default.Build
+                        "home" -> Icons.Default.Home
+                        "eco" -> Icons.Default.Eco
+                        "flash_on" -> Icons.Default.FlashOn
+                        "plumbing" -> Icons.Default.Plumbing
+                        "format_paint" -> Icons.Default.FormatPaint
+                        "cleaning_services" -> Icons.Default.CleaningServices
+                        else -> Icons.Default.List
                     },
-                    fontSize = 28.sp
+                    contentDescription = category.name,
+                    tint = TaskGoGreen,
+                    modifier = Modifier.size(28.dp)
                 )
             }
             Column(modifier = Modifier.weight(1f)) {

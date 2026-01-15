@@ -45,9 +45,15 @@ object NetworkDiagnostic {
             val responseCode = connection.responseCode
             connection.disconnect()
             
+            // Firebase retorna 404 para HEAD requests na raiz, mas isso indica que o serviço está respondendo
+            // Considerar reachable para códigos que indicam que o servidor está respondendo
             val canReach = when (responseCode) {
                 in 200..399 -> true
-                HttpURLConnection.HTTP_NOT_FOUND,
+                HttpURLConnection.HTTP_NOT_FOUND -> {
+                    // 404 na raiz do Firebase é esperado (servidor está respondendo, mas endpoint não existe)
+                    Log.d(TAG, "Firebase endpoint retornou 404 (esperado para HEAD na raiz), mas servidor está respondendo")
+                    true
+                }
                 HttpURLConnection.HTTP_FORBIDDEN,
                 HttpURLConnection.HTTP_UNAUTHORIZED,
                 HttpURLConnection.HTTP_BAD_METHOD -> true

@@ -6,6 +6,7 @@
     <string name="nav_services">Serviços</string>
     <string name="nav_products">Produtos</string>
     <string name="nav_messages">Mensagens</string>
+    <string name="nav_feed">Feed</string>
     <string name="nav_profile">Perfil</string>
     
     <!-- Common Actions -->
@@ -130,11 +131,21 @@
     <string name="orders_delivery_estimate">Previsão entrega %1$s</string>
     <string name="orders_tracking_code">Código: %1$s</string>
     
+    <!-- Feed -->
+    <string name="feed_title">Feed</string>
+    <string name="feed_tab_dashboard">Dashboard</string>
+    <string name="feed_tab_feed">Feed</string>
+    <string name="feed_create_post">Criar Post</string>
+    <string name="feed_filter_radius">Raio de busca</string>
+    <string name="feed_no_posts">Nenhum post encontrado</string>
+    
     <!-- Messages -->
     <string name="messages_title">Mensagens</string>
     <string name="messages_empty_title">Nenhuma mensagem</string>
     <string name="messages_empty_message">Você ainda não tem conversas. Comece a conversar com prestadores de serviço!</string>
     <string name="messages_create_order">Criar Ordem de Serviço</string>
+    <string name="messages_find_providers">Procurar Prestadores de Serviço</string>
+    <string name="messages_find_service_orders">Procurar Ordens de Serviço</string>
     <string name="messages_typing">digitando…</string>
     <string name="messages_input_placeholder">Digite sua mensagem…</string>
     

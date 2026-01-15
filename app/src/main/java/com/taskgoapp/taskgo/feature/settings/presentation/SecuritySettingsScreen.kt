@@ -52,6 +52,7 @@ fun SecuritySettingsScreen(
     onBackClick: () -> Unit,
     onNavigateToIdentityVerification: () -> Unit,
     onNavigateToConsentHistory: () -> Unit = {},
+    onNavigateToLogin: () -> Unit = {}, // Callback para navegar para login após logout
     viewModel: SecuritySettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -529,31 +530,30 @@ fun SecuritySettingsScreen(
                                             )
                                             val deleteResult = functionsService.deleteUserAccount()
                                             
+                                            // Fazer logout IMEDIATAMENTE antes mesmo de aguardar resultado
+                                            // Isso garante que o usuário seja deslogado mesmo se houver erro na função
+                                            auth.signOut()
+                                            
+                                            // Aguardar um pouco para garantir que o signOut foi processado
+                                            kotlinx.coroutines.delay(500)
+                                            
+                                            // Navegar para login após logout
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                showDeleteConfirmation = false
+                                                showExportMessage = null
+                                                // Navegar para login - o MainActivity irá detectar que não há usuário autenticado
+                                                onNavigateToLogin()
+                                            }
+                                            
                                             deleteResult.fold(
-                                                onSuccess = {
-                                                    // 2. Deletar conta do Firebase Auth
-                                                    val authRepo = com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository(
-                                                        com.google.firebase.auth.FirebaseAuth.getInstance()
-                                                    )
-                                                    val deleteAuthResult = authRepo.deleteAccount()
-                                                    
-                                                    deleteAuthResult.fold(
-                                                        onSuccess = {
-                                                            showExportMessage = "Conta excluída com sucesso."
-                                                    showDeleteConfirmation = false
-                                                    // Fazer logout após exclusão
-                                                    auth.signOut()
-                                                        },
-                                                        onFailure = { error ->
-                                                            showExportMessage = "Dados excluídos, mas erro ao excluir conta: ${error.message}"
-                                                            showDeleteConfirmation = false
-                                                            auth.signOut()
-                                                        }
-                                                    )
+                                                onSuccess = { data ->
+                                                    val message = data["message"] as? String ?: "Conta excluída com sucesso"
+                                                    android.util.Log.d("SecuritySettingsScreen", message)
+                                                    // Mensagem não precisa ser mostrada, pois já navegamos para login
                                                 },
                                                 onFailure = { error ->
-                                                    showExportMessage = "Erro ao excluir dados: ${error.message}"
-                                                    showDeleteConfirmation = false
+                                                    android.util.Log.e("SecuritySettingsScreen", "Erro ao excluir conta", error)
+                                                    // Logout já foi feito e navegação já ocorreu, apenas logamos o erro
                                                 }
                                             )
                                         } catch (e: Exception) {

@@ -31,19 +31,23 @@ class FirestoreAccountChangeRepository @Inject constructor(
             // Calcular data de processamento (1 dia útil)
             val scheduledDate = calculateNextBusinessDay(Date())
             
-            val request = AccountChangeRequest(
-                id = "", // Será gerado pelo Firestore
-                userId = userId,
-                currentAccountType = currentAccountType,
-                requestedAccountType = requestedAccountType,
-                status = "PENDING",
-                requestedAt = Date(),
-                scheduledProcessDate = scheduledDate,
-                createdAt = Date(),
-                updatedAt = Date()
+            // Converter Date para Timestamp do Firestore
+            val scheduledTimestamp = com.google.firebase.Timestamp(scheduledDate)
+            val requestedTimestamp = com.google.firebase.Timestamp.now()
+            
+            // Criar mapa de dados com Timestamps para evitar problemas de serialização
+            val requestData = mapOf(
+                "userId" to userId,
+                "currentAccountType" to currentAccountType,
+                "requestedAccountType" to requestedAccountType,
+                "status" to "PENDING",
+                "requestedAt" to requestedTimestamp,
+                "scheduledProcessDate" to scheduledTimestamp,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
             )
             
-            val docRef = accountChangeRequestsCollection.add(request).await()
+            val docRef = accountChangeRequestsCollection.add(requestData).await()
             
             android.util.Log.d("AccountChangeRepo", "Solicitação de mudança criada: ${docRef.id} para usuário $userId")
             Result.success(docRef.id)

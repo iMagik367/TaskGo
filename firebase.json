@@ -19,11 +19,45 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "storage": {
-    "rules": "storage.rules"
-  },
+  "storage": [
+    {
+      "bucket": "task-go-ee85f.appspot.com",
+      "rules": "storage.rules"
+    }
+  ],
   "database": {
     "rules": "database.rules.json"
+  },
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "functions/**",
+      "android/**",
+      "app/**",
+      "build/**",
+      "scripts/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/post/**",
+        "function": "ssrAppPage"
+      },
+      {
+        "source": "/product/**",
+        "function": "ssrAppPage"
+      },
+      {
+        "source": "/user/**",
+        "function": "ssrAppPage"
+      },
+      {
+        "source": "/**",
+        "destination": "/index.html"
+      }
+    ]
   },
   "emulators": {
     "functions": {

@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.data.firebase
+package com.taskgoapp.taskgo.data.firebase
 
 import com.taskgoapp.taskgo.data.firestore.models.ProposalDetails
 import com.google.firebase.functions.FirebaseFunctions
@@ -189,6 +189,31 @@ class FirebaseFunctionsService @Inject constructor(
     // Account Deletion Function
     suspend fun deleteUserAccount(): Result<Map<String, Any>> {
         return executeFunction("deleteUserAccount", null)
+    }
+    
+    // Two Factor Authentication Functions
+    suspend fun sendTwoFactorCode(): Result<Map<String, Any>> {
+        return executeFunction("sendTwoFactorCode", null)
+    }
+    
+    suspend fun verifyTwoFactorCode(code: String): Result<Map<String, Any>> {
+        val data = mapOf("code" to code)
+        return executeFunction("verifyTwoFactorCode", data)
+    }
+    
+    // Identity Verification Function
+    suspend fun startIdentityVerification(
+        documentFrontUrl: String,
+        documentBackUrl: String?,
+        selfieUrl: String,
+        addressProofUrl: String? = null
+    ): Result<Map<String, Any>> {
+        val data = mapOf(
+            "documentFrontUrl" to documentFrontUrl,
+            "selfieUrl" to selfieUrl
+        ).plus(documentBackUrl?.let { mapOf("documentBackUrl" to it) } ?: emptyMap())
+         .plus(addressProofUrl?.let { mapOf("addressProofUrl" to it) } ?: emptyMap())
+        return executeFunction("startIdentityVerification", data)
     }
     
     // Product Payment Functions

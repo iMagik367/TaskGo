@@ -98,34 +98,137 @@ class DocumentValidator {
             return ValidationResult.Valid // RG é opcional
         }
         
-        // Se não especificar estado, faz validação genérica
-        if (state == null) {
-            // Validação genérica: 6 a 10 dígitos, pode ter hífen e dígito verificador
-            val genericPattern = Regex("^[A-Z0-9]{6,12}(-[0-9A-Z])?$")
-            if (!genericPattern.matches(cleanRg.uppercase())) {
-                return ValidationResult.Invalid("RG inválido. Formato incorreto.")
+        // Remove formatação (pontos, hífens) para contar dígitos
+        val digitsOnly = cleanRg.replace(Regex("[^0-9A-Za-z]"), "").uppercase()
+        
+        // Validação genérica: 6 a 12 dígitos alfanuméricos
+        if (digitsOnly.length < 6 || digitsOnly.length > 12) {
+            return ValidationResult.Invalid("RG inválido. Formato incorreto.")
+        }
+        
+        // Valida formato brasileiro padrão: XX.XXX.XXX-X (ex: 13.262.015-6)
+        // Aceita formato com pontos e hífen
+        val formattedPattern = Regex("^\\d{2}\\.\\d{3}\\.\\d{3}-\\d{1}$") // Formato padrão: XX.XXX.XXX-X
+        
+        // Se tem pontos, valida formato formatado primeiro (mais comum)
+        if (cleanRg.contains(".")) {
+            // Verifica se segue o formato XX.XXX.XXX-X exatamente
+            if (formattedPattern.matches(cleanRg)) {
+                // Formato está correto! Valida por estado se especificado
+                val mainDigitsOnly = cleanRg.split("-")[0].replace(Regex("[^0-9A-Za-z]"), "").uppercase()
+                val mainDigitsCount = mainDigitsOnly.length
+                
+                // Valida por estado se especificado
+                if (state != null && state.isNotEmpty()) {
+                    val stateUpper = state.uppercase()
+                    // PR aceita 8-10 dígitos principais (formato padrão tem 8)
+                    if (stateUpper == "PR" && mainDigitsCount >= 8 && mainDigitsCount <= 10) {
+                        return ValidationResult.Valid
+                    } else if (stateUpper != "PR") {
+                        // Para outros estados, verifica se a quantidade está dentro do esperado
+                        val format = RG_FORMATS[stateUpper]
+                        if (format != null && format.matches(mainDigitsOnly)) {
+                            return ValidationResult.Valid
+                        }
+                        return ValidationResult.Invalid("RG inválido para o estado $stateUpper. Formato esperado: 00.000.000-0")
+                    }
+                } else {
+                    // Se não especificou estado, aceita formato padrão brasileiro (8-9 dígitos principais + 1 verificador)
+                    if (mainDigitsCount >= 8 && mainDigitsCount <= 9) {
+                        return ValidationResult.Valid
+                    }
+                }
+            } else {
+                // Se não passou na regex exata, verifica manualmente a estrutura (formato XX.XXX.XXX-X)
+                val parts = cleanRg.split(".")
+                if (parts.size == 3) {
+                    val firstPart = parts[0]
+                    val secondPart = parts[1]
+                    val thirdWithDash = parts[2]
+                    
+                    // Verifica se cada parte tem a quantidade correta de dígitos
+                    if (firstPart.length == 2 && firstPart.all { it.isDigit() } &&
+                        secondPart.length == 3 && secondPart.all { it.isDigit() } &&
+                        thirdWithDash.contains("-")) {
+                        
+                        val lastParts = thirdWithDash.split("-")
+                        if (lastParts.size == 2 &&
+                            lastParts[0].length == 3 && lastParts[0].all { it.isDigit() } &&
+                            lastParts[1].length >= 1 && lastParts[1].length <= 2 && lastParts[1].all { it.isDigit() }) {
+                            // Formato válido: XX.XXX.XXX-X ou XX.XXX.XXX-XX
+                            // Valida por estado se especificado
+                            val mainDigitsOnly = cleanRg.split("-")[0].replace(Regex("[^0-9A-Za-z]"), "").uppercase()
+                            val mainDigitsCount = mainDigitsOnly.length
+                            
+                            if (state != null && state.isNotEmpty()) {
+                                val stateUpper = state.uppercase()
+                                if (stateUpper == "PR" && mainDigitsCount >= 8 && mainDigitsCount <= 10) {
+                                    return ValidationResult.Valid
+                                } else if (stateUpper != "PR") {
+                                    val format = RG_FORMATS[stateUpper]
+                                    if (format != null && format.matches(mainDigitsOnly)) {
+                                        return ValidationResult.Valid
+                                    }
+                                    return ValidationResult.Invalid("RG inválido para o estado $stateUpper. Formato esperado: 00.000.000-0")
+                                }
+                            }
+                            // Se não especificou estado ou passou na validação, aceita
+                            return ValidationResult.Valid
+                        }
+                    }
+                }
+                return ValidationResult.Invalid("RG inválido. Formato incorreto. Use o formato: 00.000.000-0")
             }
+        }
+        
+        // Se especificar estado e não tem pontos, valida formato específico após remover formatação
+        if (state != null && state.isNotEmpty()) {
+            val stateUpper = state.uppercase()
+            val format = RG_FORMATS[stateUpper]
+            
+            if (format != null) {
+                // Para validação por estado sem formatação, separa dígitos principais do verificador
+                val mainDigitsOnly = if (cleanRg.contains("-")) {
+                    cleanRg.split("-")[0].replace(Regex("[^0-9A-Za-z]"), "").uppercase()
+                } else {
+                    // Se não tem hífen, assume que o último dígito pode ser verificador
+                    if (stateUpper == "PR" && digitsOnly.length >= 9) {
+                        digitsOnly.substring(0, digitsOnly.length - 1)
+                    } else if (stateUpper != "PR" && digitsOnly.length >= 8) {
+                        digitsOnly.substring(0, digitsOnly.length - 1)
+                    } else {
+                        digitsOnly
+                    }
+                }
+                
+                // Valida formato específico do estado usando apenas dígitos principais
+                if (stateUpper == "PR") {
+                    val mainDigitsCount = mainDigitsOnly.length
+                    if (mainDigitsCount >= 8 && mainDigitsCount <= 10) {
+                        return ValidationResult.Valid
+                    }
+                } else {
+                    if (format.matches(mainDigitsOnly) || format.matches(digitsOnly)) {
+                        return ValidationResult.Valid
+                    }
+                }
+                
+                return ValidationResult.Invalid("RG inválido para o estado $stateUpper. Formato esperado: 00.000.000-0")
+            }
+        }
+        
+        // Se não tem pontos, valida formato simples (apenas dígitos e hífen opcional)
+        val simplePattern = Regex("^\\d{6,12}(-\\d{1,2})?$")
+        if (simplePattern.matches(cleanRg)) {
             return ValidationResult.Valid
         }
         
-        // Validação específica por estado
-        val stateUpper = state.uppercase()
-        val format = RG_FORMATS[stateUpper]
-        
-        if (format == null) {
-            // Se não tiver formato específico, usa validação genérica
-            val genericPattern = Regex("^[A-Z0-9]{6,12}(-[0-9A-Z])?$")
-            if (!genericPattern.matches(cleanRg.uppercase())) {
-                return ValidationResult.Invalid("RG inválido. Formato incorreto.")
-            }
+        // Valida apenas dígitos alfanuméricos (6-12 caracteres)
+        if (digitsOnly.all { it.isDigit() || it.isLetter() }) {
             return ValidationResult.Valid
         }
         
-        if (!format.matches(cleanRg.uppercase())) {
-            return ValidationResult.Invalid("RG inválido para o estado $stateUpper. Verifique o formato.")
-        }
-        
-        return ValidationResult.Valid
+        return ValidationResult.Invalid("RG inválido. Formato incorreto.")
     }
     
     /**
@@ -151,7 +254,7 @@ class DocumentValidator {
     /**
      * Formata RG baseado no estado
      */
-    fun formatRg(rg: String, state: String? = null): String {
+    fun formatRg(rg: String, @Suppress("UNUSED_PARAMETER") state: String? = null): String {
         val cleanRg = rg.replace(Regex("[^0-9A-Za-z]"), "").uppercase()
         
         // Formatação básica: adiciona hífen antes do último dígito se não tiver

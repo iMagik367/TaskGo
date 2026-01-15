@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.taskgoapp.taskgo",
+      "sha256_cert_fingerprints": [
+        "42:AE:KD:JS:FW:XC:WX:RK:NE:Y3:YE:2A:KV:3Y:HU:AF:GD:JF:6W:US:7D:V2:NU:2P:26:GZ:WC:YG:RU:YR:P1:HK:XM:DT:8Z:WN:QX:PB:RJ:G4:4J:M6:XN:ME:DT:H1:5K",
+        "8E:F5:30:BE:12:7D:76:54:BA:FF:EE:88:98:F6:EF:61:73:FA:D6:FF:C8:75:49:5C:C1:FE:B2:77:48:AD:3E:2F"
+      ]
+    }
+  }
+]

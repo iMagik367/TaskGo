@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.home.presentation
+package com.taskgoapp.taskgo.feature.home.presentation
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
@@ -145,6 +145,7 @@ fun HomeScreen(
     val filteredProducts = remember(products, searchQuery, selectedProductFilter, userLocation) {
         products
             .filter { product ->
+                if (!product.active) return@filter false
                 // Aplicar filtro de busca
                 if (searchQuery.isNotBlank()) {
                     val matchesSearch = product.title.contains(searchQuery, ignoreCase = true) ||
@@ -155,9 +156,8 @@ fun HomeScreen(
                 // Aplicar filtros específicos de produtos
                 when (selectedProductFilter) {
                     "Em Promoção" -> {
-                        // Produtos com desconto (assumindo que há um campo discountPercentage ou similar)
-                        // Por enquanto, vamos filtrar produtos em destaque como "promoção"
-                        product.featured == true
+                        // Produtos em destaque E com desconto informado
+                        product.featured == true && (product.discountPercentage ?: 0.0) > 0.0
                     }
                     "Até R$ 50" -> {
                         product.price <= 50.0
@@ -172,21 +172,12 @@ fun HomeScreen(
                         product.price > 250.0
                     }
                     "Mais Vendidos" -> {
-                        // Por enquanto, produtos em destaque (quando houver campo de vendas, usar isso)
-                        product.featured == true
+                        // Placeholder: usar vendas quando disponível; por enquanto, usar destaque com desconto
+                        product.featured == true && (product.discountPercentage ?: 0.0) > 0.0
                     }
-                    "Novos" -> {
-                        // Por enquanto, todos os produtos (quando houver campo de data, usar isso)
-                        true
-                    }
-                    "Melhor Avaliados" -> {
-                        // Produtos com rating >= 4.0
-                        (product.rating ?: 0.0) >= 4.0
-                    }
-                    "Todos", null -> {
-                        // Mostrar produtos em destaque por padrão
-                        product.featured == true
-                    }
+                    "Novos" -> true // sem campo de data, não filtra
+                    "Melhor Avaliados" -> (product.rating ?: 0.0) >= 4.0
+                    "Todos", null -> true // mostrar todos por padrão
                     else -> true
                 }
             }
@@ -194,12 +185,12 @@ fun HomeScreen(
                 // Ordenar por relevância baseado no filtro
                 when (selectedProductFilter) {
                     "Melhor Avaliados" -> product.rating ?: 0.0
-                    "Mais Vendidos" -> if (product.featured == true) 1.0 else 0.0
+                    "Mais Vendidos" -> if (product.featured == true && (product.discountPercentage ?: 0.0) > 0.0) 1.0 else 0.0
                     else -> product.rating ?: 0.0
                 }
             }
             .let { filtered ->
-                // Filtrar por localização se disponível (raio de 100km)
+                // Se o usuário tem localização, filtra raio 100km; senão, mantém lista filtrada
                 val productLat = userLocation?.latitude
                 val productLng = userLocation?.longitude
                 
@@ -216,11 +207,11 @@ fun HomeScreen(
                             )
                             distance <= 100.0
                         } else {
-                            true // Se não tem localização, mostrar mesmo assim
+                            false // Sem localização do produto, não exibe
                         }
                     }
                 } else {
-                    filtered
+                    filtered // Sem localização do usuário, não esvazia a vitrine
                 }
             }
     }
@@ -241,6 +232,7 @@ fun HomeScreen(
     
     val fallbackBanners = remember(accountType) {
         when (accountType) {
+            com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO,
             com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR -> listOf(
                 HomeBannerContent(
                     id = "ordens_servico_destaque",
@@ -323,49 +315,54 @@ fun HomeScreen(
             AppTopBar(
                 title = stringResource(R.string.home_title),
                 actions = {
-                    IconButton(
-                        onClick = onNavigateToSearch,
-                        modifier = Modifier.size(48.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TGIcon(
-                            iconRes = TGIcons.Search,
-                            contentDescription = "Busca Universal",
-                            size = TGIcons.Sizes.Large,
-                            tint = TaskGoBackgroundWhite
-                        )
-                    }
-                    IconButton(
-                        onClick = onNavigateToNotifications,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        TGIcon(
-                            iconRes = TGIcons.Bell,
-                            contentDescription = stringResource(R.string.ui_notifications),
-                            size = TGIcons.Sizes.Large,
-                            tint = TaskGoBackgroundWhite
-                        )
-                    }
-                    IconButton(
-                        onClick = onNavigateToCart,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        TGIcon(
-                            iconRes = TGIcons.Cart,
-                            contentDescription = stringResource(R.string.ui_cart),
-                            size = TGIcons.Sizes.Large,
-                            tint = TaskGoBackgroundWhite
-                        )
-                    }
-                    IconButton(
-                        onClick = onNavigateToMessages,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        TGIcon(
-                            iconRes = TGIcons.Messages,
-                            contentDescription = stringResource(R.string.messages_title),
-                            size = TGIcons.Sizes.Large,
-                            tint = TaskGoBackgroundWhite
-                        )
+                        IconButton(
+                            onClick = onNavigateToSearch,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Search,
+                                contentDescription = "Buscar",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToNotifications,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Bell,
+                                contentDescription = "Notificações",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToCart,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Cart,
+                                contentDescription = "Carrinho",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToMessages,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Messages,
+                                contentDescription = "Mensagens",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             )
@@ -468,29 +465,6 @@ fun HomeScreen(
                 }
             }
             
-            // Mapa com Prestadores e Lojas em Tempo Real
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Lojas Próximas",
-                        style = FigmaProductName,
-                        color = TaskGoTextBlack,
-                        fontWeight = FontWeight.Bold
-                    )
-                    ProvidersMapView(
-                        userLocation = userLocation,
-                        stores = stores,
-                        onStoreClick = { storeId ->
-                            // Navegar para perfil da loja
-                            onNavigateToProviderProfile(storeId, true)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(300.dp)
-                    )
-                }
-            }
-            
             item {
                 HomeBannerCarousel(
                     banners = heroBanners,
@@ -549,6 +523,9 @@ fun HomeScreen(
                                     ServiceCard(
                                         service = service,
                                         onClick = { onNavigateToService(service.id) },
+                                        onProviderClick = { providerId ->
+                                            onNavigateToProviderProfile(providerId, false)
+                                        },
                                         modifier = Modifier.width(180.dp)
                                     )
                                 }
@@ -558,6 +535,29 @@ fun HomeScreen(
                             EmptyServicesState(onSearchClick = onNavigateToSearch)
                         }
                     }
+                }
+            }
+            
+            // Mapa com Prestadores e Lojas em Tempo Real (movido para depois dos cards)
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Lojas Próximas",
+                        style = FigmaProductName,
+                        color = TaskGoTextBlack,
+                        fontWeight = FontWeight.Bold
+                    )
+                    ProvidersMapView(
+                        userLocation = userLocation,
+                        stores = stores,
+                        onStoreClick = { storeId ->
+                            // Navegar para perfil da loja
+                            onNavigateToProviderProfile(storeId, true)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp)
+                    )
                 }
             }
             
@@ -914,7 +914,7 @@ fun ProductCard(
                     )
                 }
 
-                if (product.featured == true) {
+                if (product.featured == true && (product.discountPercentage ?: 0.0) > 0.0) {
                     Surface(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -1006,6 +1006,7 @@ fun ProductCard(
 private fun ServiceCard(
     service: ServiceFirestore,
     onClick: () -> Unit,
+    onProviderClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1067,6 +1068,16 @@ private fun ServiceCard(
                 maxLines = 2,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
+            
+            // Informações do prestador (clicável)
+            if (service.providerId.isNotBlank() && onProviderClick != null) {
+                com.taskgoapp.taskgo.core.design.UserAvatarNameLoader(
+                    userId = service.providerId,
+                    onUserClick = { onProviderClick(service.providerId) },
+                    avatarSize = 32.dp,
+                    showName = true
+                )
+            }
             
             // Preço e Rating
             Row(

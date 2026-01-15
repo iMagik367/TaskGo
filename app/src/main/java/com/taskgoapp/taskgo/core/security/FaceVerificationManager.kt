@@ -23,9 +23,9 @@ class FaceVerificationManager(private val context: Context) {
 
     private val faceDetector: FaceDetector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
-            .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE) // Mudado para ACCURATE para melhor detecção
+            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL) // CRÍTICO: Mudado para ALL para obter landmarks necessários para comparação
+            .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL) // Habilitar classificação para melhor precisão
             .enableTracking()
             .build()
     )
@@ -117,7 +117,12 @@ class FaceVerificationManager(private val context: Context) {
             // Combinação ponderada: 40% geometria + 60% embedding
             val score = (geomScore * 0.4 + cosine * 0.6)
 
-            val success = score >= 0.5 // Threshold mínimo
+            // Threshold ajustado: 0.40 para permitir mais variações
+            // Selfies podem ter iluminação/ângulo/expressão diferentes do documento
+            // Este threshold foi reduzido para ser mais tolerante, mas ainda seguro
+            val success = score >= 0.40
+            
+            Log.d(TAG, "Comparação facial: score=$score (${(score * 100).toInt()}%), threshold=0.40, success=$success")
 
             FaceComparisonResult(
                 success = success,

@@ -171,3 +171,4 @@ O erro "Firebase App Check token is invalid" indica que:
 - [ ] Testar release COM App Check + Play Integrity configurado
 - [ ] Verificar logs detalhados em cada teste
 
+

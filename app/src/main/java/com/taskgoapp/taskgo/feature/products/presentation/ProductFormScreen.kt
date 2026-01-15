@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.products.presentation
+package com.taskgoapp.taskgo.feature.products.presentation
 
 import android.net.Uri
 import android.util.Log
@@ -134,41 +134,36 @@ fun ProductFormScreen(
         }
     }
 
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (uiState.id == null) stringResource(R.string.action_add) else stringResource(R.string.action_edit)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { 
-                        Icon(
-                            painter = painterResource(TGIcons.Back),
-                            contentDescription = "Voltar"
-                        )
-                    }
-                },
-                actions = {
-                    TextButton(
-                        onClick = { 
-                            try {
-                                if (uiState.canSave) viewModel.save() 
-                            } catch (e: Exception) {
-                                Log.e("ProductFormScreen", "Error saving product", e)
-                            }
-                        }, 
-                        enabled = uiState.canSave && !uiState.isSaving
-                    ) {
-                        Text(stringResource(R.string.action_save))
-                    }
-                }
+            com.taskgoapp.taskgo.core.design.AppTopBar(
+                title = if (uiState.id == null) stringResource(R.string.action_add) else stringResource(R.string.action_edit),
+                onBackClick = onBack,
+                backgroundColor = com.taskgoapp.taskgo.core.theme.TaskGoGreen,
+                titleColor = com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite,
+                backIconColor = com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
             )
         }
     ) { padding ->
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(16.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Photo upload section
@@ -316,7 +311,10 @@ fun ProductFormScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = uiState.price,
-                    onValueChange = { viewModel.onPriceChange(it) },
+                    onValueChange = { newValue ->
+                        val formatted = com.taskgoapp.taskgo.core.utils.TextFormatters.formatPrice(newValue)
+                        viewModel.onPriceChange(formatted)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("R$ 0,00") },
                     colors = OutlinedTextFieldDefaults.colors(

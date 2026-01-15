@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.settings.presentation
+package com.taskgoapp.taskgo.feature.settings.presentation
 
 import android.Manifest
 import androidx.compose.foundation.layout.*
@@ -21,6 +21,8 @@ import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
 import com.taskgoapp.taskgo.core.design.*
 import com.taskgoapp.taskgo.core.security.LGPDComplianceManager
+import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -48,6 +50,9 @@ fun PrivacyScreen(
             context,
             com.google.firebase.firestore.FirebaseFirestore.getInstance()
         )
+    }
+    val functionsService = remember {
+        FirebaseFunctionsService(FirebaseFunctions.getInstance())
     }
     // Estados locais - inicializar apenas uma vez
     var locationSharingEnabled by remember { mutableStateOf(true) }
@@ -712,27 +717,27 @@ fun PrivacyScreen(
                                         if (user != null) {
                                             coroutineScope.launch {
                                                 try {
-                                                    val result = lgpdManager.requestDataDeletion(user.uid)
+                                                    // Chamar Cloud Function para excluir conta completamente (inclui Firebase Auth)
+                                                    val result = functionsService.deleteUserAccount()
                                                     result.fold(
-                                                        onSuccess = { report ->
-                                                            exportMessage = "Exclusão concluída. ${report.deletedDocuments} documentos foram removidos."
+                                                        onSuccess = { data ->
+                                                            val message = data["message"] as? String ?: "Conta excluída com sucesso"
+                                                            exportMessage = message
                                                             showDeleteConfirmation = false
+                                                            // Fazer logout após exclusão bem-sucedida
+                                                            auth.signOut()
+                                                            // Navegar para login será feito pela navegação
                                                         },
                                                         onFailure = { error ->
-                                                            exportMessage = "Erro ao excluir: ${error.message}"
+                                                            exportMessage = "Erro ao excluir conta: ${error.message}"
                                                             showDeleteConfirmation = false
-                                                            // Tratar erro específico do Secure Token API bloqueado
-                                                            if (error.message?.contains("SecureToken") == true || error.message?.contains("securetoken") == true) {
-                                                                android.util.Log.w("PrivacyScreen", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
-                                                            }
+                                                            android.util.Log.e("PrivacyScreen", "Erro ao excluir conta", error)
                                                         }
                                                     )
                                                 } catch (e: Exception) {
                                                     exportMessage = "Erro: ${e.message}"
                                                     showDeleteConfirmation = false
-                                                    if (e.message?.contains("SecureToken") == true || e.message?.contains("securetoken") == true) {
-                                                        android.util.Log.w("PrivacyScreen", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
-                                                    }
+                                                    android.util.Log.e("PrivacyScreen", "Erro ao excluir conta", e)
                                                 }
                                             }
                                         }

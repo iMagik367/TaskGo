@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo
+package com.taskgoapp.taskgo
 
 import android.app.Application
 import android.util.Log
@@ -148,16 +148,51 @@ class TaskGoApp : Application(), Configuration.Provider {
                             kotlinx.coroutines.delay(5000) // Aguardar 5 segundos para Play Integrity inicializar
                             try {
                                 appCheck.getAppCheckToken(false).addOnSuccessListener { token ->
-                                    Log.d(TAG, "✅ App Check token obtido com sucesso")
+                                    Log.d(TAG, "✅ App Check token obtido com sucesso (Play Integrity)")
                                     Log.d(TAG, "Token (primeiros 20 chars): ${token.token.take(20)}...")
+                                    Log.d(TAG, "Token expira em: ${token.expireTimeMillis - System.currentTimeMillis()}ms")
                                 }.addOnFailureListener { e ->
                                     Log.e(TAG, "❌ FALHA AO OBTER APP CHECK TOKEN")
                                     Log.e(TAG, "Erro: ${e.message}")
-                                    Log.e(TAG, "Causa provável:")
-                                    Log.e(TAG, "  1. SHA-256 não cadastrado no Firebase Console")
-                                    Log.e(TAG, "  2. Play Integrity API não habilitada")
-                                    Log.e(TAG, "  3. App não instalado via Play Store")
-                                    Log.e(TAG, "  4. App Check não configurado no Firebase Console")
+                                    Log.e(TAG, "Tipo: ${e.javaClass.simpleName}")
+                                    
+                                    // Análise detalhada do erro
+                                    val errorMessage = e.message ?: ""
+                                    when {
+                                        errorMessage.contains("403", ignoreCase = true) ||
+                                        errorMessage.contains("App attestation failed", ignoreCase = true) ||
+                                        errorMessage.contains("attestation", ignoreCase = true) -> {
+                                            Log.e(TAG, "═══════════════════════════════════════════════════")
+                                            Log.e(TAG, "ERRO CRÍTICO: App Attestation Failed (403)")
+                                            Log.e(TAG, "═══════════════════════════════════════════════════")
+                                            Log.e(TAG, "CAUSA PRINCIPAL: SHA-256 do App Signing Key não cadastrado")
+                                            Log.e(TAG, "")
+                                            Log.e(TAG, "SOLUÇÃO:")
+                                            Log.e(TAG, "1. Acesse Google Play Console → App Signing")
+                                            Log.e(TAG, "2. Copie o SHA-256 do 'App signing certificate'")
+                                            Log.e(TAG, "3. Firebase Console → Configurações do Projeto → Android App")
+                                            Log.e(TAG, "4. Adicione o SHA-256 do App Signing Key")
+                                            Log.e(TAG, "5. Aguarde 5-10 minutos para propagação")
+                                            Log.e(TAG, "")
+                                            Log.e(TAG, "IMPORTANTE: Use o SHA-256 do App Signing Key,")
+                                            Log.e(TAG, "NÃO o SHA-256 do Upload Key!")
+                                            Log.e(TAG, "═══════════════════════════════════════════════════")
+                                        }
+                                        errorMessage.contains("API", ignoreCase = true) &&
+                                        errorMessage.contains("not", ignoreCase = true) -> {
+                                            Log.e(TAG, "CAUSA: Play Integrity API não habilitada")
+                                            Log.e(TAG, "SOLUÇÃO: Habilitar Play Integrity API no Google Cloud Console")
+                                        }
+                                        errorMessage.contains("network", ignoreCase = true) ||
+                                        errorMessage.contains("connection", ignoreCase = true) -> {
+                                            Log.e(TAG, "CAUSA: Problema de rede")
+                                            Log.e(TAG, "SOLUÇÃO: Verificar conectividade")
+                                        }
+                                        else -> {
+                                            Log.e(TAG, "CAUSA DESCONHECIDA - Verificar logs completos")
+                                            Log.e(TAG, "Stack trace:", e)
+                                        }
+                                    }
                                 }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Erro ao verificar token: ${e.message}", e)

@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.settings.presentation
+package com.taskgoapp.taskgo.feature.settings.presentation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -56,12 +56,13 @@ fun SettingsScreen(
             subtitle = "Configurar alertas",
             onClick = onNavigateToNotifications
         ),
-        SettingsOption(
-            icon = TGIcons.Language,
-            title = "Idioma",
-            subtitle = "Português (Brasil)",
-            onClick = onNavigateToLanguage
-        ),
+        // Idioma desativado temporariamente
+        // SettingsOption(
+        //     icon = TGIcons.Language,
+        //     title = "Idioma",
+        //     subtitle = "Português (Brasil)",
+        //     onClick = onNavigateToLanguage
+        // ),
         SettingsOption(
             icon = TGIcons.Privacy,
             title = "Privacidade",

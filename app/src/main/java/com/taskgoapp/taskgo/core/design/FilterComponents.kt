@@ -153,6 +153,7 @@ fun FilterBottomSheet(
     priceRanges: List<PriceRangeOption> = defaultPriceRanges,
     cities: List<String> = emptyList(),
     states: List<String> = defaultBrazilianStates,
+    showPriceFilter: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (isOpen) {
@@ -196,45 +197,47 @@ fun FilterBottomSheet(
                     }
                 }
                 
-                // Filtro de Preço
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Faixa de Preço",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TaskGoTextBlack
-                    )
-                    
-                    priceRanges.forEach { range ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onFilterStateChange(
-                                        filterState.copy(priceRange = range.range)
-                                    )
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = filterState.priceRange == range.range,
-                                onClick = {
-                                    onFilterStateChange(
-                                        filterState.copy(priceRange = range.range)
-                                    )
-                                }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = range.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = TaskGoTextBlack
-                            )
+                // Filtro de Preço (apenas se showPriceFilter for true)
+                if (showPriceFilter) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Faixa de Preço",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TaskGoTextBlack
+                        )
+                        
+                        priceRanges.forEach { range ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onFilterStateChange(
+                                            filterState.copy(priceRange = range.range)
+                                        )
+                                    },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = filterState.priceRange == range.range,
+                                    onClick = {
+                                        onFilterStateChange(
+                                            filterState.copy(priceRange = range.range)
+                                        )
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = range.label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = TaskGoTextBlack
+                                )
+                            }
                         }
                     }
+                    
+                    HorizontalDivider()
                 }
-                
-                HorizontalDivider()
                 
                 // Filtro de Localização
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -374,31 +377,61 @@ fun FilterBottomSheet(
                     
                     Spacer(modifier = Modifier.height(8.dp))
                     
-                    // Raio - Apenas campo numérico (habilitado apenas se usar localização)
-                    var radius by remember(filterState.location?.radiusKm) {
-                        mutableStateOf(filterState.location?.radiusKm?.toString() ?: "")
-                    }
-                    
-                    OutlinedTextField(
-                        value = radius,
-                        onValueChange = { newRadius ->
-                            radius = newRadius
-                            val radiusKm = newRadius.toIntOrNull()
-                            onFilterStateChange(
-                                filterState.copy(
-                                    location = filterState.location?.copy(radiusKm = radiusKm)
-                                        ?: LocationFilter(radiusKm = radiusKm)
+                    // Raio - Slider (habilitado apenas se usar localização)
+                    if (filterState.useLocationRadius) {
+                        var sliderValue by remember(filterState.location?.radiusKm, filterState.useLocationRadius) {
+                            mutableStateOf((filterState.location?.radiusKm?.takeIf { it in 10..100 } ?: 10).toFloat())
+                        }
+                        
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Raio: ${sliderValue.toInt()} km",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TaskGoTextBlack
+                            )
+                            
+                            Slider(
+                                value = sliderValue,
+                                onValueChange = { newValue ->
+                                    sliderValue = newValue
+                                    val radiusKm = newValue.toInt()
+                                    onFilterStateChange(
+                                        filterState.copy(
+                                            location = filterState.location?.copy(radiusKm = radiusKm)
+                                                ?: LocationFilter(radiusKm = radiusKm)
+                                        )
+                                    )
+                                },
+                                valueRange = 10f..100f,
+                                steps = 8, // Incrementos de 10km (10, 20, 30, ..., 100)
+                                colors = SliderDefaults.colors(
+                                    thumbColor = TaskGoGreen,
+                                    activeTrackColor = TaskGoGreen,
+                                    inactiveTrackColor = Color(0xFFE0E0E0)
                                 )
                             )
-                        },
-                        label = { Text("Raio (km)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Ex: 10") },
-                        enabled = filterState.useLocationRadius,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number
-                        )
-                    )
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "10 km",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TaskGoTextGray
+                                )
+                                Text(
+                                    text = "100 km",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TaskGoTextGray
+                                )
+                            }
+                        }
+                    }
                     
                 }
                 

@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.services.presentation
+package com.taskgoapp.taskgo.feature.services.presentation
 
 import android.util.Log
 import androidx.compose.foundation.background
@@ -7,13 +7,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,7 +32,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.taskgoapp.taskgo.core.design.AppTopBar
+import com.taskgoapp.taskgo.core.design.FullScreenVideoPlayer
 import com.taskgoapp.taskgo.core.theme.*
+import com.google.firebase.auth.FirebaseAuth
 import java.text.NumberFormat
 import java.util.*
 
@@ -38,16 +45,37 @@ fun DetalhesServicoScreen(
     onBackClick: () -> Unit,
     onEditService: (String) -> Unit = {},
     onNavigateToReviews: ((String) -> Unit)? = null,
+    onNavigateToProviderProfile: ((String) -> Unit)? = null,
+    onNavigateToChat: ((String) -> Unit)? = null,
     viewModel: ServiceDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+    val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
 
     LaunchedEffect(serviceId) {
         if (serviceId.isNotBlank()) {
             Log.d("DetalhesServicoScreen", "Carregando serviço: $serviceId")
             viewModel.loadService(serviceId)
+        }
+    }
+    
+    // Verificar se o usuário atual é o dono do serviço
+    val canEdit = remember(uiState.service, currentUserId) {
+        uiState.service?.providerId == currentUserId && currentUserId.isNotBlank()
+    }
+    
+    fun handleSendMessage(providerId: String) {
+        scope.launch {
+            try {
+                val threadId = viewModel.getOrCreateThreadForProvider(providerId)
+                onNavigateToChat?.invoke(threadId)
+            } catch (e: Exception) {
+                Log.e("DetalhesServicoScreen", "Erro ao criar/buscar thread", e)
+                // Mostrar erro ao usuário se necessário
+            }
         }
     }
 
@@ -59,7 +87,7 @@ fun DetalhesServicoScreen(
             )
         },
         floatingActionButton = {
-            if (uiState.service != null) {
+            if (uiState.service != null && canEdit) {
                 FloatingActionButton(
                     onClick = { onEditService(serviceId) },
                     containerColor = TaskGoGreen
@@ -168,43 +196,109 @@ fun DetalhesServicoScreen(
                                 color = TaskGoPriceGreen
                             )
 
-                            // Status
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
+                            // Categoria - destacada
+                            if (service.category.isNotBlank()) {
                                 Surface(
-                                    color = if (service.active) TaskGoSuccess.copy(alpha = 0.1f) else TaskGoError.copy(alpha = 0.1f),
-                                    shape = RoundedCornerShape(4.dp)
+                                    color = TaskGoGreen.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text(
-                                        text = if (service.active) "Ativo" else "Inativo",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (service.active) TaskGoSuccess else TaskGoError,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        fontWeight = FontWeight.SemiBold
+                                        text = service.category,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = TaskGoGreen,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
-                                
-                                if (service.category.isNotBlank()) {
-                                    Surface(
-                                        color = TaskGoGreen.copy(alpha = 0.1f),
-                                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                                            text = service.category,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TaskGoGreen,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
+                            }
+                            
+                            // Status
+                            Surface(
+                                color = if (service.active) TaskGoSuccess.copy(alpha = 0.1f) else TaskGoError.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = if (service.active) "Ativo" else "Inativo",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (service.active) TaskGoSuccess else TaskGoError,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    // Informações do Prestador - SEMPRE mostrar se houver providerId
+                    if (service.providerId != null && service.providerId.isNotBlank()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clickable {
+                                    onNavigateToProviderProfile?.invoke(service.providerId!!)
+                                },
+                            colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                // Usar UserAvatarNameLoader para carregar dados do prestador
+                                com.taskgoapp.taskgo.core.design.UserAvatarNameLoader(
+                                    userId = service.providerId,
+                                    onUserClick = {
+                                        onNavigateToProviderProfile?.invoke(service.providerId!!)
+                                    },
+                                    avatarSize = 56.dp,
+                                    showName = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                
+                                // Ícone de navegação
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Ver perfil",
+                                    tint = TaskGoTextGray
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Botão Enviar Mensagem (apenas se não for o próprio usuário)
+                        if (service.providerId != currentUserId) {
+                            Button(
+                                onClick = {
+                                    handleSendMessage(service.providerId!!)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = TaskGoGreen
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Message,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Enviar Mensagem",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
 
                     // Descrição
                     if (service.description.isNotBlank()) {
@@ -372,6 +466,113 @@ fun DetalhesServicoScreen(
 }
 
 @Composable
+private fun FullScreenImageViewer(
+    images: List<String>,
+    initialIndex: Int = 0,
+    onDismiss: () -> Unit
+) {
+    var currentIndex by remember { mutableStateOf(initialIndex) }
+    val context = LocalContext.current
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            // Image
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(images[currentIndex])
+                        .build(),
+                    contentDescription = "Imagem em tela cheia",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            }
+            
+            // Navigation arrows (if multiple images)
+            if (images.size > 1) {
+                // Previous arrow
+                if (currentIndex > 0) {
+                    IconButton(
+                        onClick = { currentIndex-- },
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Imagem anterior",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+                
+                // Next arrow
+                if (currentIndex < images.size - 1) {
+                    IconButton(
+                        onClick = { currentIndex++ },
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowForward,
+                            contentDescription = "Próxima imagem",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+                
+                // Image counter
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp),
+                    color = Color.Black.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(
+                        text = "${currentIndex + 1} / ${images.size}",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+            
+            // Close button
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Fechar",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun VideoThumbnailCard(
     videoUrl: String,
     modifier: Modifier = Modifier
@@ -406,66 +607,12 @@ private fun VideoThumbnailCard(
         }
     }
     
+    // Fullscreen video player
     if (showVideoPlayer) {
-        VideoPlayerDialog(
+        FullScreenVideoPlayer(
             videoUrl = videoUrl,
             onDismiss = { showVideoPlayer = false }
         )
     }
 }
 
-@Composable
-private fun VideoPlayerDialog(
-    videoUrl: String,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    val exoPlayer = remember {
-        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            val mediaItem = androidx.media3.common.MediaItem.fromUri(videoUrl)
-            setMediaItem(mediaItem)
-            prepare()
-            playWhenReady = true
-        }
-    }
-    
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayer.release()
-        }
-    }
-    
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column {
-                androidx.compose.ui.viewinterop.AndroidView(
-                    factory = { ctx ->
-                        androidx.media3.ui.PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = true
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
-                )
-                
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Fechar")
-                    }
-                }
-            }
-        }
-    }
-}

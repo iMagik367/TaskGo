@@ -113,6 +113,15 @@ fun IdentityVerificationScreen(
         }
     }
     
+    // Dialog de erro da verificação facial
+    var showFaceVerificationError by remember { mutableStateOf(false) }
+    
+    LaunchedEffect(uiState.faceVerificationSuccess) {
+        if (uiState.faceVerificationSuccess == false) {
+            showFaceVerificationError = true
+        }
+    }
+    
     Scaffold(
         topBar = {
             AppTopBar(
@@ -222,6 +231,30 @@ fun IdentityVerificationScreen(
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
+                    // Indicador de sucesso da verificação facial
+                    if (uiState.faceVerificationSuccess == true) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Verificação aprovada",
+                                tint = TaskGoGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Verificação facial aprovada",
+                                color = TaskGoGreen,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    
                     if (uiState.selfieUri != null) {
                         val context = LocalContext.current
                         Box(
@@ -314,7 +347,8 @@ fun IdentityVerificationScreen(
                 enabled = !uiState.isLoading &&
                          uiState.documentFrontUri != null &&
                          uiState.documentBackUri != null &&
-                         uiState.selfieUri != null
+                         uiState.selfieUri != null &&
+                         uiState.faceVerificationSuccess == true // Verificação facial deve estar completa e aprovada
             ) {
                 if (uiState.isLoading) {
                     CircularProgressIndicator(
@@ -355,6 +389,49 @@ fun IdentityVerificationScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+    
+    // Dialog de erro da verificação facial (fora do Scaffold)
+    if (showFaceVerificationError && uiState.faceVerificationError != null) {
+        AlertDialog(
+            onDismissRequest = { 
+                showFaceVerificationError = false
+                viewModel.clearFaceVerificationError()
+            },
+            title = {
+                Text(
+                    text = "Verificação Facial Falhou",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(uiState.faceVerificationError ?: "Não foi possível validar a foto. Por favor, tente novamente.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFaceVerificationError = false
+                        viewModel.clearFaceVerificationError()
+                        onNavigateToFacialVerification() // Navegar para tentar novamente
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TaskGoGreen
+                    )
+                ) {
+                    Text("Tentar Novamente", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showFaceVerificationError = false
+                        viewModel.clearFaceVerificationError()
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
 

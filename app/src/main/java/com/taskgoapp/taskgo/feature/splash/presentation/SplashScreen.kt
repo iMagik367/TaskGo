@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.splash.presentation
+package com.taskgoapp.taskgo.feature.splash.presentation
 
 import android.Manifest
 import android.os.Build
@@ -48,8 +48,10 @@ fun SplashScreen(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
                 add(Manifest.permission.READ_MEDIA_IMAGES)
+                add(Manifest.permission.READ_MEDIA_VIDEO)
             } else {
                 add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }.toTypedArray()
     }
@@ -88,29 +90,24 @@ fun SplashScreen(
         Log.d("SplashScreen", "=== Iniciando SplashScreen ===")
         delay(2000) // 2 segundos de delay
         
-        // Verificar se já solicitou permissões antes
-        if (!permissionsRequested) {
-            // Verificar quais permissões ainda não foram concedidas
-            val missingPermissions = requiredPermissions.filter { permission ->
-                !PermissionHandler.hasPermission(context, permission)
-            }
-            
-            if (missingPermissions.isNotEmpty()) {
-                Log.d("SplashScreen", "Solicitando permissões: ${missingPermissions.joinToString()}")
-                // Solicitar apenas as permissões que faltam
-                permissionsLauncher.launch(missingPermissions.toTypedArray())
-            } else {
-                // Todas as permissões já foram concedidas
-                Log.d("SplashScreen", "Todas as permissões já foram concedidas")
-                viewModel.setPermissionsRequested(true)
-                viewModel.checkAuthState(
-                    onNavigateToBiometricAuth = {},
-                    onNavigateToHome = onNavigateToHome,
-                    onNavigateToLogin = onNavigateToLogin
-                )
-            }
+        // Verificar quais permissões ainda não foram concedidas
+        val missingPermissions = requiredPermissions.filter { permission ->
+            !PermissionHandler.hasPermission(context, permission)
+        }
+        
+        Log.d("SplashScreen", "Permissões necessárias: ${requiredPermissions.joinToString()}")
+        Log.d("SplashScreen", "Permissões faltando: ${missingPermissions.joinToString()}")
+        Log.d("SplashScreen", "Permissões já solicitadas antes: $permissionsRequested")
+        
+        // SEMPRE solicitar permissões no primeiro acesso, mesmo que já tenham sido solicitadas antes
+        // Isso garante que todas as permissões sejam solicitadas
+        if (!permissionsRequested || missingPermissions.isNotEmpty()) {
+            // Solicitar TODAS as permissões (o Android vai mostrar apenas as que ainda não foram concedidas)
+            Log.d("SplashScreen", "Solicitando TODAS as permissões: ${requiredPermissions.joinToString()}")
+            permissionsLauncher.launch(requiredPermissions)
         } else {
-            // Permissões já foram solicitadas antes, apenas navegar
+            // Todas as permissões já foram concedidas, apenas navegar
+            Log.d("SplashScreen", "Todas as permissões já foram concedidas, navegando...")
             viewModel.checkAuthState(
                 onNavigateToBiometricAuth = {},
                 onNavigateToHome = onNavigateToHome,

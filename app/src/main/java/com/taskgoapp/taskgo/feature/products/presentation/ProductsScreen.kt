@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.products.presentation
+package com.taskgoapp.taskgo.feature.products.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,6 +37,8 @@ import com.taskgoapp.taskgo.core.model.Product
 import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.core.design.FilterBar
 import com.taskgoapp.taskgo.core.design.FilterBottomSheet
+import com.taskgoapp.taskgo.core.model.AccountType
+import com.google.firebase.auth.FirebaseAuth
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -48,16 +50,24 @@ fun ProductsScreen(
     onNavigateToAddProduct: () -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
     onNavigateToMessages: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
+    onNavigateToSellerProfile: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val viewModel: ProductsViewModel = hiltViewModel()
     val products by viewModel.products.collectAsState()
     val filterState by viewModel.filterState.collectAsState()
     val categories by viewModel.productCategories.collectAsState()
+    val accountType by viewModel.accountType.collectAsState()
+    val currentUserId = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     
     var showFilterSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showImagePreview by remember { mutableStateOf<String?>(null) }
+    
+    val isPartner = accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO || 
+                    accountType == com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR || 
+                    accountType == com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR
     
     // Adicionar "Todos" no início das categorias se não estiver presente
     val categoriesWithAll = remember(categories) {
@@ -76,33 +86,88 @@ fun ProductsScreen(
     Scaffold(
         topBar = {
             AppTopBar(
-                title = stringResource(R.string.products_title),
+                title = "Loja",
                 subtitle = "Encontre produtos para suas necessidades",
                 onBackClick = null, // Sem botão de voltar
                 backgroundColor = TaskGoGreen,
                 titleColor = Color.White,
                 subtitleColor = Color.White,
-                backIconColor = Color.White
+                backIconColor = Color.White,
+                actions = {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onNavigateToSearch,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Search,
+                                contentDescription = "Buscar",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToNotifications,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Bell,
+                                contentDescription = "Notificações",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToCart,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Cart,
+                                contentDescription = "Carrinho",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToMessages,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Messages,
+                                contentDescription = "Mensagens",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onNavigateToAddProduct,
-                containerColor = TaskGoGreen
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Adicionar Produto",
-                    tint = Color.White
-                )
+            // FAB de adicionar produto (apenas para PARCEIRO/VENDEDOR) no canto inferior direito
+            if (isPartner) {
+                FloatingActionButton(
+                    onClick = onNavigateToAddProduct,
+                    containerColor = TaskGoGreen
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Adicionar Produto",
+                        tint = Color.White
+                    )
+                }
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp),
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // Barra de Busca
@@ -156,11 +221,13 @@ fun ProductsScreen(
                             onProductClick = { onNavigateToProductDetail(product.id) },
                             onImageClick = { imageUrl ->
                                 showImagePreview = imageUrl
-                            }
+                            },
+                            onSellerClick = onNavigateToSellerProfile
                         )
                     }
                 }
             }
+        }
         }
         
         // Bottom Sheet de Filtros
@@ -188,6 +255,7 @@ private fun ProductCard(
     product: Product,
     onProductClick: () -> Unit,
     onImageClick: (String) -> Unit,
+    onSellerClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val currencyFormat = remember {

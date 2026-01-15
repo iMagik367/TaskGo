@@ -1,10 +1,11 @@
-﻿package com.taskgoapp.taskgo.feature.auth.presentation
+package com.taskgoapp.taskgo.feature.auth.presentation
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskgoapp.taskgo.core.model.UserType
 import com.taskgoapp.taskgo.core.model.AccountType
+import com.taskgoapp.taskgo.core.data.models.ServiceCategory
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
@@ -12,6 +13,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -25,11 +28,17 @@ data class SignupUiState(
 class SignupViewModel @Inject constructor(
     private val authRepository: FirebaseAuthRepository,
     private val firestoreUserRepository: FirestoreUserRepository,
-    private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager
+    private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager,
+    private val categoriesRepository: com.taskgoapp.taskgo.domain.repository.CategoriesRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SignupUiState())
     val uiState: StateFlow<SignupUiState> = _uiState
+    
+    // Observar categorias de serviço para exibir checkboxes no cadastro de Parceiro
+    val serviceCategories: StateFlow<List<ServiceCategory>> = 
+        categoriesRepository.observeServiceCategories()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun signup(
         name: String,
@@ -45,7 +54,8 @@ class SignupViewModel @Inject constructor(
         address: com.taskgoapp.taskgo.core.model.Address? = null,
         biometricEnabled: Boolean = false,
         twoFactorEnabled: Boolean = false,
-        twoFactorMethod: String? = null
+        twoFactorMethod: String? = null,
+        preferredCategories: List<String>? = null // Categorias de serviço selecionadas pelo Parceiro
     ) {
         if (_uiState.value.isLoading) return
 
@@ -60,8 +70,11 @@ class SignupViewModel @Inject constructor(
             return
         }
 
-        if (password.length < 6) {
-            _uiState.value = SignupUiState(errorMessage = "Senha deve ter pelo menos 6 caracteres")
+        // Validar senha usando PasswordValidator
+        val passwordValidator = com.taskgoapp.taskgo.core.validation.PasswordValidator()
+        val passwordValidation = passwordValidator.validate(password)
+        if (passwordValidation is com.taskgoapp.taskgo.core.validation.ValidationResult.Invalid) {
+            _uiState.value = SignupUiState(errorMessage = passwordValidation.message)
             return
         }
 
@@ -86,13 +99,15 @@ class SignupViewModel @Inject constructor(
                                 
                                 // 3. Criar/atualizar perfil no Firestore
                                 // Priorizar accountType se fornecido, senão usar userType
+                                // Mapear AccountType para role string
                                 val role = when (accountType) {
-                                    AccountType.PRESTADOR -> "provider"
-                                    AccountType.VENDEDOR -> "seller"
+                                    AccountType.PARCEIRO -> "partner"
+                                    AccountType.PRESTADOR -> "partner" // Legacy - migrar para partner
+                                    AccountType.VENDEDOR -> "partner" // Legacy - migrar para partner
                                     AccountType.CLIENTE -> "client"
                                     null -> when (userType) {
                                         UserType.CLIENT -> "client"
-                                        UserType.PROVIDER -> "provider"
+                                        UserType.PROVIDER -> "partner" // Provider agora é partner
                                     }
                                 }
 
@@ -114,7 +129,10 @@ class SignupViewModel @Inject constructor(
                                     address = address,
                                     biometricEnabled = biometricEnabled,
                                     twoFactorEnabled = twoFactorEnabled,
-                                    twoFactorMethod = twoFactorMethod
+                                    twoFactorMethod = twoFactorMethod,
+                                    preferredCategories = if (accountType == AccountType.PARCEIRO && preferredCategories != null && preferredCategories.isNotEmpty()) {
+                                        preferredCategories
+                                    } else null
                                 )
                                 
                                 // Salvar preferências de biometria e 2FA
@@ -130,6 +148,11 @@ class SignupViewModel @Inject constructor(
                                 }
 
                                 Log.d("SignupViewModel", "Verificando se usuário existe no Firestore...")
+                                
+                                // CRÍTICO: Aguardar um pouco para garantir que a Cloud Function tenha executado
+                                // Se a função executar depois, ela não vai sobrescrever o role (função atualizada)
+                                kotlinx.coroutines.delay(500)
+                                
                                 // Verificar se o documento já existe (criado pela Cloud Function)
                                 val existingUser = try {
                                     firestoreUserRepository.getUser(firebaseUser.uid)
@@ -138,9 +161,14 @@ class SignupViewModel @Inject constructor(
                                     null
                                 }
 
+                                // CRÍTICO: Sempre salvar/atualizar com o role correto baseado no accountType
+                                // A Cloud Function agora não sobrescreve o role se já existir
+                                Log.d("SignupViewModel", "Salvando usuário no Firestore com role: $role (accountType: $accountType)")
+                                
                                 if (existingUser != null) {
-                                    Log.d("SignupViewModel", "Usuário existente encontrado, atualizando...")
-                                    Log.d("SignupViewModel", "Atualizando role de '${existingUser.role}' para '$role' (accountType: $accountType)")
+                                    Log.d("SignupViewModel", "Usuário existente encontrado, atualizando com role: $role")
+                                    Log.d("SignupViewModel", "Role anterior: '${existingUser.role}', novo role: '$role'")
+                                    
                                     // Atualizar documento existente - CRÍTICO: sempre atualizar o role com o accountType selecionado
                                     val updatedUser = existingUser.copy(
                                         displayName = name,
@@ -154,11 +182,14 @@ class SignupViewModel @Inject constructor(
                                         biometricEnabled = biometricEnabled,
                                         twoFactorEnabled = twoFactorEnabled,
                                         twoFactorMethod = twoFactorMethod,
+                                        preferredCategories = if (accountType == AccountType.PARCEIRO && preferredCategories != null && preferredCategories.isNotEmpty()) {
+                                            preferredCategories
+                                        } else existingUser.preferredCategories, // Preservar existente se não fornecido
                                         updatedAt = Date()
                                     )
                                     firestoreUserRepository.updateUser(updatedUser).fold(
                                         onSuccess = {
-                                            Log.d("SignupViewModel", "Perfil atualizado com sucesso com role: $role")
+                                            Log.d("SignupViewModel", "✅ Perfil atualizado com sucesso com role: $role")
                                             _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
                                         },
                                         onFailure = { exception ->
@@ -170,11 +201,11 @@ class SignupViewModel @Inject constructor(
                                         }
                                     )
                                 } else {
-                                    Log.d("SignupViewModel", "Usuário não existe, criando novo documento...")
-                                    // Criar novo documento (fallback caso Cloud Function não tenha criado)
+                                    Log.d("SignupViewModel", "Usuário não existe, criando novo documento com role: $role")
+                                    // Criar novo documento com o role correto desde o início
                                     firestoreUserRepository.updateUser(userFirestore).fold(
                                         onSuccess = {
-                                            Log.d("SignupViewModel", "Perfil criado com sucesso")
+                                            Log.d("SignupViewModel", "✅ Perfil criado com sucesso com role: $role")
                                             _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
                                         },
                                         onFailure = { exception ->

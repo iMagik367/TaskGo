@@ -42,7 +42,7 @@ class ChatListViewModel @Inject constructor(
         loadChats()
     }
     
-    private fun loadChats() {
+    fun loadChats() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             try {

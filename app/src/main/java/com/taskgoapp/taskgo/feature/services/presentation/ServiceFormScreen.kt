@@ -27,6 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,6 +39,8 @@ import com.taskgoapp.taskgo.core.design.ImageEditor
 import com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField
 import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.core.data.models.ServiceCategory
+import com.taskgoapp.taskgo.core.model.AccountType
+import com.google.firebase.auth.FirebaseAuth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,16 +88,29 @@ fun ServiceFormScreen(
         topBar = {
             AppTopBar(
                 title = if (serviceId == null) "Novo Serviço" else "Editar Serviço",
-                onBackClick = onBack
+                onBackClick = onBack,
+                backgroundColor = TaskGoGreen,
+                titleColor = TaskGoBackgroundWhite,
+                backIconColor = TaskGoBackgroundWhite
             )
         }
     ) { paddingValues ->
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(scrollState)
-                .padding(16.dp),
+                .padding(16.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Título
@@ -122,38 +139,40 @@ fun ServiceFormScreen(
                 )
             )
 
-            // Categoria principal (para compatibilidade)
-            var expanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = !expanded }
-            ) {
-                OutlinedTextField(
-                    value = uiState.category.ifEmpty { "Selecione uma categoria principal" },
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Categoria Principal *") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TaskGoGreen,
-                        unfocusedBorderColor = TaskGoTextGray
-                    )
-                )
-                ExposedDropdownMenu(
+            // Categoria principal (para compatibilidade) - APENAS se NÃO for prestador
+            if (uiState.accountType != AccountType.PRESTADOR) {
+                var expanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                    onExpandedChange = { expanded = !expanded }
                 ) {
-                    categories.forEach { category ->
-                        DropdownMenuItem(
-                            text = { Text(category.name) },
-                            onClick = {
-                                viewModel.updateCategory(category.name)
-                                expanded = false
-                            }
+                    OutlinedTextField(
+                        value = uiState.category.ifEmpty { "Selecione uma categoria principal" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Categoria Principal *") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = TaskGoGreen,
+                            unfocusedBorderColor = TaskGoTextGray
                         )
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        categories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.name) },
+                                onClick = {
+                                    viewModel.updateCategory(category.name)
+                                    expanded = false
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -198,23 +217,24 @@ fun ServiceFormScreen(
                 }
             }
 
-            // Preço
-            OutlinedTextField(
-                value = uiState.price,
-                onValueChange = { newValue ->
-                    if (newValue.all { it.isDigit() || it == '.' || it == ',' }) {
-                        viewModel.updatePrice(newValue)
-                    }
-                },
-                label = { Text("Preço (R$) *") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                prefix = { Text("R$ ") },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = TaskGoTextGray
+            // Preço (não exibir para prestadores)
+            if (uiState.accountType != com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR) {
+                OutlinedTextField(
+                    value = uiState.price,
+                    onValueChange = { newValue ->
+                        val formatted = com.taskgoapp.taskgo.core.utils.TextFormatters.formatPrice(newValue)
+                        viewModel.updatePrice(formatted)
+                    },
+                    label = { Text("Preço (R$) *") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    prefix = { Text("R$ ") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TaskGoGreen,
+                        unfocusedBorderColor = TaskGoTextGray
+                    )
                 )
-            )
+            }
 
             // Imagens
             Card(

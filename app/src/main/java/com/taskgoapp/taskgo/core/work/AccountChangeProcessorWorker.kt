@@ -60,8 +60,9 @@ class AccountChangeProcessorWorker @AssistedInject constructor(
                     
                     // Mapear AccountType para role
                     val newRole = when (request.requestedAccountType) {
-                        "PRESTADOR" -> "provider"
-                        "VENDEDOR" -> "seller"
+                        "PARCEIRO" -> "partner"
+                        "PRESTADOR" -> "partner" // Legacy - migrar para partner
+                        "VENDEDOR" -> "partner" // Legacy - migrar para partner
                         "CLIENTE" -> "client"
                         else -> {
                             Log.e(TAG, "Tipo de conta inválido: ${request.requestedAccountType}")

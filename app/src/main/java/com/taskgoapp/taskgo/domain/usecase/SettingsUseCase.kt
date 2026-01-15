@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.domain.usecase
+package com.taskgoapp.taskgo.domain.usecase
 
 import android.util.Log
 import com.google.gson.Gson
@@ -90,9 +90,19 @@ class SettingsUseCase @Inject constructor(
                         sms = sms
                     )
                     val updatedUser = user.copy(notificationSettings = notificationSettings)
-                    firestoreUserRepository.updateUser(updatedUser)
-                    Log.d("SettingsUseCase", "Configurações de notificação salvas no Firestore")
+                    val updateResult = firestoreUserRepository.updateUser(updatedUser)
+                    updateResult.fold(
+                        onSuccess = {
+                            Log.d("SettingsUseCase", "Configurações de notificação salvas no Firestore")
+                        },
+                        onFailure = { error ->
+                            Log.e("SettingsUseCase", "Erro ao salvar notificações no Firestore: ${error.message}", error)
+                        }
+                    )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                Log.w("SettingsUseCase", "Operação de salvamento de notificações cancelada")
+                throw e // Re-lançar CancellationException para propagar corretamente
             } catch (e: Exception) {
                 Log.e("SettingsUseCase", "Erro ao salvar notificações no Firestore: ${e.message}", e)
             }
@@ -288,6 +298,9 @@ class SettingsUseCase @Inject constructor(
                     Log.w("SettingsUseCase", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            Log.w("SettingsUseCase", "Sincronização de configurações remotas cancelada")
+            throw e // Re-lançar CancellationException para propagar corretamente
         } catch (e: Exception) {
             Log.e("SettingsUseCase", "Erro ao sincronizar configurações remotas: ${e.message}", e)
             if (e.message?.contains("SecureToken") == true || e.message?.contains("securetoken") == true) {

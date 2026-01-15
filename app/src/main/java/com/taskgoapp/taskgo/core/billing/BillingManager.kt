@@ -60,14 +60,14 @@ class BillingManager(private val context: Context) : PurchasesUpdatedListener, B
     }
 
     fun queryProducts(productIds: List<String>, @BillingClient.SkuType type: String) {
-        val params = SkuDetailsParams.newBuilder()
+        val skuDetailsParams = SkuDetailsParams.newBuilder()
             .setSkusList(productIds)
             .setType(type)
             .build()
-
-        billingClient?.querySkuDetailsAsync(params) { billingResult, skuDetailsList ->
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && skuDetailsList != null) {
-                _purchaseState.value = PurchaseState.ProductsLoaded(skuDetailsList)
+        
+        billingClient?.querySkuDetailsAsync(skuDetailsParams) { billingResult, skuDetailsList ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                _purchaseState.value = PurchaseState.ProductsLoaded(skuDetailsList ?: emptyList())
             } else {
                 _purchaseState.value = PurchaseState.Error(billingResult.debugMessage)
             }
@@ -86,11 +86,7 @@ class BillingManager(private val context: Context) : PurchasesUpdatedListener, B
     }
 
     fun queryPurchases(@BillingClient.SkuType type: String) {
-        billingClient?.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder()
-                .setProductType(type)
-                .build()
-        ) { billingResult, purchases ->
+        billingClient?.queryPurchasesAsync(type) { billingResult, purchases ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                 _purchaseState.value = PurchaseState.PurchasesLoaded(purchases)
             } else {

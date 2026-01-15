@@ -39,6 +39,11 @@ fun ChatListScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
     
+    // Recarregar lista sempre que a tela abre para refletir novas conversas/mensagens
+    LaunchedEffect(Unit) {
+        viewModel.loadChats()
+    }
+    
     Scaffold(
         topBar = {
             Column {

@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.chatai.presentation
+package com.taskgoapp.taskgo.feature.chatai.presentation
 
 import android.Manifest
 import android.content.Context
@@ -48,6 +48,7 @@ fun AiSupportScreen(
     val recordAudioPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
     
     var showLanguageMenu by remember { mutableStateOf(false) }
+    var showVoiceChat by remember { mutableStateOf(false) }
     
     // Inicializar chat quando o chatId mudar
     LaunchedEffect(chatId) {
@@ -157,11 +158,20 @@ fun AiSupportScreen(
                 },
                 onMicClick = {
                     if (recordAudioPermission.status is PermissionStatus.Granted) {
-                        // TODO: Implementar gravação de áudio
-                        viewModel.setRecording(!uiState.isRecording)
+                        if (uiState.isRecording) {
+                            // Parar gravação e enviar
+                            viewModel.stopAudioRecordingAndSend()
+                        } else {
+                            // Iniciar gravação
+                            viewModel.startAudioRecording()
+                        }
                     } else {
                         recordAudioPermission.launchPermissionRequest()
                     }
+                },
+                onVoiceChatClick = {
+                    // Abrir tela de conversação por voz
+                    showVoiceChat = true
                 },
                 isRecording = uiState.isRecording,
                 modifier = Modifier.padding(16.dp)
@@ -204,6 +214,14 @@ fun AiSupportScreen(
                     Text("Fechar")
                 }
             }
+        )
+    }
+    
+    // Voice Chat Screen (conversação por voz)
+    if (showVoiceChat) {
+        VoiceChatScreen(
+            chatId = chatId,
+            onDismiss = { showVoiceChat = false }
         )
     }
 }
@@ -346,6 +364,7 @@ fun AiMessageBubble(
 fun EnhancedInputMessage(
     onSend: (String, List<com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment>) -> Unit,
     onMicClick: () -> Unit,
+    onVoiceChatClick: (() -> Unit)? = null,
     isRecording: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -378,12 +397,33 @@ fun EnhancedInputMessage(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Bottom
         ) {
-            IconButton(onClick = onMicClick) {
+            // Botão de microfone (gravação de áudio para texto)
+            IconButton(
+                onClick = onMicClick,
+                modifier = Modifier.size(48.dp)
+            ) {
                 Icon(
                     imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                    contentDescription = "Microfone",
-                    tint = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    contentDescription = "Gravar áudio",
+                    tint = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
                 )
+            }
+            
+            // Botão de conversação por voz (Speech - igual ChatGPT)
+            if (onVoiceChatClick != null) {
+                IconButton(
+                    onClick = onVoiceChatClick,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    // Ícone de speech/voice (conversação por voz)
+                    Icon(
+                        imageVector = Icons.Default.VolumeUp,
+                        contentDescription = "Conversação por voz",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
             
             // Botão de anexar

@@ -16,7 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.auth.FirebaseAuth
 import com.taskgoapp.taskgo.core.design.AppTopBar
+import com.taskgoapp.taskgo.feature.services.presentation.components.CancelServiceDialog
+import com.taskgoapp.taskgo.feature.services.presentation.components.CompleteServiceDialog
 import com.taskgoapp.taskgo.core.theme.*
 import java.text.NumberFormat
 import java.util.Locale
@@ -27,13 +30,39 @@ fun ServiceOrderDetailScreen(
     orderId: String,
     onBackClick: () -> Unit,
     onSendProposal: (String) -> Unit,
+    onNavigateToChat: ((String) -> Unit)? = null,
     viewModel: ServiceOrderDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val currencyFormat = NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
+    val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
+    
+    var showCancelDialog by remember { mutableStateOf(false) }
+    var showCompleteDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(orderId) {
         viewModel.loadOrder(orderId)
+    }
+    
+    // Mostrar dialogs
+    if (showCancelDialog) {
+        CancelServiceDialog(
+            onDismiss = { showCancelDialog = false },
+            onConfirm = { reason, refundAmount ->
+                viewModel.cancelOrder(reason, refundAmount)
+                showCancelDialog = false
+            }
+        )
+    }
+    
+    if (showCompleteDialog) {
+        CompleteServiceDialog(
+            onDismiss = { showCompleteDialog = false },
+            onConfirm = { description, time, mediaUris ->
+                viewModel.completeOrder(description, time, mediaUris, currentUserId)
+                showCompleteDialog = false
+            }
+        )
     }
     
     Scaffold(
@@ -200,22 +229,80 @@ fun ServiceOrderDetailScreen(
                         }
                     }
                     
-                    // Botão Enviar Orçamento
-                    Button(
-                        onClick = {
-                            onSendProposal(order.id)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = TaskGoGreen
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "Enviar Orçamento",
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                    // Botões de ação baseados no status
+                    when (order.status) {
+                        "in_progress" -> {
+                            // Botões para serviço em andamento
+                            if (onNavigateToChat != null) {
+                                OutlinedButton(
+                                    onClick = { onNavigateToChat(order.id) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = TaskGoGreen
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = "Abrir Chat",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { showCancelDialog = true },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.error
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    enabled = !uiState.isCancelling
+                                ) {
+                                    Text(
+                                        text = if (uiState.isCancelling) "Cancelando..." else "Cancelar Serviço",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                
+                                Button(
+                                    onClick = { showCompleteDialog = true },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = TaskGoGreen
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    enabled = !uiState.isCompleting
+                                ) {
+                                    Text(
+                                        text = if (uiState.isCompleting) "Concluindo..." else "Concluir Serviço",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                        "pending", "proposed" -> {
+                            // Botão Enviar Orçamento (para prestadores)
+                            Button(
+                                onClick = {
+                                    onSendProposal(order.id)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = TaskGoGreen
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = "Enviar Orçamento",
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

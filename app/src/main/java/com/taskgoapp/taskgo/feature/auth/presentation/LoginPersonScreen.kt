@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.auth.presentation
+package com.taskgoapp.taskgo.feature.auth.presentation
 
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -41,13 +41,17 @@ import com.taskgoapp.taskgo.core.theme.FigmaTitleLarge
 import com.taskgoapp.taskgo.core.theme.FigmaProductDescription
 import com.taskgoapp.taskgo.core.theme.FigmaButtonText
 import com.taskgoapp.taskgo.core.biometric.BiometricManager
+import com.taskgoapp.taskgo.core.design.AccountTypeSelectionDialog
+import com.taskgoapp.taskgo.core.model.AccountType
 
 @Composable
 fun LoginPersonScreen(
     onNavigateToStoreLogin: () -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToHome: () -> Unit,
-    onNavigateToForgotPassword: () -> Unit
+    onNavigateToForgotPassword: () -> Unit,
+    onNavigateToTwoFactor: () -> Unit = {},
+    onNavigateToIdentityVerification: () -> Unit = {}
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -294,9 +298,25 @@ fun LoginPersonScreen(
                 )
             }
             
-            // Navegação após sucesso (login com email ou Google)
-            LaunchedEffect(loginUiState.value.isSuccess) {
-                if (loginUiState.value.isSuccess) {
+            // Dialog de seleção de AccountType (para novo usuário Google)
+            if (loginUiState.value.showAccountTypeDialog) {
+                AccountTypeSelectionDialog(
+                    onAccountTypeSelected = { accountType ->
+                        loginViewModel.createUserWithAccountType(accountType)
+                    },
+                    onDismiss = {
+                        loginViewModel.cancelAccountTypeSelection()
+                    }
+                )
+            }
+            
+            // Navegação após sucesso ou quando 2FA é necessário
+            LaunchedEffect(loginUiState.value.isSuccess, loginUiState.value.requiresTwoFactor) {
+                if (loginUiState.value.requiresTwoFactor) {
+                    Log.d("LoginPersonScreen", "2FA necessário, navegando para verificação...")
+                    kotlinx.coroutines.delay(300)
+                    onNavigateToTwoFactor()
+                } else if (loginUiState.value.isSuccess) {
                     Log.d("LoginPersonScreen", "Login bem-sucedido, navegando para home...")
                     // Aguardar um pouco para garantir que tudo está sincronizado
                     kotlinx.coroutines.delay(300)
@@ -385,7 +405,7 @@ fun LoginPersonScreen(
             
             // Link para Login de Prestador
             Text(
-                text = "Sou prestador",
+                text = "Sou parceiro",
                 color = TaskGoGreen,
                 fontSize = 14.sp,
                 modifier = Modifier.clickable { onNavigateToStoreLogin() }

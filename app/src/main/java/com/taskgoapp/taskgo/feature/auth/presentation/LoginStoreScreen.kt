@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.auth.presentation
+package com.taskgoapp.taskgo.feature.auth.presentation
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -42,7 +42,8 @@ fun LoginStoreScreen(
     onNavigateToPersonLogin: () -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToHome: () -> Unit,
-    onNavigateToForgotPassword: () -> Unit
+    onNavigateToForgotPassword: () -> Unit,
+    onNavigateToTwoFactor: () -> Unit = {}
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -72,7 +73,7 @@ fun LoginStoreScreen(
             
             // Título
             Text(
-                text = "Prestador",
+                text = "Sou parceiro",
                 style = FigmaTitleLarge,
                 color = TaskGoTextBlack
             )
@@ -109,9 +110,10 @@ fun LoginStoreScreen(
                 isError = documentError != null,
                 supportingText = documentError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    .fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = false,
+                maxLines = 3
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -121,9 +123,7 @@ fun LoginStoreScreen(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("Senha", style = FigmaProductDescription, color = TaskGoTextGray) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = TaskGoGreen,
@@ -135,7 +135,7 @@ fun LoginStoreScreen(
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 textStyle = androidx.compose.ui.text.TextStyle(
-                    lineHeight = androidx.compose.ui.unit.TextUnit(24f, androidx.compose.ui.unit.TextUnitType.Sp)
+                    lineHeight = androidx.compose.ui.unit.TextUnit(20f, androidx.compose.ui.unit.TextUnitType.Sp)
                 ),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -145,7 +145,9 @@ fun LoginStoreScreen(
                             tint = TaskGoTextGray
                         )
                     }
-                }
+                },
+                singleLine = false,
+                maxLines = 3
             )
             
             Spacer(modifier = Modifier.height(8.dp))
@@ -213,9 +215,13 @@ fun LoginStoreScreen(
                 )
             }
             
-            // Navegação após sucesso
-            LaunchedEffect(loginUiState.value.isSuccess) {
-                if (loginUiState.value.isSuccess) {
+            // Navegação após sucesso ou quando 2FA é necessário
+            LaunchedEffect(loginUiState.value.isSuccess, loginUiState.value.requiresTwoFactor) {
+                if (loginUiState.value.requiresTwoFactor) {
+                    Log.d("LoginStoreScreen", "2FA necessário, navegando para verificação...")
+                    kotlinx.coroutines.delay(300)
+                    onNavigateToTwoFactor()
+                } else if (loginUiState.value.isSuccess) {
                     Log.d("LoginStoreScreen", "Login bem-sucedido, navegando para home...")
                     kotlinx.coroutines.delay(300)
                     onNavigateToHome()

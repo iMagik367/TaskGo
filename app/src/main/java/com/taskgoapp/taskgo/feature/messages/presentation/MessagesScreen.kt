@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.messages.presentation
+package com.taskgoapp.taskgo.feature.messages.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.res.painterResource
 import com.taskgoapp.taskgo.core.design.TGIcons
 import androidx.compose.material3.*
@@ -25,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.design.PrimaryButton
+import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.core.model.MessageThread
 import com.taskgoapp.taskgo.core.theme.FigmaButtonText
 import com.taskgoapp.taskgo.core.theme.FigmaProductDescription
@@ -48,12 +47,15 @@ fun MessagesScreen(
     onNavigateToNotifications: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToCart: () -> Unit,
+    onNavigateToProviders: () -> Unit,
+    onNavigateToServiceOrders: () -> Unit,
     variant: String? = null
 ) {
     // Dados vêm do backend via ViewModel
     val viewModel: MessagesViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
     val threads by viewModel.threads.collectAsState()
+    val accountType by viewModel.accountType.collectAsState()
     
     Scaffold(
         topBar = {
@@ -61,18 +63,6 @@ fun MessagesScreen(
                 title = stringResource(R.string.messages_title),
                 onBackClick = null // Sem botão de voltar
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { onNavigateToChat(0L) },
-                containerColor = TaskGoGreen
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Nova Mensagem",
-                    tint = Color.White
-                )
-            }
         }
     ) { paddingValues ->
         Column(
@@ -145,10 +135,22 @@ fun MessagesScreen(
                         
                         Spacer(modifier = Modifier.height(24.dp))
                         
+                        // Botão condicional baseado no tipo de conta
+                        when (accountType) {
+                            AccountType.PARCEIRO,
+                            AccountType.PRESTADOR -> {
+                                PrimaryButton(
+                                    text = stringResource(R.string.messages_find_service_orders),
+                                    onClick = onNavigateToServiceOrders
+                                )
+                            }
+                            AccountType.CLIENTE, AccountType.VENDEDOR -> {
                         PrimaryButton(
-                            text = stringResource(R.string.messages_create_order),
-                            onClick = onNavigateToCreateWorkOrder
+                                    text = stringResource(R.string.messages_find_providers),
+                                    onClick = onNavigateToProviders
                         )
+                            }
+                        }
                     }
                 }
             }

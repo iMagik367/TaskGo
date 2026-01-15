@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.core.design
+package com.taskgoapp.taskgo.core.design
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.size
@@ -16,7 +16,8 @@ object TGIcons {
     @DrawableRes val Home = R.drawable.ic_home
     @DrawableRes val Services = R.drawable.ic_servicos // Corrigido para usar ic_servicos
     @DrawableRes val Products = R.drawable.ic_produtos
-    @DrawableRes val Messages = R.drawable.ic_mensagens
+    @DrawableRes val Messages = R.drawable.ic_messages
+    @DrawableRes val Feed = R.drawable.ic_feed
     @DrawableRes val Profile = R.drawable.ic_perfil
     @DrawableRes val Search = R.drawable.ic_search
     @DrawableRes val Cart = R.drawable.ic_carrinho

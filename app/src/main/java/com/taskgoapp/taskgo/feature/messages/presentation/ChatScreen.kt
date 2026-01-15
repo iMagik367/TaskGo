@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.messages.presentation
+package com.taskgoapp.taskgo.feature.messages.presentation
 import com.taskgoapp.taskgo.core.theme.*
 
 import androidx.compose.foundation.background
@@ -17,11 +17,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.AppTopBar
-import com.taskgoapp.taskgo.core.data.models.ChatMessage
-import com.taskgoapp.taskgo.core.data.models.MessageThread
+import com.taskgoapp.taskgo.core.model.ChatMessage
+import com.taskgoapp.taskgo.core.model.MessageThread
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import java.text.SimpleDateFormat
 import java.util.*
 import java.time.ZoneId
@@ -30,76 +35,107 @@ import java.time.ZonedDateTime
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    threadId: Long,
-    onNavigateBack: () -> Unit
+    threadId: String,
+    onNavigateBack: () -> Unit,
+    viewModel: ChatViewModel = hiltViewModel()
 ) {
-    // Dados vêm do backend - sem mocks
-    val thread = remember { 
-        // TODO: Carregar thread do backend via ViewModel
-        MessageThread(
-            id = threadId,
-            title = "",
-            preview = "",
-            lastMessageTime = java.time.LocalDateTime.now(),
-            unreadCount = 0,
-            participants = emptyList()
-        )
-    }
-    val messages = remember { 
-        // TODO: Carregar mensagens do backend via ViewModel
-        emptyList<ChatMessage>()
+    val uiState by viewModel.uiState.collectAsState()
+    
+    LaunchedEffect(threadId) {
+        viewModel.loadThread(threadId)
     }
     
     var messageText by remember { mutableStateOf("") }
-    var isTyping by remember { mutableStateOf(false) }
     
     val listState = rememberLazyListState()
     
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(uiState.messages.size) {
+        if (uiState.messages.isNotEmpty()) {
+            listState.animateScrollToItem(uiState.messages.size - 1)
+        }
+    }
+    
+    // Mostrar erro se houver
+    uiState.error?.let { error ->
+        LaunchedEffect(error) {
+            // Pode mostrar um snackbar ou toast aqui se necessário
         }
     }
     
     Scaffold(
         topBar = {
             AppTopBar(
-                title = thread.title,
+                title = uiState.thread?.title ?: "Conversa",
                 onBackClick = onNavigateBack
             )
         },
         bottomBar = {
-            ChatInput(
-                value = messageText,
-                onValueChange = { messageText = it },
-                onSend = {
-                    if (messageText.isNotBlank()) {
-                        messageText = ""
+            Column {
+                // Botão de aceitação (se necessário)
+                if (uiState.showAcceptButton && !uiState.isAccepting) {
+                    Button(
+                        onClick = { viewModel.acceptService() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = TaskGoGreen
+                        ),
+                        enabled = !uiState.isAccepting
+                    ) {
+                        Text(
+                            text = uiState.acceptButtonText,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
-            )
+                
+                if (uiState.isAccepting) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = TaskGoGreen
+                    )
+                }
+                
+                ChatInput(
+                    value = messageText,
+                    onValueChange = { messageText = it },
+                    onSend = {
+                        if (messageText.isNotBlank()) {
+                            viewModel.sendMessage(messageText)
+                            messageText = ""
+                        }
+                    }
+                )
+            }
         }
     ) { paddingValues ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (isTyping) {
-                item {
-                    TypingIndicator()
-                }
+        if (uiState.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = TaskGoGreen)
             }
-            
-            items(messages.size) { index ->
-                val message = messages[index]
-                ChatBubble(
-                    message = message,
-                    isMine = message.isMine
-                )
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(uiState.messages.size) { index ->
+                    val message = uiState.messages[index]
+                    ChatBubble(
+                        message = message,
+                        isMine = message.senderMe
+                    )
+                }
             }
         }
     }
@@ -162,7 +198,7 @@ private fun ChatBubble(
                     .padding(12.dp)
             ) {
                 Text(
-                    text = message.content,
+                    text = message.text,
                     style = FigmaProductDescription,
                     color = textColor,
                     maxLines = 10
@@ -174,9 +210,7 @@ private fun ChatBubble(
         
         // Time
         Text(
-            text = formatMessageTime(
-                message.timestamp.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-            ),
+            text = formatMessageTime(message.time),
             style = FigmaStatusText,
             color = TaskGoTextGray,
             modifier = Modifier.padding(horizontal = 4.dp)

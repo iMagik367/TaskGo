@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.data.mapper
+package com.taskgoapp.taskgo.data.mapper
 
 import com.taskgoapp.taskgo.data.local.entity.ProductEntity
 import com.taskgoapp.taskgo.data.local.entity.ProductImageEntity
@@ -13,12 +13,15 @@ object ProductMapper {
             title = this.title,
             price = this.price,
             description = this.description,
+            sellerId = this.sellerId,
             sellerName = this.sellerName,
             imageUris = imageUris,
             rating = this.rating,
             latitude = this.latitude,
             longitude = this.longitude,
-            featured = this.featured
+            featured = this.featured,
+            discountPercentage = this.discountPercentage,
+            active = this.active
         )
     }
     
@@ -28,11 +31,14 @@ object ProductMapper {
             title = this.title,
             price = this.price,
             description = this.description,
+            sellerId = this.sellerId,
             sellerName = this.sellerName,
             rating = this.rating,
             latitude = this.latitude,
             longitude = this.longitude,
-            featured = this.featured ?: false
+            featured = this.featured ?: false,
+            discountPercentage = this.discountPercentage,
+            active = this.active
         )
     }
     
@@ -54,13 +60,16 @@ object ProductMapper {
             title = this.title,
             price = this.price,
             description = this.description,
+            sellerId = this.sellerId.takeIf { it.isNotBlank() },
             sellerName = this.sellerName,
             imageUris = this.imageUrls,
             category = this.category,
             rating = this.rating,
             latitude = this.latitude,
             longitude = this.longitude,
-            featured = this.featured
+            featured = this.featured,
+            discountPercentage = this.discountPercentage,
+            active = this.active
         )
     }
     
@@ -70,13 +79,14 @@ object ProductMapper {
             title = this.title,
             price = this.price,
             description = this.description,
-            sellerId = "", // TODO: Get from auth
+            sellerId = this.sellerId ?: "",
             sellerName = this.sellerName,
             imageUrls = this.imageUris,
             category = this.category,
             tags = emptyList(),
-            active = true,
+            active = this.active,
             featured = this.featured ?: false,
+            discountPercentage = this.discountPercentage,
             rating = this.rating,
             latitude = this.latitude,
             longitude = this.longitude

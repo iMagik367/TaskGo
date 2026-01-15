@@ -1,16 +1,19 @@
-﻿package com.taskgoapp.taskgo.feature.services.presentation
+package com.taskgoapp.taskgo.feature.services.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
@@ -34,6 +37,7 @@ import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.design.FilterBar
 import com.taskgoapp.taskgo.core.design.FilterBottomSheet
 import com.taskgoapp.taskgo.core.design.TGIcons
+import com.taskgoapp.taskgo.core.design.TGIcon
 import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.core.model.ServiceOrder
 import com.taskgoapp.taskgo.core.theme.*
@@ -43,6 +47,7 @@ import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.core.data.models.ServiceCategory
 import com.google.firebase.auth.FirebaseAuth
 import androidx.compose.ui.platform.LocalContext
+import coil.request.ImageRequest
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -54,6 +59,7 @@ fun ServicesScreen(
     onNavigateToNotifications: () -> Unit = {},
     onNavigateToCart: () -> Unit = {},
     onNavigateToMessages: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val viewModel: ServicesViewModel = hiltViewModel()
@@ -71,7 +77,7 @@ fun ServicesScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
-    val isProvider = accountType == AccountType.PRESTADOR
+    val isProvider = accountType == AccountType.PARCEIRO || accountType == AccountType.PRESTADOR // Suporta legacy
     val subtitleText = if (isProvider) {
         "Acompanhe as ordens de serviço solicitadas pelos clientes"
     } else {
@@ -96,9 +102,60 @@ fun ServicesScreen(
                 onBackClick = null,
                 backgroundColor = TaskGoGreen,
                 titleColor = Color.White,
-                backIconColor = Color.White
+                backIconColor = Color.White,
+                actions = {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onNavigateToSearch,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Search,
+                                contentDescription = "Buscar",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToNotifications,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Bell,
+                                contentDescription = "Notificações",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToCart,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Cart,
+                                contentDescription = "Carrinho",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToMessages,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            TGIcon(
+                                iconRes = TGIcons.Messages,
+                                contentDescription = "Mensagens",
+                                size = TGIcons.Sizes.Medium,
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
             )
-        },
+        }
     ) { paddingValues ->
         Column(
             modifier = modifier
@@ -107,6 +164,32 @@ fun ServicesScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // Botão "Criar Ordem de Serviço" (apenas para cliente e vendedor)
+            if (accountType == AccountType.CLIENTE || accountType == AccountType.VENDEDOR) { // VENDEDOR legacy
+                Button(
+                    onClick = onNavigateToCreateWorkOrder,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TaskGoGreen
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Criar Ordem de Serviço",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             // Barra de Busca
             com.taskgoapp.taskgo.core.design.SearchBar(
                 query = searchQuery,
@@ -115,24 +198,26 @@ fun ServicesScreen(
                 modifier = Modifier.padding(top = 4.dp)
             )
             
-            // Barra de Filtros e botões de ordenação (tudo no mesmo scroll)
-            FilterBar(
-                categories = categoriesWithAll,
-                selectedCategories = filterState.selectedCategories,
-                onCategorySelected = { category ->
-                    if (category == "Todos") {
-                        viewModel.updateFilterState(filterState.copy(selectedCategories = emptySet()))
-                    } else {
-                        viewModel.toggleCategory(category)
-                    }
-                },
-                onFilterClick = { showFilterSheet = true },
-                showSortButtons = true,
-                sortBy = filterState.sortBy,
-                onSortByRating = { viewModel.updateFilterState(filterState.copy(sortBy = com.taskgoapp.taskgo.core.design.SortOption.RATING)) },
-                onSortByNewest = { viewModel.updateFilterState(filterState.copy(sortBy = com.taskgoapp.taskgo.core.design.SortOption.NEWEST)) },
-                modifier = Modifier.padding(vertical = 2.dp)
-            )
+            // Barra de Filtros e botões de ordenação (apenas para CLIENTE, não para PARCEIRO)
+            if (!isProvider) {
+                FilterBar(
+                    categories = categoriesWithAll,
+                    selectedCategories = filterState.selectedCategories,
+                    onCategorySelected = { category ->
+                        if (category == "Todos") {
+                            viewModel.updateFilterState(filterState.copy(selectedCategories = emptySet()))
+                        } else {
+                            viewModel.toggleCategory(category)
+                        }
+                    },
+                    onFilterClick = { showFilterSheet = true },
+                    showSortButtons = true,
+                    sortBy = filterState.sortBy,
+                    onSortByRating = { viewModel.updateFilterState(filterState.copy(sortBy = com.taskgoapp.taskgo.core.design.SortOption.RATING)) },
+                    onSortByNewest = { viewModel.updateFilterState(filterState.copy(sortBy = com.taskgoapp.taskgo.core.design.SortOption.NEWEST)) },
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
+            }
             
             // Lista de categorias (Cliente/Vendedor) ou ordens por categoria (Prestador)
             if (uiState.isLoading) {
@@ -151,6 +236,7 @@ fun ServicesScreen(
                 // Mostrar categorias em grid para Cliente/Vendedor (sempre mostrar, mesmo se vazio)
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     if (categoriesFull.isEmpty()) {
@@ -211,6 +297,7 @@ fun ServicesScreen(
                 } else {
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 32.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item {
@@ -240,28 +327,11 @@ fun ServicesScreen(
                         }
                     }
                 }
-            } else if (isProvider && selectedCategory == null) {
-                // Mostrar apenas cards de categorias para Prestador
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(categoriesFull) { category ->
-                        ServiceCategoryCard(
-                            category = category,
-                            onCategoryClick = { 
-                                selectedCategory = category.name
-                                viewModel.updateSelectedCategory(category.name)
-                            }
-                        )
-                    }
-                }
-            } else if (isProvider && selectedCategory != null) {
-                // Mostrar ordens da categoria selecionada para Prestador
-                val filteredOrders = serviceOrdersFirestore.filter { 
-                    it.category?.equals(selectedCategory, ignoreCase = true) == true
-                }
-                if (filteredOrders.isEmpty()) {
+            } else if (isProvider) {
+                // Para PARCEIRO: mostrar diretamente as ordens de serviço (filtradas por preferredCategories, raio 100km)
+                // As ordens já são filtradas automaticamente por preferredCategories no ViewModel
+                // O Firestore listener já faz atualização automática em tempo real
+                if (serviceOrdersFirestore.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -271,43 +341,27 @@ fun ServicesScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "Nenhuma ordem de serviço disponível para esta categoria",
+                                text = "Nenhuma ordem de serviço disponível",
                                 color = TaskGoTextGray,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
                             )
-                            TextButton(onClick = { 
-                                selectedCategory = null
-                                viewModel.updateSelectedCategory(null)
-                            }) {
-                                Text("Voltar")
-                            }
+                            Text(
+                                text = "As novas ordens serão exibidas automaticamente quando disponíveis",
+                                color = TaskGoTextGray,
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 } else {
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 32.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = selectedCategory ?: "",
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                TextButton(onClick = { 
-                                    selectedCategory = null
-                                    viewModel.updateSelectedCategory(null)
-                                }) {
-                                    Text("Voltar")
-                                }
-                            }
-                        }
-                        items(filteredOrders) { order ->
+                        items(serviceOrdersFirestore) { order ->
                             val isOwnOrder = currentUserId == order.clientId
                             ServiceOrderCardFirestore(
                                 order = order,
@@ -327,7 +381,8 @@ fun ServicesScreen(
             filterState = filterState,
             onFilterStateChange = { newState ->
                 viewModel.updateFilterState(newState)
-            }
+            },
+            showPriceFilter = isProvider // Filtro de preço apenas para Prestadores
         )
     }
 }
@@ -486,6 +541,7 @@ private fun ServiceOrderCard(
 private fun ProviderServiceCard(
     service: ServiceFirestore,
     onServiceClick: () -> Unit,
+    onProviderClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -497,7 +553,7 @@ private fun ProviderServiceCard(
         Column {
             if (service.images.isNotEmpty()) {
                 AsyncImage(
-                    model = CoilImageRequest.Builder(LocalContext.current)
+                    model = ImageRequest.Builder(LocalContext.current)
                         .data(service.images.first())
                         .crossfade(true)
                         .build(),
@@ -546,6 +602,17 @@ private fun ProviderServiceCard(
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
+
+                // Informações do prestador (clicável)
+                if (service.providerId.isNotBlank() && onProviderClick != null) {
+                    com.taskgoapp.taskgo.core.design.UserAvatarNameLoader(
+                        userId = service.providerId,
+                        onUserClick = { onProviderClick(service.providerId) },
+                        avatarSize = 32.dp,
+                        showName = true,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -605,18 +672,20 @@ fun ServiceCategoryCard(
                     .background(TaskGoGreen.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = when (category.icon) {
-                        "build" -> "🔧"
-                        "home" -> "🏠"
-                        "eco" -> "🌱"
-                        "flash_on" -> "⚡"
-                        "plumbing" -> "🔧"
-                        "format_paint" -> "🎨"
-                        "cleaning_services" -> "🧹"
-                        else -> "📋"
+                Icon(
+                    imageVector = when (category.icon) {
+                        "build" -> Icons.Default.Build
+                        "home" -> Icons.Default.Home
+                        "eco" -> Icons.Default.Eco
+                        "flash_on" -> Icons.Default.FlashOn
+                        "plumbing" -> Icons.Default.Plumbing
+                        "format_paint" -> Icons.Default.FormatPaint
+                        "cleaning_services" -> Icons.Default.CleaningServices
+                        else -> Icons.Default.List
                     },
-                    fontSize = 28.sp
+                    contentDescription = category.name,
+                    tint = TaskGoGreen,
+                    modifier = Modifier.size(28.dp)
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
@@ -691,7 +760,7 @@ private fun ProviderCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = provider.displayName ?: "Prestador",
+                    text = provider.displayName ?: "Parceiro",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TaskGoTextDark

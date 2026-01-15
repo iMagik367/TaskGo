@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.settings.presentation
+package com.taskgoapp.taskgo.feature.settings.presentation
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +42,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +54,7 @@ fun AccountScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val accountChangeRepository = remember { FirestoreAccountChangeRepository(com.google.firebase.firestore.FirebaseFirestore.getInstance()) }
     val firebaseAuth = remember { FirebaseAuth.getInstance() }
     
@@ -120,35 +124,6 @@ fun AccountScreen(
     var cepError by remember { mutableStateOf<String?>(null) }
     var isLoadingCep by remember { mutableStateOf(false) }
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var pendingPhotoPickerAction by remember { mutableStateOf(false) }
-    
-    val hasImagePermission = remember {
-        com.taskgoapp.taskgo.core.permissions.PermissionHandler.hasImageReadPermission(context)
-    }
-    
-    val photoPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) viewModel.onAvatarSelected(uri.toString())
-    }
-    
-    val imagePermissionLauncher = com.taskgoapp.taskgo.core.permissions.rememberImageReadPermissionLauncher(
-        onPermissionGranted = {
-            pendingPhotoPickerAction = true
-        },
-        onPermissionDenied = {
-            // Permissão negada
-        }
-    )
-    
-    // Executar ação do photoPicker quando permissão for concedida
-    LaunchedEffect(pendingPhotoPickerAction) {
-        if (pendingPhotoPickerAction && com.taskgoapp.taskgo.core.permissions.PermissionHandler.hasImageReadPermission(context)) {
-            photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            pendingPhotoPickerAction = false
-        }
-    }
     
     // Função helper para salvar com retry e backoff
     suspend fun retrySaveWithBackoff(block: suspend () -> Unit) {
@@ -253,6 +228,9 @@ fun AccountScreen(
         }
     }
 
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    
     Scaffold(
         topBar = {
             AppTopBar(
@@ -265,6 +243,13 @@ fun AccountScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                }
         ) {
             // Cabeçalho com avatar, nome e função
             Column(
@@ -273,38 +258,14 @@ fun AccountScreen(
                     .padding(top = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(CircleShape)
-                        .background(TaskGoSurfaceGray)
-                        .clickable {
-                            if (hasImagePermission) {
-                                photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            } else {
-                                imagePermissionLauncher.launch(com.taskgoapp.taskgo.core.permissions.PermissionHandler.getImageReadPermission())
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!state.avatarUri.isNullOrBlank()) {
-                        AsyncImage(
-                            model = state.avatarUri,
-                            contentDescription = stringResource(R.string.cd_user_avatar),
-                            modifier = Modifier
-                                .size(100.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(TGIcons.Profile),
-                            contentDescription = stringResource(R.string.cd_user_avatar),
-                            tint = TaskGoTextGray,
-                            modifier = Modifier.size(56.dp)
-                        )
-                    }
-                }
+                CircularImageCropper(
+                    currentImageUri = state.avatarUri,
+                    onImageCropped = { uri ->
+                        viewModel.onAvatarSelected(uri.toString())
+                    },
+                    modifier = Modifier,
+                    size = 100.dp
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Toque para alterar foto",
@@ -355,7 +316,12 @@ fun AccountScreen(
                 Text(text = "Telefone", style = FigmaButtonText, color = TaskGoTextBlack)
                 OutlinedTextField(
                     value = editedPhone,
-                    onValueChange = { editedPhone = it },
+                    onValueChange = { newValue ->
+                        val cleanValue = newValue.replace(Regex("[^0-9]"), "")
+                        if (cleanValue.length <= 11) {
+                            editedPhone = com.taskgoapp.taskgo.core.utils.TextFormatters.formatPhone(cleanValue)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     leadingIcon = { Icon(painter = painterResource(TGIcons.Phone), contentDescription = null) }
@@ -372,13 +338,13 @@ fun AccountScreen(
                             onValueChange = { newValue ->
                                 val cleanValue = newValue.replace(Regex("[^0-9]"), "")
                                 if (cleanValue.length <= 11) {
-                                    editedCpf = cleanValue
+                                    cpfError = null
                                     if (cleanValue.length == 11) {
-                                        editedCpf = documentValidator.formatCpf(cleanValue)
+                                        editedCpf = com.taskgoapp.taskgo.core.utils.TextFormatters.formatCpf(cleanValue)
                                         val validation = documentValidator.validateCpf(editedCpf)
                                         cpfError = if (validation is ValidationResult.Invalid) validation.message else null
                                     } else {
-                                        cpfError = null
+                                        editedCpf = cleanValue
                                     }
                                 }
                             },
@@ -427,11 +393,10 @@ fun AccountScreen(
                     onValueChange = { newValue ->
                         val cleanValue = newValue.replace(Regex("[^0-9]"), "")
                         if (cleanValue.length <= 8) {
-                            editedZipCode = cleanValue
                             cepError = null
+                            editedZipCode = com.taskgoapp.taskgo.core.utils.TextFormatters.formatCep(cleanValue)
                             
                             if (cleanValue.length == 8) {
-                                editedZipCode = documentValidator.formatCep(cleanValue)
                                 
                                 scope.launch {
                                     isLoadingCep = true
@@ -571,8 +536,9 @@ fun AccountScreen(
                     ) {
                         Text(
                             text = when (editedType) {
-                                AccountType.PRESTADOR -> stringResource(R.string.profile_account_type_provider)
-                                AccountType.VENDEDOR -> stringResource(R.string.profile_account_type_seller)
+                                AccountType.PARCEIRO -> "Parceiro"
+                                AccountType.PRESTADOR -> "Parceiro" // Legacy
+                                AccountType.VENDEDOR -> "Parceiro" // Legacy
                                 AccountType.CLIENTE -> stringResource(R.string.profile_account_type_client)
                             },
                             style = FigmaProductName,
@@ -583,62 +549,83 @@ fun AccountScreen(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Botão para gerenciar contas bancárias (apenas para vendedores)
-                if (state.accountType == AccountType.VENDEDOR) {
-                    OutlinedButton(
+                // Botão para gerenciar contas bancárias (apenas para parceiros/vendedores)
+                if (state.accountType == AccountType.PARCEIRO || state.accountType == AccountType.VENDEDOR || state.accountType == AccountType.PRESTADOR) {
+                    Button(
                         onClick = { onNavigateToBankAccounts() },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = TaskGoGreen
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = TaskGoGreen
                         ),
-                        border = BorderStroke(1.dp, TaskGoGreen)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
                             text = "Gerenciar Contas Bancárias",
                             style = FigmaButtonText,
-                            color = TaskGoGreen
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(0.dp))
                 }
                 
                 // Botão para solicitar mudança de modo de conta
-                OutlinedButton(
+                Button(
                     onClick = { showChangeAccountDialog = true },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = TaskGoGreen
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TaskGoGreen
                     ),
-                    border = BorderStroke(1.dp, TaskGoGreen)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = "Solicitar Mudança de Modo de Conta",
                         style = FigmaButtonText,
-                        color = TaskGoGreen
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(0.dp))
                 
                 // Botão Sair da Conta
-                OutlinedButton(
+                Button(
                     onClick = {
                         // Fazer logout
                         firebaseAuth.signOut()
+                        // Limpar cache local ao fazer logout
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val database = com.taskgoapp.taskgo.data.local.TaskGoDatabase.getDatabase(context)
+                                // Limpar todos os dados do banco local
+                                database.userProfileDao().clear()
+                                database.productDao().getAll().forEach { database.productDao().delete(it) }
+                                database.cartDao().clearAll()
+                                database.addressDao().observeAll().first().forEach { database.addressDao().delete(it) }
+                                database.cardDao().observeAll().first().forEach { database.cardDao().delete(it) }
+                                // Limpar PreferencesManager
+                                val preferencesManager = com.taskgoapp.taskgo.core.data.PreferencesManager(context)
+                                preferencesManager.saveUserAvatarUri("")
+                                preferencesManager.saveUserProfileImages(emptyList())
+                            } catch (e: Exception) {
+                                android.util.Log.e("AccountScreen", "Erro ao limpar cache: ${e.message}", e)
+                            }
+                        }
                         // Navegar para tela de login
                         onNavigateToLogin()
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
                     ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.settings_logout),
                         style = FigmaButtonText,
-                        color = MaterialTheme.colorScheme.error
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 
@@ -693,16 +680,16 @@ fun AccountScreen(
                     Column(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Opção Prestador
-                        if (editedType != AccountType.PRESTADOR) {
+                        // Opção Parceiro (unificação de Prestador e Vendedor)
+                        if (editedType != AccountType.PARCEIRO && editedType != AccountType.PRESTADOR && editedType != AccountType.VENDEDOR) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { selectedNewAccountType = AccountType.PRESTADOR },
+                                    .clickable { selectedNewAccountType = AccountType.PARCEIRO },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (selectedNewAccountType == AccountType.PRESTADOR) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
+                                    containerColor = if (selectedNewAccountType == AccountType.PARCEIRO) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
                                 ),
-                                border = if (selectedNewAccountType == AccountType.PRESTADOR) BorderStroke(2.dp, TaskGoGreen) else null
+                                border = if (selectedNewAccountType == AccountType.PARCEIRO) BorderStroke(2.dp, TaskGoGreen) else null
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -711,46 +698,24 @@ fun AccountScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     RadioButton(
-                                        selected = selectedNewAccountType == AccountType.PRESTADOR,
-                                        onClick = { selectedNewAccountType = AccountType.PRESTADOR }
+                                        selected = selectedNewAccountType == AccountType.PARCEIRO,
+                                        onClick = { selectedNewAccountType = AccountType.PARCEIRO }
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = stringResource(R.string.profile_account_type_provider),
-                                        style = FigmaProductName,
-                                        color = TaskGoTextBlack
-                                    )
-                                }
-                            }
-                        }
-                        
-                        // Opção Vendedor
-                        if (editedType != AccountType.VENDEDOR) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { selectedNewAccountType = AccountType.VENDEDOR },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (selectedNewAccountType == AccountType.VENDEDOR) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
-                                ),
-                                border = if (selectedNewAccountType == AccountType.VENDEDOR) BorderStroke(2.dp, TaskGoGreen) else null
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selectedNewAccountType == AccountType.VENDEDOR,
-                                        onClick = { selectedNewAccountType = AccountType.VENDEDOR }
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = stringResource(R.string.profile_account_type_seller),
-                                        style = FigmaProductName,
-                                        color = TaskGoTextBlack
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Parceiro",
+                                            style = FigmaProductName,
+                                            color = TaskGoTextBlack,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "Oferecer serviços e vender produtos",
+                                            style = FigmaProductDescription,
+                                            color = TaskGoTextGray,
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -777,11 +742,20 @@ fun AccountScreen(
                                         onClick = { selectedNewAccountType = AccountType.CLIENTE }
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = stringResource(R.string.profile_account_type_client),
-                                        style = FigmaProductName,
-                                        color = TaskGoTextBlack
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = stringResource(R.string.profile_account_type_client),
+                                            style = FigmaProductName,
+                                            color = TaskGoTextBlack,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "Contratar serviços e comprar produtos",
+                                            style = FigmaProductDescription,
+                                            color = TaskGoTextGray,
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }

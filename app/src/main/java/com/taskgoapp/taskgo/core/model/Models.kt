@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.core.model
+package com.taskgoapp.taskgo.core.model
 
 // User Models
 enum class UserType {
@@ -7,8 +7,20 @@ enum class UserType {
 }
 
 enum class AccountType { 
-    PRESTADOR, 
-    VENDEDOR, 
+    /**
+     * @deprecated Use PARCEIRO instead. Mantido apenas para compatibilidade durante migração.
+     */
+    @Deprecated("Use PARCEIRO instead", ReplaceWith("PARCEIRO"))
+    PRESTADOR,
+    
+    /**
+     * @deprecated Use PARCEIRO instead. Mantido apenas para compatibilidade durante migração.
+     */
+    @Deprecated("Use PARCEIRO instead", ReplaceWith("PARCEIRO"))
+    VENDEDOR,
+    
+    PARCEIRO, // Unificação de PRESTADOR e VENDEDOR - pode oferecer serviços e produtos
+    
     CLIENTE 
 }
 
@@ -30,13 +42,16 @@ data class Product(
     val title: String,
     val price: Double,
     val description: String?,
+    val sellerId: String? = null, // ID do vendedor
     val sellerName: String?,
     val imageUris: List<String>, // 1..n imagens
     val category: String? = null, // Categoria do produto
     val rating: Double? = null, // Avaliação média do produto/vendedor
     val latitude: Double? = null, // Latitude da localização do produto
     val longitude: Double? = null, // Longitude da localização do produto
-    val featured: Boolean? = false // Produto em destaque/promocional
+    val featured: Boolean? = false, // Produto em destaque/promocional
+    val discountPercentage: Double? = null, // Percentual de desconto para destaque/promoções
+    val active: Boolean = true // Controle de soft-delete
 )
 
 data class ServiceOrder(

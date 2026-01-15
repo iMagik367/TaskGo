@@ -78,8 +78,10 @@ class DashboardViewModel @Inject constructor(
             
             try {
                 when (accountType) {
-                    AccountType.PRESTADOR -> loadProviderMetrics(currentUser.uid)
-                    AccountType.VENDEDOR -> loadSellerMetrics(currentUser.uid)
+                    AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> {
+                        // Parceiro carrega métricas combinadas de serviços + produtos
+                        loadPartnerMetrics(currentUser.uid)
+                    }
                     else -> loadClientMetrics(currentUser.uid)
                 }
             } catch (e: Exception) {
@@ -151,6 +153,56 @@ class DashboardViewModel @Inject constructor(
                 productsSold = productsSold,
                 totalSales = totalSales,
                 monthlySales = monthlySales,
+                isLoading = false,
+                error = null
+            )
+        }.collect { }
+    }
+    
+    private suspend fun loadPartnerMetrics(userId: String) {
+        // Carregar métricas combinadas de serviços + produtos para Parceiro
+        combine(
+            servicesRepository.observeProviderServices(userId),
+            firestoreProductsRepository.observeProductsBySeller(userId),
+            orderRepository.observeOrders(userId, "partner"), // Usar "partner" para buscar ordens de serviço (tratado como provider)
+            orderRepository.observeOrders(userId, "client") // Orders como cliente também podem incluir produtos vendidos
+        ) { services, products, serviceOrders, productOrders ->
+            // Métricas de serviços
+            val completedServiceOrders = serviceOrders.filter { it.status == "completed" || it.status == "accepted" }
+            val proposalsSent = serviceOrders.count { it.proposalDetails != null }
+            val serviceRevenue = completedServiceOrders
+                .mapNotNull { it.proposalDetails?.price }
+                .sum()
+            
+            // Métricas de produtos
+            val completedProductOrders = productOrders.filter { it.status == "completed" || it.status == "accepted" }
+            val productsSold = completedProductOrders.size
+            val productSales = completedProductOrders
+                .mapNotNull { it.proposalDetails?.price }
+                .sum()
+            
+            // Receitas mensais (últimos 30 dias)
+            val thirtyDaysAgo = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
+            val monthlyServiceRevenue = completedServiceOrders
+                .filter { it.updatedAt?.time ?: 0L >= thirtyDaysAgo }
+                .mapNotNull { it.proposalDetails?.price }
+                .sum()
+            val monthlyProductSales = completedProductOrders
+                .filter { it.updatedAt?.time ?: 0L >= thirtyDaysAgo }
+                .mapNotNull { it.proposalDetails?.price }
+                .sum()
+            
+            _metrics.value = DashboardMetrics(
+                servicesCount = services.size,
+                productsCount = products.size,
+                ordersReceived = serviceOrders.size,
+                proposalsSent = proposalsSent,
+                completedOrders = completedServiceOrders.size,
+                productsSold = productsSold,
+                totalRevenue = serviceRevenue, // Receita de serviços
+                totalSales = productSales, // Vendas de produtos
+                monthlyRevenue = monthlyServiceRevenue,
+                monthlySales = monthlyProductSales,
                 isLoading = false,
                 error = null
             )

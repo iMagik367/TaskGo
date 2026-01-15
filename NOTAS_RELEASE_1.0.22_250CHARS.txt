@@ -1,0 +1,10 @@
+﻿Corrigido modelo Gemini no chat IA para versÃ£o compatÃ­vel. Removido menu de idioma completamente. Corrigida exclusÃ£o de conta para remover do Firebase Auth. Implementada verificaÃ§Ã£o 2FA no login Google, cliente e prestador. Melhorias gerais de
+
+
+
+
+
+
+
+
+

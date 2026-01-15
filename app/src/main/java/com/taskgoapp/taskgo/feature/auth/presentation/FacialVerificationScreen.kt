@@ -141,6 +141,41 @@ fun FacialVerificationScreen(
         }
     }
     
+    val uiState by viewModel.uiState.collectAsState()
+    
+    // Tela de loading durante verificação
+    if (isVerifying || uiState.isVerifyingFace) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                CircularProgressIndicator(
+                    color = TaskGoGreen,
+                    modifier = Modifier.size(64.dp),
+                    strokeWidth = 4.dp
+                )
+                Text(
+                    text = verificationMessage ?: "Validando sua identidade...",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Por favor, aguarde",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp
+                )
+            }
+        }
+        return // Retornar cedo para mostrar apenas o loading
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -345,8 +380,7 @@ fun FacialVerificationScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 // Botão de captura manual simplificado
-                if (!isVerifying) {
-                    Button(
+                Button(
                         onClick = {
                             if (faceDetected && !isCapturing && imageCapture != null) {
                                 isCapturing = true
@@ -356,38 +390,61 @@ fun FacialVerificationScreen(
                                     context = context,
                                     onImageCaptured = { uri ->
                                         isVerifying = true
-                                        verificationMessage = "Validando imagem..."
+                                        verificationMessage = "Validando sua identidade..."
                                         
                                         scope.launch {
                                             viewModel.setSelfie(uri)
+                                            
+                                            // Aguardar um pouco para o usuário ver a tela de loading
+                                            kotlinx.coroutines.delay(500)
+                                            
                                             val matchOk = try {
-                                                viewModel.verifyFaceMatch()
+                                                // Executar verificação facial
+                                                val result = viewModel.verifyFaceMatch()
+                                                
+                                                // Aguardar atualização do estado
+                                                var attempts = 0
+                                                while (attempts < 50 && viewModel.uiState.value.isVerifyingFace) {
+                                                    kotlinx.coroutines.delay(100)
+                                                    attempts++
+                                                }
+                                                
+                                                // Verificar resultado final do estado
+                                                val finalState = viewModel.uiState.value
+                                                val success = finalState.faceVerificationSuccess == true
+                                                
+                                                if (success) {
+                                                    verificationMessage = "Identidade verificada com sucesso!"
+                                                    kotlinx.coroutines.delay(1500) // Dar tempo para o usuário ver a mensagem
+                                                } else {
+                                                    verificationMessage = finalState.faceVerificationError ?: "Verificação falhou. Tente novamente."
+                                                    kotlinx.coroutines.delay(2000) // Mostrar erro por mais tempo
+                                                }
+                                                
+                                                success
                                             } catch (e: Exception) {
                                                 android.util.Log.e("FacialVerification", "Erro na verificação facial: ${e.message}", e)
+                                                verificationMessage = "Erro na verificação: ${e.message}"
+                                                kotlinx.coroutines.delay(2000)
                                                 false
                                             }
+                                            
+                                            isCapturing = false
+                                            isVerifying = false
+                                            
+                                            // Só redirecionar após a verificação estar completa
                                             if (matchOk) {
-                                                verificationMessage = "Verificando identidade..."
-                                                viewModel.markIdentityVerified { ok ->
-                                                    verificationMessage = if (ok) "Identidade verificada!" else "Falha ao confirmar no servidor"
-                                                    scope.launch {
-                                                        kotlinx.coroutines.delay(700)
-                                                        isCapturing = false
-                                                        isVerifying = false
-                                                        if (ok) onVerificationComplete()
-                                                    }
-                                                }
+                                                onVerificationComplete() // Volta para IdentityVerificationScreen
                                             } else {
-                                                verificationMessage = "A selfie não corresponde ao documento. Tente novamente."
-                                                isCapturing = false
-                                                isVerifying = false
+                                                // Se falhou, voltar para a tela anterior e mostrar erro lá
+                                                onVerificationComplete() // Volta para IdentityVerificationScreen (vai mostrar dialog de erro)
                                             }
                                         }
                                     },
                                     onError = {
-                                        verificationMessage = "Erro ao capturar. Tente novamente."
                                         isCapturing = false
                                         isVerifying = false
+                                        // Erro na captura, não precisa voltar
                                     }
                                 )
                             }
@@ -414,39 +471,6 @@ fun FacialVerificationScreen(
                             )
                         }
                     }
-                } else {
-                    // Mostrar progresso durante verificação
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = TaskGoGreen.copy(alpha = 0.8f)
-                        )
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    color = Color.White,
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 3.dp
-                                )
-                                Text(
-                                    text = verificationMessage ?: "Processando...",
-                                    color = Color.White,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
     }

@@ -87,9 +87,11 @@ class InitialDataSyncManager @Inject constructor(
             val userFirestore = firestoreUserRepository.getUser(userId)
             
             if (userFirestore != null) {
-                val accountType = when (userFirestore.role) {
-                    "provider" -> com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR
-                    "seller" -> com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR
+                val accountType = when (userFirestore.role?.lowercase()) {
+                    "partner" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO
+                    "provider" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
+                    "seller" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
+                    "client" -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
                     else -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
                 }
                 

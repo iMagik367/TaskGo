@@ -21,8 +21,8 @@ class FirebaseStorageRepository @Inject constructor(
             val storageRef = storage.reference
                 .child("$userId/documents/$documentType/$fileName")
             
-            val uploadTask = storageRef.putFile(uri).await()
-            val downloadUrl = uploadTask.storage.downloadUrl.await()
+            storageRef.putFile(uri).await()
+            val downloadUrl = storageRef.downloadUrl.await()
             
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {
@@ -39,8 +39,8 @@ class FirebaseStorageRepository @Inject constructor(
             val storageRef = storage.reference
                 .child("$userId/documents/selfie/$fileName")
             
-            val uploadTask = storageRef.putFile(uri).await()
-            val downloadUrl = uploadTask.storage.downloadUrl.await()
+            storageRef.putFile(uri).await()
+            val downloadUrl = storageRef.downloadUrl.await()
             
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {
@@ -57,8 +57,8 @@ class FirebaseStorageRepository @Inject constructor(
             val storageRef = storage.reference
                 .child("$userId/documents/address_proof/$fileName")
             
-            val uploadTask = storageRef.putFile(uri).await()
-            val downloadUrl = uploadTask.storage.downloadUrl.await()
+            storageRef.putFile(uri).await()
+            val downloadUrl = storageRef.downloadUrl.await()
             
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {
@@ -82,8 +82,8 @@ class FirebaseStorageRepository @Inject constructor(
             val storageRef = storage.reference
                 .child("$providerId/services/$serviceId/images/$fileName")
             
-            val uploadTask = storageRef.putFile(uri).await()
-            val downloadUrl = uploadTask.storage.downloadUrl.await()
+            storageRef.putFile(uri).await()
+            val downloadUrl = storageRef.downloadUrl.await()
             
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {
@@ -134,8 +134,8 @@ class FirebaseStorageRepository @Inject constructor(
             val storageRef = storage.reference
                 .child("$userId/profile/$fileName")
             
-            val uploadTask = storageRef.putFile(uri).await()
-            val downloadUrl = uploadTask.storage.downloadUrl.await()
+            storageRef.putFile(uri).await()
+            val downloadUrl = storageRef.downloadUrl.await()
             
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {
@@ -159,8 +159,8 @@ class FirebaseStorageRepository @Inject constructor(
             val storageRef = storage.reference
                 .child("$userId/products/$productId/images/$fileName")
             
-            val uploadTask = storageRef.putFile(uri).await()
-            val downloadUrl = uploadTask.storage.downloadUrl.await()
+            storageRef.putFile(uri).await()
+            val downloadUrl = storageRef.downloadUrl.await()
             
             Result.success(downloadUrl.toString())
         } catch (e: Exception) {

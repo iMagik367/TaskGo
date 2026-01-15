@@ -7,9 +7,12 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskgoapp.taskgo.core.ai.AppSystemPrompt
+import com.taskgoapp.taskgo.core.ai.AudioRecorderManager
 import com.taskgoapp.taskgo.core.ai.GoogleCloudAIService
+import com.taskgoapp.taskgo.core.ai.GoogleSpeechToTextService
 import com.taskgoapp.taskgo.core.ai.GoogleTranslationService
 import com.taskgoapp.taskgo.core.ai.ImageData
+import com.taskgoapp.taskgo.core.ai.TextToSpeechManager
 import com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment
 import com.taskgoapp.taskgo.feature.chatai.data.ChatStorage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,12 +27,25 @@ import java.io.ByteArrayOutputStream
 import android.util.Base64 as AndroidBase64
 import javax.inject.Inject
 
+/**
+ * Máquina de estados para o fluxo de voz
+ * Baseado no padrão de chat_voice_widget.py (VoiceState enum)
+ */
+enum class VoiceState {
+    IDLE,           // Estado inicial, pronto para gravar
+    RECORDING,      // Gravando áudio do usuário
+    PROCESSING,     // Processando transcrição ou resposta da AI
+    SPEAKING        // Reproduzindo resposta da AI em voz
+}
+
 data class ChatUiState(
     val chatId: String? = null,
     val messages: List<AiMessage> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val isRecording: Boolean = false,
+    val isSpeaking: Boolean = false,
+    val voiceState: VoiceState = VoiceState.IDLE, // Máquina de estados para voz
     val sourceLanguage: String = "pt",
     val targetLanguage: String = "pt"
 )
@@ -38,6 +54,9 @@ data class ChatUiState(
 class ChatAIViewModel @Inject constructor(
     private val aiService: GoogleCloudAIService,
     private val translationService: GoogleTranslationService,
+    private val speechToTextService: GoogleSpeechToTextService,
+    private val audioRecorderManager: AudioRecorderManager,
+    private val textToSpeechManager: TextToSpeechManager,
     private val chatStorage: ChatStorage,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -129,6 +148,8 @@ class ChatAIViewModel @Inject constructor(
                         _uiState.value.chatId?.let { chatId ->
                             chatStorage.saveMessages(chatId, updatedMessages)
                         }
+                        
+                        android.util.Log.d("ChatAIViewModel", "Resposta da AI recebida com sucesso")
                     },
                     onFailure = { error ->
                         _uiState.value = _uiState.value.copy(
@@ -172,12 +193,235 @@ class ChatAIViewModel @Inject constructor(
         }
     }
     
+    /**
+     * Atualiza o estado da voz (máquina de estados)
+     * Baseado no padrão de chat_voice_widget.py (_set_state)
+     */
+    private fun setVoiceState(newState: VoiceState) {
+        val currentState = _uiState.value.voiceState
+        if (currentState == newState) return
+        
+        android.util.Log.d("ChatAIViewModel", "[STATE_MACHINE] Mudando de ${currentState.name} para ${newState.name}")
+        _uiState.value = _uiState.value.copy(
+            voiceState = newState,
+            isRecording = newState == VoiceState.RECORDING,
+            isLoading = newState == VoiceState.PROCESSING
+        )
+    }
+    
     fun setRecording(isRecording: Boolean) {
-        _uiState.value = _uiState.value.copy(isRecording = isRecording)
+        val newState = if (isRecording) VoiceState.RECORDING else VoiceState.IDLE
+        setVoiceState(newState)
+    }
+    
+    /**
+     * Inicia a gravação de áudio
+     * Baseado no padrão de chat_voice_widget.py (_on_main_button_action)
+     */
+    fun startAudioRecording() {
+        if (_uiState.value.voiceState != VoiceState.IDLE) {
+            android.util.Log.w("ChatAIViewModel", "Tentativa de iniciar gravação em estado inválido: ${_uiState.value.voiceState}")
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                setVoiceState(VoiceState.RECORDING)
+                val result = audioRecorderManager.startRecording()
+                result.fold(
+                    onSuccess = { file ->
+                        // Gravação iniciada com sucesso
+                        android.util.Log.d("ChatAIViewModel", "Gravação iniciada: ${file.absolutePath}")
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatAIViewModel", "Erro ao iniciar gravação: ${error.message}", error)
+                        setVoiceState(VoiceState.IDLE)
+                        _uiState.value = _uiState.value.copy(
+                            error = "Erro ao iniciar gravação: ${error.message}"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("ChatAIViewModel", "Erro ao iniciar gravação: ${e.message}", e)
+                setVoiceState(VoiceState.IDLE)
+                _uiState.value = _uiState.value.copy(
+                    error = "Erro ao iniciar gravação: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
+     * Para a gravação de áudio e converte para texto
+     * Baseado no padrão de chat_voice_widget.py (_on_transcribed_text)
+     */
+    fun stopAudioRecordingAndSend() {
+        if (_uiState.value.voiceState != VoiceState.RECORDING) {
+            android.util.Log.w("ChatAIViewModel", "Tentativa de parar gravação em estado inválido: ${_uiState.value.voiceState}")
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                setVoiceState(VoiceState.PROCESSING)
+                
+                val result = audioRecorderManager.stopRecording()
+                result.fold(
+                    onSuccess = { audioFile ->
+                        if (audioFile != null && audioFile.exists()) {
+                            // Converter áudio para texto
+                            android.util.Log.d("ChatAIViewModel", "Convertendo áudio para texto: ${audioFile.absolutePath}")
+                            val speechResult = speechToTextService.recognizeSpeech(audioFile)
+                            
+                            speechResult.fold(
+                                onSuccess = { transcript ->
+                                    android.util.Log.d("ChatAIViewModel", "Transcrição: $transcript")
+                                    // Enviar mensagem como texto
+                                    if (transcript.isNotBlank()) {
+                                        // Enviar mensagem (que já gerencia o estado de loading)
+                                        sendMessage(transcript.trim())
+                                        // Voltar para IDLE após enviar
+                                        setVoiceState(VoiceState.IDLE)
+                                    } else {
+                                        setVoiceState(VoiceState.IDLE)
+                                        _uiState.value = _uiState.value.copy(
+                                            error = "Não foi possível reconhecer a fala. Tente novamente."
+                                        )
+                                    }
+                                    // Deletar arquivo temporário após processar
+                                    audioFile.delete()
+                                },
+                                onFailure = { error ->
+                                    android.util.Log.e("ChatAIViewModel", "Erro ao converter áudio: ${error.message}", error)
+                                    setVoiceState(VoiceState.IDLE)
+                                    _uiState.value = _uiState.value.copy(
+                                        error = "Erro ao converter áudio para texto: ${error.message}"
+                                    )
+                                    // Deletar arquivo temporário em caso de erro
+                                    audioFile.delete()
+                                }
+                            )
+                        } else {
+                            setVoiceState(VoiceState.IDLE)
+                            _uiState.value = _uiState.value.copy(
+                                error = "Nenhum áudio foi gravado"
+                            )
+                        }
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatAIViewModel", "Erro ao parar gravação: ${error.message}", error)
+                        setVoiceState(VoiceState.IDLE)
+                        _uiState.value = _uiState.value.copy(
+                            error = "Erro ao parar gravação: ${error.message}"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("ChatAIViewModel", "Erro ao parar gravação: ${e.message}", e)
+                setVoiceState(VoiceState.IDLE)
+                _uiState.value = _uiState.value.copy(
+                    error = "Erro ao parar gravação: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
+     * Cancela a gravação atual
+     * Baseado no padrão de chat_voice_widget.py (_exit_voice_mode)
+     */
+    fun cancelAudioRecording() {
+        viewModelScope.launch {
+            try {
+                audioRecorderManager.cancelRecording()
+                setVoiceState(VoiceState.IDLE)
+                _uiState.value = _uiState.value.copy(error = null)
+            } catch (e: Exception) {
+                android.util.Log.e("ChatAIViewModel", "Erro ao cancelar gravação: ${e.message}", e)
+                setVoiceState(VoiceState.IDLE)
+                _uiState.value = _uiState.value.copy(
+                    error = "Erro ao cancelar gravação: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
+     * Fala uma resposta em voz alta (Text-to-Speech)
+     * Baseado no padrão de chat_voice_widget.py (_tts_speak)
+     */
+    fun speakResponse(text: String) {
+        if (_uiState.value.voiceState == VoiceState.RECORDING) {
+            android.util.Log.w("ChatAIViewModel", "Não é possível falar enquanto está gravando")
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                setVoiceState(VoiceState.SPEAKING)
+                val result = textToSpeechManager.speak(text)
+                result.fold(
+                    onSuccess = {
+                        android.util.Log.d("ChatAIViewModel", "Texto sendo falado: $text")
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatAIViewModel", "Erro ao falar resposta: ${error.message}", error)
+                        setVoiceState(VoiceState.IDLE)
+                        _uiState.value = _uiState.value.copy(
+                            error = "Erro ao falar resposta: ${error.message}"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("ChatAIViewModel", "Erro ao falar resposta: ${e.message}", e)
+                setVoiceState(VoiceState.IDLE)
+                _uiState.value = _uiState.value.copy(
+                    error = "Erro ao falar resposta: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
+     * Para a fala atual
+     * Baseado no padrão de chat_voice_widget.py (_on_tts_finished)
+     */
+    fun stopSpeaking() {
+        viewModelScope.launch {
+            textToSpeechManager.stop()
+            setVoiceState(VoiceState.IDLE)
+        }
+    }
+    
+    // Observar estado do TTS e atualizar máquina de estados
+    // Baseado no padrão de chat_voice_widget.py (monitoramento de estado)
+    init {
+        viewModelScope.launch {
+            while (true) {
+                val isSpeaking = textToSpeechManager.isSpeaking()
+                if (isSpeaking && _uiState.value.voiceState != VoiceState.SPEAKING) {
+                    setVoiceState(VoiceState.SPEAKING)
+                } else if (!isSpeaking && _uiState.value.voiceState == VoiceState.SPEAKING) {
+                    setVoiceState(VoiceState.IDLE)
+                }
+                kotlinx.coroutines.delay(200) // Verificar a cada 200ms
+            }
+        }
+    }
+    
+    /**
+     * Obtém a amplitude do áudio para animação visual
+     */
+    fun getAudioAmplitude(): Double {
+        return audioRecorderManager.getAmplitude()
     }
     
     fun setTargetLanguage(language: String) {
         _uiState.value = _uiState.value.copy(targetLanguage = language)
+    }
+    
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
     }
     
     private suspend fun convertImageToBase64(uri: Uri, mimeType: String?): ImageData? = withContext(Dispatchers.IO) {

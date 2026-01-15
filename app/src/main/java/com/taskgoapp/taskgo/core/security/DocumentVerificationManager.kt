@@ -3,6 +3,7 @@ package com.taskgoapp.taskgo.core.security
 import android.content.Context
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.taskgoapp.taskgo.core.model.Result
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -49,7 +50,7 @@ class DocumentVerificationManager @Inject constructor(
      * Cria notificação para lembrar cadastro de documentos
      */
     suspend fun createDocumentReminderNotification(): Result<String> {
-        val currentUser = auth.currentUser ?: return Result.failure(Exception("Usuário não autenticado"))
+        val currentUser = auth.currentUser ?: return Result.Error(Exception("Usuário não autenticado"))
         
         return try {
             val notificationRepository = com.taskgoapp.taskgo.data.repository.FirestoreNotificationRepository(
@@ -65,7 +66,7 @@ class DocumentVerificationManager @Inject constructor(
             )
         } catch (e: Exception) {
             Log.e("DocumentVerificationManager", "Erro ao criar notificação: ${e.message}", e)
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 }

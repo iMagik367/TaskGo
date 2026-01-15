@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.profile.presentation
+package com.taskgoapp.taskgo.feature.profile.presentation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,27 +16,62 @@ import androidx.compose.ui.unit.dp
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.design.TGIcons
-import com.taskgoapp.taskgo.core.data.models.User
-import com.taskgoapp.taskgo.core.data.models.AccountType
+import com.taskgoapp.taskgo.core.model.AccountType
+import com.taskgoapp.taskgo.core.theme.TaskGoGreen
+import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyDataScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: ProfileViewModel = hiltViewModel()
 ) {
-    val user = remember { 
-        User(
-            id = 1L,
-            name = "João Silva",
-            email = "joao@email.com",
-            phone = "(11) 99999-9999",
-            accountType = AccountType.CLIENT,
-            timeOnTaskGo = "2 anos",
-            rating = 4.8,
-            reviewCount = 156,
-            city = "São Paulo"
-        )
+    val uiState by viewModel.uiState.collectAsState()
+    
+    // Evitar renderização prematura que cause crash por estado nulo
+    if (uiState.isLoading && uiState.name.isBlank() && uiState.email.isBlank()) {
+        Scaffold(
+            topBar = {
+                AppTopBar(
+                    title = stringResource(R.string.profile_my_data),
+                    onBackClick = onNavigateBack
+                )
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = TaskGoGreen)
+            }
+        }
+        return
+    }
+    // Se ainda não carregou o perfil, mostrar carregando (evita crash por estado vazio)
+    if (uiState.isLoading && uiState.name.isBlank() && uiState.email.isBlank()) {
+        Scaffold(
+            topBar = {
+                AppTopBar(
+                    title = stringResource(R.string.profile_my_data),
+                    onBackClick = onNavigateBack
+                )
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = TaskGoGreen)
+            }
+        }
+        return
     }
     
     var isEditing by remember { mutableStateOf(false) }
@@ -47,10 +82,26 @@ fun MyDataScreen(
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showSaveSuccess by remember { mutableStateOf(false) }
     
-    LaunchedEffect(user) {
-        editedName = user.name
-        editedEmail = user.email
-        editedPhone = user.phone
+    LaunchedEffect(uiState) {
+        if (!isEditing) {
+            editedName = uiState.name
+            editedEmail = uiState.email
+            editedPhone = uiState.phone
+        }
+    }
+    
+    // Calcular tempo no TaskGo baseado em createdAt
+    val timeOnTaskGo = remember(uiState.createdAt) {
+        uiState.createdAt?.let { createdAt ->
+            val now = Date()
+            val diff = now.time - createdAt.time
+            val days = diff / (1000 * 60 * 60 * 24)
+            when {
+                days < 30 -> "${days} dias"
+                days < 365 -> "${days / 30} meses"
+                else -> "${days / 365} anos"
+            }
+        } ?: "Recém cadastrado"
     }
 
     Scaffold(
@@ -69,6 +120,7 @@ fun MyDataScreen(
         ) {
             // Profile Photo Section
             ProfilePhotoSection(
+                avatarUri = uiState.avatarUri,
                 onChangePhoto = { showChangePhotoDialog = true }
             )
             
@@ -76,7 +128,7 @@ fun MyDataScreen(
             
             // Personal Information
             PersonalInfoSection(
-                user = user,
+                uiState = uiState,
                 isEditing = isEditing,
                 editedName = editedName,
                 editedEmail = editedEmail,
@@ -89,24 +141,31 @@ fun MyDataScreen(
             Spacer(modifier = Modifier.height(24.dp))
             
             // Account Information
-            AccountInfoSection(user = user)
+            AccountInfoSection(
+                uiState = uiState,
+                timeOnTaskGo = timeOnTaskGo
+            )
             
             Spacer(modifier = Modifier.height(24.dp))
             
             // Action Buttons
             ActionButtonsSection(
                 isEditing = isEditing,
+                isSaving = uiState.isSaving,
                 onEditClick = { isEditing = true },
                 onSaveClick = {
-                    // TODO: Implement save changes
+                    viewModel.onNameChange(editedName)
+                    viewModel.onEmailChange(editedEmail)
+                    viewModel.onPhoneChange(editedPhone)
+                    viewModel.save()
                     isEditing = false
                     showSaveSuccess = true
                 },
                 onCancelClick = {
                     isEditing = false
-                    editedName = user.name
-                    editedEmail = user.email
-                    editedPhone = user.phone
+                    editedName = uiState.name
+                    editedEmail = uiState.email
+                    editedPhone = uiState.phone
                 },
                 onChangePassword = { showChangePasswordDialog = true }
             )
@@ -153,6 +212,7 @@ fun MyDataScreen(
 
 @Composable
 private fun ProfilePhotoSection(
+    avatarUri: String?,
     onChangePhoto: () -> Unit
 ) {
     Card(
@@ -173,12 +233,21 @@ private fun ProfilePhotoSection(
                 Box(
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        painter = painterResource(TGIcons.Profile),
-                        contentDescription = null,
-                        modifier = Modifier.size(60.dp),
-                        tint = MaterialTheme.colorScheme.primaryContainer
-                    )
+                    if (avatarUri != null && avatarUri.isNotBlank()) {
+                        coil.compose.AsyncImage(
+                            model = avatarUri,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(TGIcons.Profile),
+                            contentDescription = null,
+                            modifier = Modifier.size(60.dp),
+                            tint = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    }
                 }
             }
             
@@ -213,7 +282,7 @@ private fun ProfilePhotoSection(
 
 @Composable
 private fun PersonalInfoSection(
-    user: User,
+    uiState: ProfileState,
     isEditing: Boolean,
     editedName: String,
     editedEmail: String,
@@ -266,21 +335,21 @@ private fun PersonalInfoSection(
                 // Read-only fields
                 InfoRow(
                     label = stringResource(R.string.profile_name_label),
-                    value = user.name
+                    value = uiState.name.ifBlank { "Não informado" }
                 )
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 InfoRow(
                     label = stringResource(R.string.profile_email_label),
-                    value = user.email
+                    value = uiState.email.ifBlank { "Não informado" }
                 )
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 InfoRow(
                     label = stringResource(R.string.profile_phone_label),
-                    value = user.phone
+                    value = uiState.phone.ifBlank { "Não informado" }
                 )
             }
         }
@@ -288,7 +357,10 @@ private fun PersonalInfoSection(
 }
 
 @Composable
-private fun AccountInfoSection(user: User) {
+private fun AccountInfoSection(
+    uiState: ProfileState,
+    timeOnTaskGo: String
+) {
     Card(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -305,10 +377,11 @@ private fun AccountInfoSection(user: User) {
             
             InfoRow(
                 label = stringResource(R.string.profile_account_type_label),
-                value = when (user.accountType) {
-                    AccountType.PROVIDER -> stringResource(R.string.profile_account_type_provider)
-                    AccountType.SELLER -> stringResource(R.string.profile_account_type_seller)
-                    AccountType.CLIENT -> stringResource(R.string.profile_account_type_client)
+                value = when (uiState.accountType) {
+                    AccountType.PARCEIRO -> "Parceiro"
+                    AccountType.PRESTADOR -> "Prestador"
+                    AccountType.VENDEDOR -> "Vendedor"
+                    AccountType.CLIENTE -> "Cliente"
                 }
             )
             
@@ -316,21 +389,25 @@ private fun AccountInfoSection(user: User) {
             
             InfoRow(
                 label = stringResource(R.string.profile_time_on_taskgo_label),
-                value = user.timeOnTaskGo
+                value = timeOnTaskGo
             )
             
             Spacer(modifier = Modifier.height(12.dp))
             
             InfoRow(
                 label = stringResource(R.string.profile_rating_label),
-                value = "${user.rating}/5.0 (${user.reviewCount} avaliações)"
+                value = if (uiState.rating != null) {
+                    "${String.format("%.1f", uiState.rating)}/5.0"
+                } else {
+                    "Sem avaliações"
+                }
             )
             
             Spacer(modifier = Modifier.height(12.dp))
             
             InfoRow(
                 label = stringResource(R.string.profile_city_label),
-                value = user.city
+                value = uiState.city.ifBlank { "Não informado" }
             )
         }
     }
@@ -339,6 +416,7 @@ private fun AccountInfoSection(user: User) {
 @Composable
 private fun ActionButtonsSection(
     isEditing: Boolean,
+    isSaving: Boolean,
     onEditClick: () -> Unit,
     onSaveClick: () -> Unit,
     onCancelClick: () -> Unit,
@@ -361,9 +439,17 @@ private fun ActionButtonsSection(
                 
                 Button(
                     onClick = onSaveClick,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSaving
                 ) {
-                    Text(stringResource(R.string.profile_save))
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Text(stringResource(R.string.profile_save))
+                    }
                 }
             }
         } else {

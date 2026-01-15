@@ -42,7 +42,7 @@
         <!-- Google Maps API Key - Centralizada -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyB4QiV69mSkvXuy8SdN71MAIygKIFOtmXo"/>
+            android:value="AIzaSyD9JIxB5lzJUou1hUHBxNMGC4DVjEtIY_k"/>
         
         <!-- Facebook Configuration - Removido: não está sendo usado -->
         <!-- Se precisar usar Facebook Login no futuro, descomente e configure:
@@ -72,6 +72,38 @@
                 <data
                     android:scheme="taskgo"
                     android:host="oauth2redirect" />
+            </intent-filter>
+            
+            <!-- Deep Link para Posts: https://taskgo.app/post/{postId} -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="taskgo.app"
+                    android:pathPrefix="/post" />
+            </intent-filter>
+            
+            <!-- Deep Link principal usando domínio taskgoapps.com -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="taskgoapps.com"
+                    android:pathPrefix="/post" />
+            </intent-filter>
+            
+            <!-- Deep Link alternativo: taskgo://post/{postId} -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="taskgo"
+                    android:host="post" />
             </intent-filter>
         </activity>
         

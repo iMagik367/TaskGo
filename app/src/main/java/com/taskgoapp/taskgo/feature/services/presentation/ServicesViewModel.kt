@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.services.presentation
+package com.taskgoapp.taskgo.feature.services.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -85,13 +85,23 @@ class ServicesViewModel @Inject constructor(
     // Para prestadores, observar todas as ordens pendentes
     private val _selectedCategoryForOrders = MutableStateFlow<String?>(null)
     
+    private val _userLocation = MutableStateFlow<android.location.Location?>(null)
+    
     val allOrdersFirestore: StateFlow<List<OrderFirestore>> = combine(
         _accountType,
-        _selectedCategoryForOrders
-    ) { accountType, category ->
-        if (accountType == AccountType.PRESTADOR) {
+        _selectedCategoryForOrders,
+        preferredCategories,
+        _userLocation
+    ) { accountType, category, preferredCategoriesList, userLocation ->
+        if (accountType == AccountType.PARCEIRO || accountType == AccountType.PRESTADOR) { // Suporta legacy PRESTADOR
+            // Se há categorias preferidas e nenhuma categoria específica foi selecionada,
+            // filtrar ordens por preferredCategories
             if (category != null && category.isNotBlank()) {
                 orderRepository.observeOrdersByCategory(category)
+            } else if (preferredCategoriesList.isNotEmpty()) {
+                // Filtrar ordens pelas categorias preferidas do Parceiro
+                // Como observeLocalServiceOrders aceita apenas uma categoria, vamos buscar todas e filtrar depois
+                orderRepository.observeLocalServiceOrders(category = null)
             } else {
                 // Buscar todas as ordens pendentes (sem filtro de categoria)
                 orderRepository.observeLocalServiceOrders(category = null)
@@ -100,6 +110,46 @@ class ServicesViewModel @Inject constructor(
             kotlinx.coroutines.flow.flowOf(emptyList<OrderFirestore>())
         }
     }.flatMapLatest { it }
+        .map { orders ->
+            // Filtrar ordens por preferredCategories se houver e nenhuma categoria específica foi selecionada
+            val accountTypeValue = _accountType.value
+            val preferredCategoriesList = preferredCategories.value
+            val selectedCategory = _selectedCategoryForOrders.value
+            val userLocationValue = _userLocation.value
+            
+            var filtered = orders
+            
+            // Filtrar por categorias preferidas
+            if ((accountTypeValue == AccountType.PARCEIRO || accountTypeValue == AccountType.PRESTADOR) 
+                && selectedCategory == null 
+                && preferredCategoriesList.isNotEmpty()) {
+                filtered = filtered.filter { order -> 
+                    preferredCategoriesList.contains(order.category) 
+                }
+            }
+            
+            // Filtrar por raio de 100km usando GPS
+            if (userLocationValue != null) {
+                filtered = filtered.filter { order ->
+                    val orderLat = order.latitude
+                    val orderLng = order.longitude
+                    if (orderLat != null && orderLng != null) {
+                        val distance = com.taskgoapp.taskgo.core.location.calculateDistance(
+                            userLocationValue.latitude,
+                            userLocationValue.longitude,
+                            orderLat,
+                            orderLng
+                        )
+                        distance <= 100.0 // Raio de 100km
+                    } else {
+                        // Se a ordem não tem localização GPS, não mostrar (ordens devem ter localização)
+                        false
+                    }
+                }
+            }
+            
+            filtered
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     
     val allServiceOrders: StateFlow<List<ServiceOrder>> = serviceRepository
@@ -199,6 +249,18 @@ class ServicesViewModel @Inject constructor(
         loadServices()
         loadSavedFilters()
         observeAccountType()
+        loadUserLocation()
+    }
+    
+    private fun loadUserLocation() {
+        viewModelScope.launch {
+            try {
+                val location = locationManager.getCurrentLocation()
+                _userLocation.value = location
+            } catch (e: Exception) {
+                android.util.Log.e("ServicesViewModel", "Erro ao obter localização: ${e.message}", e)
+            }
+        }
     }
 
     private fun loadSavedFilters() {

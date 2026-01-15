@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.settings.presentation
+package com.taskgoapp.taskgo.feature.settings.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -268,6 +268,7 @@ fun PreferencesScreen(
                         )
                     }
                 }
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
     }

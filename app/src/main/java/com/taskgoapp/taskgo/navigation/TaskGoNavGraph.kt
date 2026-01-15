@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.navigation
+package com.taskgoapp.taskgo.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
@@ -24,6 +24,7 @@ import com.taskgoapp.taskgo.feature.services.presentation.ServicesScreen
 import com.taskgoapp.taskgo.feature.services.presentation.LocalProvidersScreen
 import com.taskgoapp.taskgo.feature.services.presentation.LocalServiceOrdersScreen
 import com.taskgoapp.taskgo.feature.services.presentation.ServiceOrderDetailScreen
+import com.taskgoapp.taskgo.navigation.OrderChatNavigationScreen
 import com.taskgoapp.taskgo.feature.services.presentation.ProposalsReceivedScreen
 import com.taskgoapp.taskgo.feature.services.presentation.ProposalDetailScreen
 import com.taskgoapp.taskgo.feature.services.presentation.ProposalsViewModel
@@ -37,10 +38,13 @@ import com.taskgoapp.taskgo.feature.products.presentation.CreateProductScreen
 import com.taskgoapp.taskgo.feature.products.presentation.EditProductScreen
 import com.taskgoapp.taskgo.feature.products.presentation.ManageProductsScreen
 import com.taskgoapp.taskgo.feature.messages.presentation.MessagesScreen
+import com.taskgoapp.taskgo.feature.feed.presentation.FeedScreen
+import com.taskgoapp.taskgo.feature.feed.presentation.PostDetailScreen
 import com.taskgoapp.taskgo.feature.profile.presentation.ProfileScreen
 import com.taskgoapp.taskgo.feature.profile.presentation.MyDataScreen
 import com.taskgoapp.taskgo.feature.profile.presentation.MyReviewsScreen
 import com.taskgoapp.taskgo.feature.profile.presentation.ProviderProfileScreen
+import com.taskgoapp.taskgo.feature.profile.presentation.PublicUserProfileScreen
 import com.taskgoapp.taskgo.feature.ads.presentation.ComprarBannerScreen
 import com.taskgoapp.taskgo.feature.checkout.presentation.CheckoutScreen
 import com.taskgoapp.taskgo.feature.checkout.presentation.OrderSummaryScreen
@@ -111,6 +115,7 @@ import com.taskgoapp.taskgo.feature.reviews.presentation.ReviewsScreen
 import com.taskgoapp.taskgo.feature.reviews.presentation.CreateReviewScreen
 import com.taskgoapp.taskgo.core.model.ReviewType
 import com.taskgoapp.taskgo.feature.auth.presentation.IdentityVerificationScreen
+import com.taskgoapp.taskgo.feature.auth.presentation.TwoFactorAuthScreen
 import com.taskgoapp.taskgo.feature.settings.presentation.SecuritySettingsScreen
 
 @Composable
@@ -160,7 +165,24 @@ fun TaskGoNavGraph(
                 onNavigateToStoreLogin = { navController.navigate("login_store") },
                 onNavigateToSignUp = { navController.navigate("signup") },
                 onNavigateToHome = { navController.navigate("home") },
-                onNavigateToForgotPassword = { navController.navigate("forgot_password") }
+                onNavigateToForgotPassword = { navController.navigate("forgot_password") },
+                onNavigateToTwoFactor = { navController.navigate("two_factor_auth") },
+                onNavigateToIdentityVerification = { navController.navigate("identity_verification") }
+            )
+        }
+        
+        composable("two_factor_auth") {
+            TwoFactorAuthScreen(
+                onVerificationSuccess = {
+                    // Navegar para home, removendo todas as telas de login do back stack
+                    navController.navigate("home") {
+                        popUpTo("login_person") { inclusive = true }
+                        popUpTo("login_store") { inclusive = true }
+                    }
+                },
+                onVerificationFailed = {
+                    navController.popBackStack()
+                }
             )
         }
         
@@ -231,8 +253,8 @@ fun TaskGoNavGraph(
                         navController.navigate("local_service_orders")
                     },
                     onNavigateToProviderProfile = { providerId, isStore ->
-                        // Por enquanto, usar apenas providerId. Se precisar diferenciar loja, criar rota separada
-                        navController.navigate("provider_profile/$providerId")
+                        // Usar a nova rota unificada de perfil
+                        navController.navigate("user_profile/$providerId")
                     }
                 )
             }
@@ -442,6 +464,10 @@ fun TaskGoNavGraph(
                         // A abertura automática da conversa será implementada no MessagesScreen
                         // quando receber orderId via parâmetro
                         navController.navigate("messages")
+                    },
+                    onNavigateToChat = { orderIdForChat ->
+                        // Navegar para rota que obtém/cria thread e redireciona para chat
+                        navController.navigate("chat_for_order/$orderIdForChat")
                     }
                 )
             }
@@ -457,9 +483,56 @@ fun TaskGoNavGraph(
                 )
             }
             
-            // Rota de perfil do prestador/loja
+            // Rota de perfil público unificado (usuário genérico)
+            composable(
+                route = "user_profile/{userId}",
+                arguments = listOf(
+                    navArgument("userId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val userId = backStackEntry.arguments?.getString("userId") ?: ""
+                PublicUserProfileScreen(
+                    userId = userId,
+                    onBackClick = { navController.popBackStack() },
+                    onMessageClick = { userId ->
+                        navController.navigate("messages")
+                    },
+                    onRateClick = { userId ->
+                        navController.navigate("rate_provider/$userId")
+                    },
+                    onPostClick = { targetUserId ->
+                        // Navegar para o feed (funcionalidade completa de postar no feed de outro usuário pode ser implementada depois)
+                        navController.navigate("feed")
+                    },
+                    onServiceClick = { serviceId ->
+                        navController.navigate("service_detail/$serviceId")
+                    },
+                    onProductClick = { productId ->
+                        navController.navigate("product_detail/$productId")
+                    }
+                )
+            }
+            
+            // Rota de perfil do prestador/loja (mantida para compatibilidade)
             composable(
                 route = "provider_profile/{providerId}",
+                arguments = listOf(
+                    navArgument("providerId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val providerId = backStackEntry.arguments?.getString("providerId") ?: ""
+                // Redirecionar para a nova rota unificada
+                navController.navigate("user_profile/$providerId") {
+                    popUpTo("provider_profile/$providerId") { inclusive = true }
+                }
+            }
+            
+            composable(
+                route = "provider_profile_legacy/{providerId}",
                 arguments = listOf(
                     navArgument("providerId") {
                         type = NavType.StringType
@@ -505,7 +578,10 @@ fun TaskGoNavGraph(
             composable("services") {
                 ServicesScreen(
                     onNavigateToServiceDetail = { serviceId ->
-                        navController.navigate("service_detail/$serviceId")
+                        navController.navigate("service_detail/$serviceId") {
+                            // Salvar a rota "services" no back stack para poder voltar
+                            launchSingleTop = true
+                        }
                     },
                     onNavigateToCreateWorkOrder = {
                         navController.navigate("create_work_order")
@@ -518,6 +594,9 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToMessages = {
                         navController.navigate("messages")
+                    },
+                    onNavigateToSearch = {
+                        navController.navigate("universal_search")
                     }
                 )
             }
@@ -538,10 +617,54 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToMessages = {
                         navController.navigate("messages")
+                    },
+                    onNavigateToSearch = {
+                        navController.navigate("universal_search")
+                    },
+                    onNavigateToSellerProfile = { sellerId ->
+                        navController.navigate("user_profile/$sellerId")
                     }
                 )
             }
 
+            composable("feed") {
+                FeedScreen(
+                    onNavigateToMessages = {
+                        navController.navigate("messages")
+                    },
+                    onNavigateToUserProfile = { userId ->
+                        navController.navigate("user_profile/$userId")
+                    },
+                    onNavigateToSearch = {
+                        navController.navigate("universal_search")
+                    },
+                    onNavigateToNotifications = {
+                        navController.navigate("notifications")
+                    },
+                    onNavigateToCart = {
+                        navController.navigate("cart")
+                    }
+                )
+            }
+            
+            // Tela de detalhes do post (deep link: https://taskgo.app/post/{postId})
+            composable(
+                route = "post/{postId}",
+                arguments = listOf(
+                    navArgument("postId") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val postId = backStackEntry.arguments?.getString("postId") ?: ""
+                PostDetailScreen(
+                    postId = postId,
+                    onBackClick = { navController.popBackStack() },
+                    onNavigateToUserProfile = { userId ->
+                        navController.navigate("user_profile/$userId")
+                    }
+                )
+            }
+            
+            // Rotas de mensagens mantidas (acessíveis via botão do topbar)
             composable("messages") {
                 MessagesScreen(
                     onBackClick = { navController.popBackStack() },
@@ -562,6 +685,12 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToCart = {
                         navController.navigate("cart")
+                    },
+                    onNavigateToProviders = {
+                        navController.navigate("local_providers")
+                    },
+                    onNavigateToServiceOrders = {
+                        navController.navigate("local_service_orders")
                     }
                 )
             }
@@ -574,6 +703,8 @@ fun TaskGoNavGraph(
                 onNavigateToNotifications = { navController.navigate("notifications") },
                 onNavigateToSettings = { navController.navigate("configuracoes") },
                 onNavigateToCart = { navController.navigate("cart") },
+                onNavigateToProviders = { navController.navigate("local_providers") },
+                onNavigateToServiceOrders = { navController.navigate("local_service_orders") },
                 variant = "empty"
             )
         }
@@ -586,6 +717,8 @@ fun TaskGoNavGraph(
                 onNavigateToNotifications = { navController.navigate("notifications") },
                 onNavigateToSettings = { navController.navigate("configuracoes") },
                 onNavigateToCart = { navController.navigate("cart") },
+                onNavigateToProviders = { navController.navigate("local_providers") },
+                onNavigateToServiceOrders = { navController.navigate("local_service_orders") },
                 variant = "loading"
             )
         }
@@ -598,6 +731,8 @@ fun TaskGoNavGraph(
                 onNavigateToNotifications = { navController.navigate("notifications") },
                 onNavigateToSettings = { navController.navigate("configuracoes") },
                 onNavigateToCart = { navController.navigate("cart") },
+                onNavigateToProviders = { navController.navigate("local_providers") },
+                onNavigateToServiceOrders = { navController.navigate("local_service_orders") },
                 variant = "unread"
             )
         }
@@ -1156,12 +1291,26 @@ fun TaskGoNavGraph(
             val serviceId = backStackEntry.arguments?.getString("serviceId") ?: ""
             DetalhesServicoScreen(
                 serviceId = serviceId,
-                onBackClick = { navController.popBackStack() },
+                onBackClick = { 
+                    // Tentar voltar, se não conseguir, navegar para services
+                    if (!navController.popBackStack()) {
+                        navController.navigate("services") {
+                            popUpTo(navController.graph.startDestinationId) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                },
                 onEditService = { serviceId ->
                     navController.navigate("service_form/$serviceId")
                 },
                 onNavigateToReviews = { targetId ->
                     navController.navigate("reviews/$targetId/SERVICE")
+                },
+                onNavigateToProviderProfile = { providerId ->
+                    navController.navigate("user_profile/$providerId")
+                },
+                onNavigateToChat = { threadId ->
+                    navController.navigate("chat/$threadId")
                 }
             )
         }
@@ -1434,7 +1583,7 @@ fun TaskGoNavGraph(
                 onConta = { navController.navigate("account") },
                 onPreferencias = { navController.navigate("preferences") },
                 onNotificacoes = { navController.navigate("notification_settings") },
-                onIdioma = { navController.navigate("language") },
+                onIdioma = { /* Idioma desativado */ },
                 onPrivacidade = { navController.navigate("privacy") },
                 onSuporte = { navController.navigate("support") },
                 onSobre = { navController.navigate("about") },
@@ -1458,6 +1607,17 @@ fun TaskGoNavGraph(
         }
         composable("bank_accounts") {
             com.taskgoapp.taskgo.feature.settings.presentation.BankAccountScreen(
+                onBackClick = { navController.popBackStack() },
+                onEditAccount = { accountId ->
+                    navController.navigate("edit_bank_account/$accountId")
+                }
+            )
+        }
+        
+        composable("edit_bank_account/{accountId}") { backStackEntry ->
+            val accountId = backStackEntry.arguments?.getString("accountId") ?: ""
+            com.taskgoapp.taskgo.feature.settings.presentation.EditBankAccountScreen(
+                accountId = accountId,
                 onBackClick = { navController.popBackStack() }
             )
         }
@@ -1465,7 +1625,14 @@ fun TaskGoNavGraph(
             SecuritySettingsScreen(
                 onBackClick = { navController.popBackStack() },
                 onNavigateToIdentityVerification = { navController.navigate("identity_verification") },
-                onNavigateToConsentHistory = { navController.navigate("consent_history") }
+                onNavigateToConsentHistory = { navController.navigate("consent_history") },
+                onNavigateToLogin = {
+                    // Navegar para login e limpar o back stack
+                    navController.navigate("login_person") {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
             )
         }
         composable("preferences") {
@@ -1477,12 +1644,13 @@ fun TaskGoNavGraph(
         composable("notification_settings") {
             NotificationsSettingsScreen(onNavigateBack = { navController.popBackStack() })
         }
-        composable("language") {
-            LanguageScreen(
-                onBackClick = { navController.popBackStack() },
-                onLogout = { /* no-op */ }
-            )
-        }
+        // Idioma desativado - rota removida
+        // composable("language") {
+        //     LanguageScreen(
+        //         onBackClick = { navController.popBackStack() },
+        //         onLogout = { /* no-op */ }
+        //     )
+        // }
         composable("privacy") { 
             PrivacyScreen(
                 onBackClick = { navController.popBackStack() },
@@ -1527,7 +1695,7 @@ fun TaskGoNavGraph(
                 onNavigateToAccount = { navController.navigate("account") },
                 onNavigateToPreferences = { navController.navigate("preferences") },
                 onNavigateToNotifications = { navController.navigate("notification_settings") },
-                onNavigateToLanguage = { navController.navigate("language") },
+                onNavigateToLanguage = { /* Idioma desativado temporariamente */ },
                 onNavigateToPrivacy = { navController.navigate("privacy") },
                 onNavigateToSupport = { navController.navigate("support") },
                 onNavigateToAbout = { navController.navigate("about") },
@@ -1539,10 +1707,22 @@ fun TaskGoNavGraph(
         // Messages
         composable("chat/{chatId}") { backStackEntry ->
             val chatId = backStackEntry.arguments?.getString("chatId") ?: ""
-            // Converter String para Long para compatibilidade com ChatScreen
-            val threadIdLong = chatId.toLongOrNull() ?: 0L
             ChatScreen(
-                threadId = threadIdLong,
+                threadId = chatId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable("chat_for_order/{orderId}") { backStackEntry ->
+            val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
+            // Composable helper que obtém/cria thread e navega para chat
+            OrderChatNavigationScreen(
+                orderId = orderId,
+                onNavigateToChat = { threadId ->
+                    navController.navigate("chat/$threadId") {
+                        popUpTo("chat_for_order/$orderId") { inclusive = true }
+                    }
+                },
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -1553,7 +1733,8 @@ fun TaskGoNavGraph(
                 onBackClick = { navController.popBackStack() },
                 onCriarServico = { navController.navigate("service_form") },
                 onEditarServico = { serviceId -> navController.navigate("service_form/$serviceId") },
-                onViewService = { serviceId -> navController.navigate("service_detail/$serviceId") }
+                onViewService = { serviceId -> navController.navigate("service_detail/$serviceId") },
+                onOrderClick = { orderId -> navController.navigate("service_order_detail/$orderId") }
             )
         }
         
@@ -1569,7 +1750,11 @@ fun TaskGoNavGraph(
             ServiceFormScreen(
                 serviceId = null,
                 onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() }
+                onSaved = { 
+                    navController.navigate("meus_servicos") {
+                        popUpTo("home") { inclusive = false }
+                    }
+                }
             )
         }
         
@@ -1772,7 +1957,7 @@ fun TaskGoNavGraph(
             )
         }
         composable("gerenciar_produtos") {
-            GerenciarProdutosScreen(
+            MeusProdutosScreen(
                 onBackClick = { navController.popBackStack() },
                 onCriarProduto = { navController.navigate("create_product") },
                 onEditarProduto = { id -> navController.navigate("edit_product/$id") }

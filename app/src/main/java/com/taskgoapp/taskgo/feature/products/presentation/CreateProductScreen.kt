@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.products.presentation
+package com.taskgoapp.taskgo.feature.products.presentation
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -246,10 +246,8 @@ fun CreateProductScreen(
                 // Campo Preço
                 OutlinedTextField(
                     value = productPrice,
-                    onValueChange = { 
-                        // Formatar preço
-                        val filtered = it.filter { char -> char.isDigit() || char == ',' || char == '.' }
-                        productPrice = filtered
+                    onValueChange = { newValue ->
+                        productPrice = com.taskgoapp.taskgo.core.utils.TextFormatters.formatPrice(newValue)
                     },
                     label = { 
                         Text(

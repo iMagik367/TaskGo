@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.data.firestore.models
+package com.taskgoapp.taskgo.data.firestore.models
 
 import com.taskgoapp.taskgo.core.model.Address
 import java.util.Date
@@ -9,7 +9,8 @@ data class UserFirestore(
     val displayName: String? = null,
     val photoURL: String? = null,
     val phone: String? = null,
-    val role: String = "client", // client, provider, admin
+    val role: String = "client", // client, partner, admin (legacy: provider, seller - devem ser migrados)
+    val pendingAccountType: Boolean = false, // Flag para indicar que o app precisa mostrar dialog de seleção de tipo de conta
     val profileComplete: Boolean = false,
     val verified: Boolean = false,
     
@@ -45,6 +46,9 @@ data class UserFirestore(
     
     // Provider Preferences
     val preferredCategories: List<String>? = null, // Categories the provider prefers to receive orders for
+    
+    // User Identifier (calculado automaticamente)
+    val userIdentifier: String? = null, // ID único baseado em role, localização e categorias
     
     // App Preferences
     val notificationSettings: NotificationSettingsFirestore? = null,

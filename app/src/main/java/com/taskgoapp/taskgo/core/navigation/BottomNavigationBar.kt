@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.core.navigation
+package com.taskgoapp.taskgo.core.navigation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,8 +26,18 @@ import com.taskgoapp.taskgo.core.design.TGIcons
 fun BottomNavigationBar(
     currentRoute: String,
     onNavigate: (String) -> Unit,
+    accountType: com.taskgoapp.taskgo.core.model.AccountType? = null, // Parâmetro opcional para accountType
     modifier: Modifier = Modifier
 ) {
+    // Determinar label da aba Produtos: "Loja" para Cliente e Parceiro, "Produtos" para outros
+    val productsLabel = when (accountType) {
+        com.taskgoapp.taskgo.core.model.AccountType.CLIENTE,
+        com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO,
+        com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR,
+        com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR -> "Loja"
+        else -> "Produtos"
+    }
+    
     val bottomNavItems = listOf(
         BottomNavItem(
             route = "home",
@@ -41,13 +51,13 @@ fun BottomNavigationBar(
         ),
         BottomNavItem(
             route = "products",
-            label = "Produtos",
+            label = productsLabel, // Dinâmico baseado em accountType
             iconRes = TGIcons.Products
         ),
         BottomNavItem(
-            route = "messages",
-            label = "Mensagem",
-            iconRes = TGIcons.Messages
+            route = "feed",
+            label = "Feed",
+            iconRes = TGIcons.Feed
         ),
         BottomNavItem(
             route = "profile",

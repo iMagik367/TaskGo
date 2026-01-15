@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.core.design
+package com.taskgoapp.taskgo.core.design
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,7 +42,7 @@ fun AppTopBar(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             if (onBackClick != null) {
                 Box(
@@ -66,12 +66,25 @@ fun AppTopBar(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = titleColor
-                )
+                // Linha com título e ações (ícones) alinhados horizontalmente
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = titleColor,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    
+                    // Ícones de ações alinhados horizontalmente com o título
+                    actions?.invoke()
+                }
+                
+                // Subtítulo abaixo do título e ícones
                 if (subtitle != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -81,8 +94,6 @@ fun AppTopBar(
                     )
                 }
             }
-            
-            actions?.invoke()
         }
     }
 }

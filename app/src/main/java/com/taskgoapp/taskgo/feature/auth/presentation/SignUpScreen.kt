@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.feature.auth.presentation
+package com.taskgoapp.taskgo.feature.auth.presentation
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -28,10 +28,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import com.taskgoapp.taskgo.core.model.UserType
 import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.core.design.TGIcons
 import com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField
+import com.taskgoapp.taskgo.core.design.OutlinedTextFieldWithValue
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
@@ -64,20 +67,29 @@ fun SignUpScreen(
     
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
-    var cpf by remember { mutableStateOf("") }
+    var cpf by remember { mutableStateOf(TextFieldValue("")) }
+    var cnpj by remember { mutableStateOf(TextFieldValue("")) }
     var rg by remember { mutableStateOf("") }
-    var birthDate by remember { mutableStateOf("") }
+    var birthDate by remember { mutableStateOf(TextFieldValue("")) }
     var biometricEnabled by remember { mutableStateOf(false) }
     var twoFactorEnabled by remember { mutableStateOf(false) }
     var selectedAccountType by remember { mutableStateOf(AccountType.CLIENTE) }
+    // Seleção de tipo de documento para Parceiro (CPF ou CNPJ)
+    var documentType by remember { mutableStateOf<String?>(null) } // "CPF" ou "CNPJ" ou null
+    
+    // Categorias de serviço selecionadas para Parceiro
+    var selectedServiceCategories by remember { mutableStateOf<Set<String>>(emptySet()) }
+    
+    // Observar categorias de serviço do ViewModel
+    val serviceCategories by viewModel.serviceCategories.collectAsState()
     
     // Campos de endereço
-    var zipCode by remember { mutableStateOf("") }
+    var zipCode by remember { mutableStateOf(TextFieldValue("")) }
     var street by remember { mutableStateOf("") }
     var number by remember { mutableStateOf("") }
     var complement by remember { mutableStateOf("") }
@@ -88,14 +100,30 @@ fun SignUpScreen(
     
     // Estados de validação e loading
     var cpfError by remember { mutableStateOf<String?>(null) }
+    var cnpjError by remember { mutableStateOf<String?>(null) }
     var rgError by remember { mutableStateOf<String?>(null) }
     var cepError by remember { mutableStateOf<String?>(null) }
     var isLoadingCep by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var confirmPasswordError by remember { mutableStateOf<String?>(null) }
+    
+    // Validador de senha
+    val passwordValidator = remember { com.taskgoapp.taskgo.core.validation.PasswordValidator() }
 
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(TaskGoBackgroundWhite)
+            .clickable(
+                indication = null,
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            ) {
+                focusManager.clearFocus()
+                keyboardController?.hide()
+            }
     ) {
         Column(
             modifier = Modifier
@@ -129,7 +157,7 @@ fun SignUpScreen(
             // Campo Nome
             com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = { newValue -> name = newValue },
                 label = { 
                     Text(
                         "Nome",
@@ -139,7 +167,7 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 72.dp),
                 keyboardType = KeyboardType.Text
             )
             
@@ -148,7 +176,7 @@ fun SignUpScreen(
             // Campo E-mail
             com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
+                onValueChange = { newValue -> email = newValue },
                 label = { 
                     Text(
                         "E-mail",
@@ -158,16 +186,23 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 72.dp),
                 keyboardType = KeyboardType.Email
             )
             
             Spacer(modifier = Modifier.height(16.dp))
             
             // Campo Telefone
-            EnhancedOutlinedTextField(
+            OutlinedTextFieldWithValue(
                 value = phone,
-                onValueChange = { phone = it },
+                onValueChange = { newValue: TextFieldValue ->
+                    val cleanValue = newValue.text.replace(Regex("[^0-9]"), "")
+                    if (cleanValue.length <= 11) {
+                        phone = com.taskgoapp.taskgo.core.utils.TextFormatters.formatPhoneWithCursor(newValue)
+                    } else {
+                        phone = newValue
+                    }
+                },
                 label = { 
                     Text(
                         "Telefone",
@@ -177,8 +212,11 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                    .heightIn(min = 72.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+                singleLine = true
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -201,11 +239,11 @@ fun SignUpScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { selectedAccountType = AccountType.PRESTADOR },
+                        .clickable { selectedAccountType = AccountType.PARCEIRO },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (selectedAccountType == AccountType.PRESTADOR) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
+                        containerColor = if (selectedAccountType == AccountType.PARCEIRO) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
                     ),
-                    border = if (selectedAccountType == AccountType.PRESTADOR) BorderStroke(2.dp, TaskGoGreen) else null
+                    border = if (selectedAccountType == AccountType.PARCEIRO) BorderStroke(2.dp, TaskGoGreen) else null
                 ) {
                     Row(
                         modifier = Modifier
@@ -214,49 +252,27 @@ fun SignUpScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = selectedAccountType == AccountType.PRESTADOR,
-                            onClick = { selectedAccountType = AccountType.PRESTADOR },
+                            selected = selectedAccountType == AccountType.PARCEIRO,
+                            onClick = { selectedAccountType = AccountType.PARCEIRO },
                             colors = RadioButtonDefaults.colors(
                                 selectedColor = TaskGoGreen
                             )
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Prestador de Serviços",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TaskGoTextBlack
-                        )
-                    }
-                }
-                
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedAccountType = AccountType.VENDEDOR },
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (selectedAccountType == AccountType.VENDEDOR) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
-                    ),
-                    border = if (selectedAccountType == AccountType.VENDEDOR) BorderStroke(2.dp, TaskGoGreen) else null
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedAccountType == AccountType.VENDEDOR,
-                            onClick = { selectedAccountType = AccountType.VENDEDOR },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = TaskGoGreen
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Parceiro",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = TaskGoTextBlack,
+                                fontWeight = FontWeight.Medium
                             )
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Vendedor",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TaskGoTextBlack
-                        )
+                            Text(
+                                text = "Oferecer serviços e vender produtos",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TaskGoTextGray,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
                 
@@ -283,127 +299,361 @@ fun SignUpScreen(
                             )
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Cliente",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TaskGoTextBlack
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Cliente",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = TaskGoTextBlack,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Contratar serviços e comprar produtos",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TaskGoTextGray,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // Mostrar checkboxes de tipos de serviço quando Parceiro for selecionado
+            if (selectedAccountType == AccountType.PARCEIRO && serviceCategories.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "Selecione os tipos de serviço que você oferece",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = TaskGoTextBlack,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    serviceCategories.forEach { category ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = selectedServiceCategories.contains(category.name),
+                                onCheckedChange = { checked ->
+                                    selectedServiceCategories = if (checked) {
+                                        selectedServiceCategories + category.name
+                                    } else {
+                                        selectedServiceCategories - category.name
+                                    }
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = TaskGoGreen
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = category.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TaskGoTextBlack,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Campo CPF com validação e formatação
-            EnhancedOutlinedTextField(
-                value = cpf,
-                onValueChange = { newValue ->
-                    // Remove caracteres não numéricos
-                    val cleanValue = newValue.replace(Regex("[^0-9]"), "")
-                    if (cleanValue.length <= 11) {
-                        // Sempre permitir edição, mesmo com erro
-                        cpf = cleanValue
-                        cpfError = null // Limpar erro ao começar a editar
-                        
-                        // Formata automaticamente quando tiver 11 dígitos
-                        if (cleanValue.length == 11) {
-                            val formatted = documentValidator.formatCpf(cleanValue)
-                            cpf = formatted
-                            // Valida usando validador avançado
-                            scope.launch {
-                                val validation = governmentValidator.validateCpfAdvanced(formatted)
-                                cpfError = when (validation) {
-                                    is com.taskgoapp.taskgo.core.validation.DocumentValidationResult.Invalid -> validation.message
-                                    is com.taskgoapp.taskgo.core.validation.DocumentValidationResult.Suspicious -> validation.message
-                                    is com.taskgoapp.taskgo.core.validation.DocumentValidationResult.Error -> validation.message
-                                    else -> null
+            // Para Parceiro: checkboxes para selecionar CPF ou CNPJ
+            if (selectedAccountType == AccountType.PARCEIRO) {
+                Text(
+                    text = "Tipo de Documento",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = TaskGoTextBlack,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Checkbox CPF
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { 
+                                documentType = "CPF"
+                                cnpj = TextFieldValue("") // Limpar CNPJ quando selecionar CPF
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = documentType == "CPF",
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    documentType = "CPF"
+                                    cnpj = TextFieldValue("") // Limpar CNPJ
+                                } else {
+                                    documentType = null
+                                }
+                            },
+                            colors = CheckboxDefaults.colors(checkedColor = TaskGoGreen)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("CPF", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    
+                    // Checkbox CNPJ
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { 
+                                documentType = "CNPJ"
+                                cpf = TextFieldValue("") // Limpar CPF quando selecionar CNPJ
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = documentType == "CNPJ",
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    documentType = "CNPJ"
+                                    cpf = TextFieldValue("") // Limpar CPF
+                                } else {
+                                    documentType = null
+                                }
+                            },
+                            colors = CheckboxDefaults.colors(checkedColor = TaskGoGreen)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("CNPJ", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // Campo CPF (apenas se Parceiro selecionou CPF ou se Cliente)
+            if (selectedAccountType != AccountType.PARCEIRO || documentType == "CPF") {
+                OutlinedTextFieldWithValue(
+                    value = cpf,
+                    onValueChange = { newValue ->
+                        val cleanValue = newValue.text.replace(Regex("[^0-9]"), "")
+                        if (cleanValue.length <= 11) {
+                            cpfError = null // Limpar erro ao começar a editar
+                            
+                            // Formata progressivamente preservando posição do cursor
+                            cpf = com.taskgoapp.taskgo.core.utils.TextFormatters.formatCpfWithCursor(newValue)
+                            
+                            // Valida usando validador avançado quando tiver 11 dígitos
+                            if (cleanValue.length == 11) {
+                                scope.launch {
+                                    val cpfText = cpf.text.replace(Regex("[^0-9]"), "")
+                                    val validation = governmentValidator.validateCpfAdvanced(cpfText)
+                                    cpfError = when (validation) {
+                                        is com.taskgoapp.taskgo.core.validation.DocumentValidationResult.Invalid -> validation.message
+                                        is com.taskgoapp.taskgo.core.validation.DocumentValidationResult.Suspicious -> validation.message
+                                        is com.taskgoapp.taskgo.core.validation.DocumentValidationResult.Error -> validation.message
+                                        else -> null
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-                label = { 
-                    Text(
-                        "CPF (Opcional)",
-                        color = TaskGoTextGray,
-                        fontSize = 14.sp
-                    ) 
-                },
-                placeholder = { Text("000.000.000-00", color = TaskGoTextGray) },
-                isError = cpfError != null,
-                supportingText = cpfError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-                enabled = true, // Sempre habilitado para permitir correção
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
+                    },
+                    label = { 
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "CPF",
+                                color = TaskGoTextGray,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                " (Obrigatório)",
+                                color = TaskGoTextGray,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
+                    },
+                    placeholder = { Text("000.000.000-00", color = TaskGoTextGray) },
+                    isError = cpfError != null,
+                    supportingText = if (cpfError != null) {
+                        { Text(cpfError ?: "", color = MaterialTheme.colorScheme.error) }
+                    } else null,
+                    enabled = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // Campo CNPJ (apenas se Parceiro selecionou CNPJ)
+            if (selectedAccountType == AccountType.PARCEIRO && documentType == "CNPJ") {
+                OutlinedTextFieldWithValue(
+                    value = cnpj,
+                    onValueChange = { newValue ->
+                        val cleanValue = newValue.text.replace(Regex("[^0-9]"), "")
+                        if (cleanValue.length <= 14) {
+                            cnpjError = null // Limpar erro ao começar a editar
+                            
+                            // Formata progressivamente preservando posição do cursor
+                            cnpj = com.taskgoapp.taskgo.core.utils.TextFormatters.formatCnpjWithCursor(newValue)
+                            
+                            // Valida quando tiver 14 dígitos
+                            if (cleanValue.length == 14) {
+                                scope.launch {
+                                    val cnpjText = cnpj.text.replace(Regex("[^0-9]"), "")
+                                    val validation = documentValidator.validateCnpj(cnpjText)
+                                    cnpjError = if (validation is ValidationResult.Invalid) validation.message else null
+                                }
+                            }
+                        }
+                    },
+                    label = { 
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "CNPJ",
+                                color = TaskGoTextGray,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                " (Obrigatório)",
+                                color = TaskGoTextGray,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
+                    },
+                    placeholder = { Text("00.000.000/0000-00", color = TaskGoTextGray) },
+                    isError = cnpjError != null,
+                    supportingText = if (cnpjError != null) {
+                        { Text(cnpjError ?: "", color = MaterialTheme.colorScheme.error) }
+                    } else null,
+                    enabled = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
             
             Spacer(modifier = Modifier.height(16.dp))
             
             // Campo RG com validação e formatação
-            OutlinedTextField(
-                value = rg,
+            var rgTextFieldValue by remember { mutableStateOf(TextFieldValue(rg)) }
+            
+            // Sincronizar rgTextFieldValue com rg quando rg mudar externamente
+            LaunchedEffect(rg) {
+                if (rgTextFieldValue.text.replace(Regex("[^0-9A-Za-z]"), "") != rg.replace(Regex("[^0-9A-Za-z]"), "")) {
+                    rgTextFieldValue = TextFieldValue(rg)
+                }
+            }
+            
+            OutlinedTextFieldWithValue(
+                value = rgTextFieldValue,
                 onValueChange = { newValue ->
-                    rg = newValue.uppercase()
-                    // Valida quando o campo perder o foco ou tiver tamanho mínimo
-                    if (rg.length >= 6) {
-                        val validation = documentValidator.validateRg(rg, state.takeIf { it.isNotEmpty() })
-                        rgError = if (validation is ValidationResult.Invalid) validation.message else null
-                    } else {
-                        rgError = null
+                    val cleanValue = newValue.text.replace(Regex("[^0-9A-Za-z]"), "")
+                    // Permitir até 12 caracteres alfanuméricos (formato brasileiro permite até 12 dígitos)
+                    if (cleanValue.length <= 12) {
+                        rgError = null // Limpar erro ao começar a editar
+                        
+                        // Formata progressivamente preservando posição do cursor
+                        rgTextFieldValue = com.taskgoapp.taskgo.core.utils.TextFormatters.formatRgWithCursor(newValue)
+                        rg = rgTextFieldValue.text.replace(Regex("[^0-9A-Za-z]"), "").uppercase()
+                        
+                        // Valida quando tiver tamanho mínimo (removendo formatação para contar dígitos)
+                        val cleanRgDigits = rgTextFieldValue.text.replace(Regex("[^0-9A-Za-z]"), "")
+                        if (cleanRgDigits.length >= 6) {
+                            // Valida o RG formatado (com pontos e hífen) ou sem formatação
+                            val rgToValidate = rgTextFieldValue.text.uppercase()
+                            val validation = documentValidator.validateRg(rgToValidate, state.takeIf { it.isNotEmpty() })
+                            rgError = if (validation is ValidationResult.Invalid) validation.message else null
+                        } else {
+                            rgError = null
+                        }
                     }
                 },
                 label = { 
-                    Text(
-                        "RG (Opcional)",
-                        color = TaskGoTextGray,
-                        fontSize = 14.sp
-                    ) 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "RG",
+                            color = TaskGoTextGray,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            " (Obrigatório)",
+                            color = TaskGoTextGray,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
                 },
                 placeholder = { Text("00.000.000-0", color = TaskGoTextGray) },
                 isError = rgError != null,
-                supportingText = rgError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                supportingText = if (rgError != null) {
+                    { Text(rgError ?: "", color = MaterialTheme.colorScheme.error) }
+                } else null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = if (rgError != null) MaterialTheme.colorScheme.error else TaskGoGreen,
-                    unfocusedBorderColor = if (rgError != null) MaterialTheme.colorScheme.error else Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    .heightIn(min = 72.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+                singleLine = true
             )
             
             Spacer(modifier = Modifier.height(16.dp))
             
             // Seção de Endereço
-            Text(
-                text = "Endereço (Opcional)",
-                style = MaterialTheme.typography.titleMedium,
-                color = TaskGoTextBlack,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Endereço",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TaskGoTextBlack,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = " (Obrigatório)",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TaskGoTextBlack,
+                    fontWeight = FontWeight.Normal
+                )
+            }
             
             Spacer(modifier = Modifier.height(8.dp))
             
             // Campo CEP com busca automática de endereço
-            OutlinedTextField(
+            OutlinedTextFieldWithValue(
                 value = zipCode,
-                onValueChange = { newValue ->
-                    // Remove caracteres não numéricos
-                    val cleanValue = newValue.replace(Regex("[^0-9]"), "")
+                onValueChange = { newValue: TextFieldValue ->
+                    // Formata preservando cursor
+                    zipCode = com.taskgoapp.taskgo.core.utils.TextFormatters.formatCepWithCursor(newValue)
+                    val cleanValue = zipCode.text.replace(Regex("[^0-9]"), "")
+                    
                     if (cleanValue.length <= 8) {
-                        zipCode = cleanValue
                         cepError = null
                         
-                        // Formata automaticamente quando tiver 8 dígitos
+                        // Busca endereço quando tiver 8 dígitos
                         if (cleanValue.length == 8) {
-                            zipCode = documentValidator.formatCep(cleanValue)
                             
                             // Busca endereço automaticamente
                             scope.launch {
@@ -438,6 +688,7 @@ fun SignUpScreen(
                     ) 
                 },
                 placeholder = { Text("00000-000", color = TaskGoTextGray) },
+                singleLine = true,
                 trailingIcon = {
                     if (isLoadingCep) {
                         CircularProgressIndicator(
@@ -447,10 +698,12 @@ fun SignUpScreen(
                     }
                 },
                 isError = cepError != null,
-                supportingText = cepError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                supportingText = if (cepError != null) {
+                    { Text(cepError ?: "", color = MaterialTheme.colorScheme.error) }
+                } else null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 72.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = if (cepError != null) MaterialTheme.colorScheme.error else TaskGoGreen,
@@ -460,15 +713,16 @@ fun SignUpScreen(
                     cursorColor = TaskGoGreen
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                enabled = !isLoadingCep
+                enabled = !isLoadingCep,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
             
             // Campo Rua
-            OutlinedTextField(
+            EnhancedOutlinedTextField(
                 value = street,
-                onValueChange = { street = it },
+                onValueChange = { newValue -> street = newValue },
                 label = { 
                     Text(
                         "Rua",
@@ -478,16 +732,10 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    .heightIn(min = 72.dp),
+                keyboardType = KeyboardType.Text,
+                minLines = 1,
+                maxLines = 3
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -497,9 +745,9 @@ fun SignUpScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(
+                EnhancedOutlinedTextField(
                     value = number,
-                    onValueChange = { number = it },
+                    onValueChange = { newValue -> number = newValue },
                     label = { 
                         Text(
                             "Número",
@@ -509,21 +757,13 @@ fun SignUpScreen(
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TaskGoGreen,
-                        unfocusedBorderColor = Color(0xFFD9D9D9),
-                        focusedLabelColor = TaskGoTextGray,
-                        unfocusedLabelColor = TaskGoTextGray,
-                        cursorColor = TaskGoGreen
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        .heightIn(min = 72.dp),
+                    keyboardType = KeyboardType.Number
                 )
                 
-                OutlinedTextField(
+                EnhancedOutlinedTextField(
                     value = complement,
-                    onValueChange = { complement = it },
+                    onValueChange = { newValue -> complement = newValue },
                     label = { 
                         Text(
                             "Complemento",
@@ -534,25 +774,19 @@ fun SignUpScreen(
                     placeholder = { Text("Apto, Bloco, etc.", color = TaskGoTextGray) },
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TaskGoGreen,
-                        unfocusedBorderColor = Color(0xFFD9D9D9),
-                        focusedLabelColor = TaskGoTextGray,
-                        unfocusedLabelColor = TaskGoTextGray,
-                        cursorColor = TaskGoGreen
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                        .heightIn(min = 72.dp),
+                    keyboardType = KeyboardType.Text,
+                    minLines = 1,
+                    maxLines = 3
                 )
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
             // Campo Bairro
-            OutlinedTextField(
+            EnhancedOutlinedTextField(
                 value = neighborhood,
-                onValueChange = { neighborhood = it },
+                onValueChange = { newValue -> neighborhood = newValue },
                 label = { 
                     Text(
                         "Bairro",
@@ -562,16 +796,10 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    .heightIn(min = 72.dp),
+                keyboardType = KeyboardType.Text,
+                minLines = 1,
+                maxLines = 3
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -581,9 +809,9 @@ fun SignUpScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(
+                EnhancedOutlinedTextField(
                     value = city,
-                    onValueChange = { city = it },
+                    onValueChange = { newValue -> city = newValue },
                     label = { 
                         Text(
                             "Cidade",
@@ -593,21 +821,15 @@ fun SignUpScreen(
                     },
                     modifier = Modifier
                         .weight(2f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TaskGoGreen,
-                        unfocusedBorderColor = Color(0xFFD9D9D9),
-                        focusedLabelColor = TaskGoTextGray,
-                        unfocusedLabelColor = TaskGoTextGray,
-                        cursorColor = TaskGoGreen
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                        .heightIn(min = 72.dp),
+                    keyboardType = KeyboardType.Text,
+                    minLines = 1,
+                    maxLines = 3
                 )
                 
-                OutlinedTextField(
+                EnhancedOutlinedTextField(
                     value = state,
-                    onValueChange = { state = it },
+                    onValueChange = { newValue -> state = newValue },
                     label = { 
                         Text(
                             "Estado",
@@ -618,23 +840,37 @@ fun SignUpScreen(
                     placeholder = { Text("SP", color = TaskGoTextGray) },
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TaskGoGreen,
-                        unfocusedBorderColor = Color(0xFFD9D9D9),
-                        focusedLabelColor = TaskGoTextGray,
-                        unfocusedLabelColor = TaskGoTextGray,
-                        cursorColor = TaskGoGreen
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                        .heightIn(min = 72.dp),
+                    keyboardType = KeyboardType.Text
                 )
             }
             
             Spacer(modifier = Modifier.height(16.dp))
-            OutlinedTextField(
+            OutlinedTextFieldWithValue(
                 value = birthDate,
-                onValueChange = { birthDate = it },
+                onValueChange = { newValue: TextFieldValue ->
+                    try {
+                        val cleanValue = newValue.text
+                        val cleanOnlyNumbers = cleanValue.replace(Regex("[^0-9]"), "")
+                        
+                        // Validação segura para evitar crash
+                        if (cleanOnlyNumbers.isEmpty()) {
+                            birthDate = TextFieldValue("")
+                        } else if (cleanOnlyNumbers.length <= 8) {
+                            // Valida antes de formatar
+                            if (com.taskgoapp.taskgo.core.utils.TextFormatters.isValidDateInput(cleanOnlyNumbers)) {
+                                birthDate = com.taskgoapp.taskgo.core.utils.TextFormatters.formatDateWithCursor(newValue)
+                            } else {
+                                // Se inválido, mantém o valor anterior (não atualiza)
+                                // Não faz nada, previne crash
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Em caso de qualquer exceção, mantém o valor anterior
+                        android.util.Log.e("SignUpScreen", "Erro ao processar data: ${e.message}", e)
+                        // Não atualiza birthDate, mantém valor anterior
+                    }
+                },
                 label = { 
                     Text(
                         "Data de Nascimento (Opcional)",
@@ -647,7 +883,7 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 72.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = TaskGoGreen,
@@ -656,7 +892,9 @@ fun SignUpScreen(
                     unfocusedLabelColor = TaskGoTextGray,
                     cursorColor = TaskGoGreen
                 ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+                singleLine = true
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -684,31 +922,89 @@ fun SignUpScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             // Checkbox: Habilitar 2FA
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Checkbox(
-                    checked = twoFactorEnabled,
-                    onCheckedChange = { twoFactorEnabled = it },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = TaskGoGreen
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = twoFactorEnabled,
+                        onCheckedChange = { twoFactorEnabled = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = TaskGoGreen
+                        )
                     )
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Habilitar autenticação de duas etapas",
+                        color = TaskGoTextBlack,
+                        fontSize = 14.sp
+                    )
+                }
+                
+                // Instruções de senha abaixo do checkbox
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Habilitar autenticação de duas etapas",
-                    color = TaskGoTextBlack,
-                    fontSize = 14.sp
+                    text = "A senha deve conter:",
+                    color = TaskGoTextGray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 48.dp)
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Column(
+                    modifier = Modifier.padding(start = 48.dp)
+                ) {
+                    Text(
+                        text = "• Mínimo de 8 caracteres",
+                        color = TaskGoTextGray,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "• Pelo menos 1 número (0-9)",
+                        color = TaskGoTextGray,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "• Pelo menos 1 letra maiúscula (A-Z)",
+                        color = TaskGoTextGray,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "• Pelo menos 1 caractere especial (!@#$%&*()_+-=[]{}|;:,.<>?)",
+                        color = TaskGoTextGray,
+                        fontSize = 12.sp
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
             // Campo Senha
-            OutlinedTextField(
+            EnhancedOutlinedTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = { newPassword ->
+                    password = newPassword
+                    passwordError = null // Limpar erro ao começar a editar
+                    
+                    // Validar senha em tempo real
+                    if (newPassword.isNotEmpty()) {
+                        val validation = passwordValidator.validate(newPassword)
+                        passwordError = when (validation) {
+                            is ValidationResult.Invalid -> validation.message
+                            else -> null
+                        }
+                    }
+                    
+                    // Se houver confirmação de senha, validar novamente
+                    if (confirmPassword.isNotEmpty() && confirmPassword != newPassword) {
+                        confirmPasswordError = "As senhas não coincidem"
+                    } else if (confirmPassword.isNotEmpty() && confirmPassword == newPassword) {
+                        confirmPasswordError = null
+                    }
+                },
                 label = { 
                     Text(
                         "Senha",
@@ -718,17 +1014,16 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
+                    .heightIn(min = 72.dp),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Done
                 ),
+                isError = passwordError != null,
+                supportingText = if (passwordError != null) {
+                    { Text(passwordError ?: "", color = MaterialTheme.colorScheme.error) }
+                } else null,
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(
@@ -740,12 +1035,34 @@ fun SignUpScreen(
                 }
             )
             
+            // Indicador de força da senha
+            if (password.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                com.taskgoapp.taskgo.core.design.PasswordStrengthIndicator(
+                    password = password,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            
             Spacer(modifier = Modifier.height(16.dp))
             
             // Campo Confirmar Senha
-            OutlinedTextField(
+            EnhancedOutlinedTextField(
                 value = confirmPassword,
-                onValueChange = { confirmPassword = it },
+                onValueChange = { newConfirmPassword ->
+                    confirmPassword = newConfirmPassword
+                    
+                    // Validar se as senhas coincidem
+                    if (newConfirmPassword.isNotEmpty()) {
+                        if (newConfirmPassword != password) {
+                            confirmPasswordError = "As senhas não coincidem"
+                        } else {
+                            confirmPasswordError = null
+                        }
+                    } else {
+                        confirmPasswordError = null
+                    }
+                },
                 label = { 
                     Text(
                         "Confirmar Senha",
@@ -755,17 +1072,16 @@ fun SignUpScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TaskGoGreen,
-                    unfocusedBorderColor = Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
+                    .heightIn(min = 72.dp),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Done
                 ),
+                isError = confirmPasswordError != null,
+                supportingText = if (confirmPasswordError != null) {
+                    { Text(confirmPasswordError ?: "", color = MaterialTheme.colorScheme.error) }
+                } else null,
                 visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 trailingIcon = {
                     IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
                         Icon(
@@ -783,29 +1099,38 @@ fun SignUpScreen(
             val signupViewModel: SignupViewModel = hiltViewModel()
             val signupUiState = signupViewModel.uiState.collectAsState()
             
+            // Variáveis para validação e submissão
+            val phoneText = phone.text
+            val zipCodeText = zipCode.text
+            val birthDateText = birthDate.text
+            val cpfText = cpf.text.replace(Regex("[^0-9]"), "") // Remove formatação do CPF
+            val cnpjText = cnpj.text.replace(Regex("[^0-9]"), "") // Remove formatação do CNPJ
+            val rgText = rgTextFieldValue.text.replace(Regex("[^0-9A-Za-z]"), "") // Remove formatação do RG
+            val isAddressComplete = zipCodeText.isNotEmpty() && street.isNotEmpty() && 
+                                   number.isNotEmpty() && neighborhood.isNotEmpty() && 
+                                   city.isNotEmpty() && state.isNotEmpty()
+            
             Button(
                 onClick = { 
                     android.util.Log.d("SignUpScreen", "Botão Cadastrar clicado")
                     
-                    // Criar objeto Address se houver dados de endereço
-                    val address = if (street.isNotEmpty() || city.isNotEmpty() || zipCode.isNotEmpty()) {
-                        com.taskgoapp.taskgo.core.model.Address(
-                            street = street,
-                            number = number,
-                            complement = complement.takeIf { it.isNotEmpty() },
-                            neighborhood = neighborhood,
-                            city = city,
-                            state = state,
-                            country = country,
-                            zipCode = zipCode,
-                            cep = zipCode
-                        )
-                    } else null
+                    // Criar objeto Address (obrigatório)
+                    val address = com.taskgoapp.taskgo.core.model.Address(
+                        street = street,
+                        number = number,
+                        complement = complement.takeIf { it.isNotEmpty() },
+                        neighborhood = neighborhood,
+                        city = city,
+                        state = state,
+                        country = country,
+                        zipCode = zipCodeText,
+                        cep = zipCodeText
+                    )
                     
                     // Parse birthDate se fornecido
                     val parsedBirthDate = try {
-                        if (birthDate.isNotEmpty()) {
-                            val parts = birthDate.split("/")
+                        if (birthDateText.isNotEmpty()) {
+                            val parts = birthDateText.split("/")
                             if (parts.size == 3) {
                                 val day = parts[0].toInt()
                                 val month = parts[1].toInt() - 1 // Calendar months are 0-based
@@ -822,25 +1147,33 @@ fun SignUpScreen(
                     
                     // Mapear AccountType para UserType (temporário, para compatibilidade)
                     val userType = when (selectedAccountType) {
-                        AccountType.PRESTADOR -> com.taskgoapp.taskgo.core.model.UserType.PROVIDER
-                        AccountType.VENDEDOR -> com.taskgoapp.taskgo.core.model.UserType.CLIENT // Vendedor usa CLIENT temporariamente
+                        AccountType.PARCEIRO -> com.taskgoapp.taskgo.core.model.UserType.PROVIDER // Parceiro mapeia para PROVIDER
+                        AccountType.PRESTADOR -> com.taskgoapp.taskgo.core.model.UserType.PROVIDER // Legacy
+                        AccountType.VENDEDOR -> com.taskgoapp.taskgo.core.model.UserType.PROVIDER // Legacy - agora é provider também
                         AccountType.CLIENTE -> com.taskgoapp.taskgo.core.model.UserType.CLIENT
                     }
+                    
+                    // Converter Set<String> para List<String> para preferredCategories
+                    val preferredCategoriesList = if (selectedAccountType == AccountType.PARCEIRO && selectedServiceCategories.isNotEmpty()) {
+                        selectedServiceCategories.toList()
+                    } else null
                     
                     signupViewModel.signup(
                         name = name,
                         email = email,
-                        phone = phone,
+                        phone = phoneText,
                         password = password,
                         userType = userType,
                         accountType = selectedAccountType,
-                        cpf = cpf.takeIf { it.isNotEmpty() },
-                        rg = rg.takeIf { it.isNotEmpty() },
+                        cpf = if (selectedAccountType == AccountType.PARCEIRO && documentType == "CNPJ") null else cpfText.takeIf { it.isNotEmpty() },
+                        cnpj = if (selectedAccountType == AccountType.PARCEIRO && documentType == "CNPJ") cnpjText.takeIf { it.isNotEmpty() } else null,
+                        rg = rgTextFieldValue.text.uppercase(),
                         birthDate = parsedBirthDate,
                         address = address,
                         biometricEnabled = biometricEnabled,
                         twoFactorEnabled = twoFactorEnabled,
-                        twoFactorMethod = if (twoFactorEnabled) "email" else null
+                        twoFactorMethod = if (twoFactorEnabled) "email" else null,
+                        preferredCategories = preferredCategoriesList
                     )
                 },
                 modifier = Modifier
@@ -853,10 +1186,19 @@ fun SignUpScreen(
                 enabled = !signupUiState.value.isLoading && 
                          name.isNotEmpty() && 
                          email.isNotEmpty() && 
-                         phone.isNotEmpty() && 
+                         phoneText.isNotEmpty() && 
+                         cpfText.length == 11 &&
+                         cpfError == null &&
+                         rgText.length >= 6 &&
+                         rgError == null &&
+                         isAddressComplete &&
                          password.isNotEmpty() && 
                          confirmPassword.isNotEmpty() && 
-                         password == confirmPassword
+                         password == confirmPassword &&
+                         passwordError == null &&
+                         confirmPasswordError == null &&
+                         // Validação adicional: RG formatado deve ser válido (XX.XXX.XXX-X = 9 dígitos ou mais)
+                         (rgText.isEmpty() || (rgText.length >= 6 && rgText.length <= 12))
             ) {
                 if (signupUiState.value.isLoading) {
                     CircularProgressIndicator(

@@ -1,0 +1,10 @@
+﻿Corrigido erro de permissÃ£o ao solicitar mudanÃ§a de tipo de conta. Implementada autenticaÃ§Ã£o de duas etapas (2FA) com verificaÃ§Ã£o por email. Melhorada verificaÃ§Ã£o facial. Corrigida exclusÃ£o de conta. Idioma desativado. Melhorias no chat IA e
+
+
+
+
+
+
+
+
+

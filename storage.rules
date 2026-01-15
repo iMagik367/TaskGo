@@ -48,6 +48,28 @@ service firebase.storage {
         request.resource.contentType.matches('(image|application|video)/.*');
     }
 
+    // Post media: posts/{userId}/{filename}
+    match /posts/{userId}/{filename} {
+      // Anyone authenticated can read post media (public)
+      allow read: if isAuthenticated();
+      
+      // Only owner can upload post media
+      allow write: if isOwner(userId) && 
+        request.resource.size < 50 * 1024 * 1024 && // 50MB limit for videos
+        request.resource.contentType.matches('(image|video)/.*');
+    }
+    
+    // Story media: stories/{userId}/{filename}
+    match /stories/{userId}/{filename} {
+      // Anyone authenticated can read story media (public)
+      allow read: if isAuthenticated();
+      
+      // Only owner can upload story media
+      allow write: if isOwner(userId) && 
+        request.resource.size < 50 * 1024 * 1024 && // 50MB limit for videos
+        request.resource.contentType.matches('(image|video)/.*');
+    }
+
     // Service images: {providerId}/services/{serviceId}/images/{filename}
     match /{providerId}/services/{serviceId}/images/{filename} {
       // Anyone can read service images (public)

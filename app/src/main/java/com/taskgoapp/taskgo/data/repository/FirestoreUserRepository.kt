@@ -1,4 +1,4 @@
-﻿package com.taskgoapp.taskgo.data.repository
+package com.taskgoapp.taskgo.data.repository
 
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.google.firebase.firestore.FirebaseFirestore
@@ -22,7 +22,7 @@ class FirestoreUserRepository @Inject constructor(
             android.util.Log.d("FirestoreUserRepository", "Buscando usuário no Firestore: uid=$uid")
             val document = usersCollection.document(uid).get().await()
             if (document.exists()) {
-                val user = document.toObject(UserFirestore::class.java)
+                val user = document.data?.let { mapUser(document.id, it) }
                 android.util.Log.d("FirestoreUserRepository", "Usuário encontrado: ${user?.displayName}, email: ${user?.email}, role: ${user?.role}")
                 user
             } else {
@@ -61,9 +61,9 @@ class FirestoreUserRepository @Inject constructor(
                     
                     if (snapshot != null && snapshot.exists()) {
                         try {
-                        val user = snapshot.toObject(UserFirestore::class.java)
-                        android.util.Log.d("FirestoreUserRepository", "Usuário atualizado no Firestore: ${user?.displayName}, role: ${user?.role}")
-                        trySend(user)
+                            val user = snapshot.data?.let { mapUser(snapshot.id, it) }
+                            android.util.Log.d("FirestoreUserRepository", "Usuário atualizado no Firestore: ${user?.displayName}, role: ${user?.role}")
+                            trySend(user)
                         } catch (e: Exception) {
                             android.util.Log.e("FirestoreUserRepository", "Erro ao converter usuário: ${e.message}", e)
                             trySend(null)
@@ -79,6 +79,91 @@ class FirestoreUserRepository @Inject constructor(
             android.util.Log.e("FirestoreUserRepository", "Erro ao configurar listener de usuário: ${e.message}", e)
             trySend(null)
             // Não fechar o channel imediatamente, permitir retry
+        }
+    }
+    
+    /**
+     * Busca usuários por localização, role e categorias usando userIdentifier
+     * @param role Role do usuário (client, partner, etc.)
+     * @param city Cidade (opcional)
+     * @param state Estado (opcional)
+     * @param latitude Latitude (opcional, usado se cidade/estado não fornecidos)
+     * @param longitude Longitude (opcional, usado se cidade/estado não fornecidos)
+     * @param categories Categorias de serviços (opcional, apenas para partners)
+     * @return Lista de usuários encontrados
+     */
+    suspend fun findUsersByLocationAndRole(
+        role: String,
+        city: String? = null,
+        state: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        categories: List<String>? = null
+    ): List<UserFirestore> {
+        return try {
+            val searchId = com.taskgoapp.taskgo.core.utils.UserIdentifier.generateSearchId(
+                role = role,
+                latitude = latitude,
+                longitude = longitude,
+                city = city,
+                state = state,
+                categories = categories
+            )
+            
+            android.util.Log.d("FirestoreUserRepository", "Buscando usuários com searchId: $searchId")
+            
+            // Buscar usuários que correspondem ao searchId
+            // Nota: Como userIdentifier é um hash, precisamos buscar por componentes individuais
+            // ou usar uma abordagem diferente. Por enquanto, vamos buscar por role e localização.
+            var query = usersCollection.whereEqualTo("role", role)
+            
+            // Se tiver cidade e estado, podemos filtrar por endereço (requer índice composto)
+            // Por enquanto, vamos buscar todos e filtrar em memória
+            val snapshot = query.get().await()
+            
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    val user = doc.toObject(UserFirestore::class.java)
+                    if (user != null) {
+                        // Verificar se corresponde aos critérios de busca
+                        val matchesLocation = when {
+                            city != null && state != null -> {
+                                user.address?.city?.equals(city, ignoreCase = true) == true &&
+                                user.address?.state?.equals(state, ignoreCase = true) == true
+                            }
+                            latitude != null && longitude != null -> {
+                                // Verificar se está dentro de um raio (será feito em camada superior)
+                                true // Por enquanto, retornar todos e filtrar depois
+                            }
+                            else -> true
+                        }
+                        
+                        val matchesCategories = if (categories != null && (role == "partner" || role == "provider" || role == "seller")) {
+                            user.preferredCategories?.any { cat -> 
+                                categories.any { searchCat -> 
+                                    cat.equals(searchCat, ignoreCase = true) 
+                                }
+                            } ?: false
+                        } else {
+                            true
+                        }
+                        
+                        if (matchesLocation && matchesCategories) {
+                            user
+                        } else {
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("FirestoreUserRepository", "Erro ao converter documento: ${e.message}", e)
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FirestoreUserRepository", "Erro ao buscar usuários: ${e.message}", e)
+            emptyList()
         }
     }
     
@@ -101,7 +186,7 @@ class FirestoreUserRepository @Inject constructor(
                 .await()
             
             if (!cpfQuery.isEmpty) {
-                val user = cpfQuery.documents[0].toObject(UserFirestore::class.java)
+                val user = cpfQuery.documents[0].data?.let { mapUser(cpfQuery.documents[0].id, it) }
                 android.util.Log.d("FirestoreUserRepository", "Usuário encontrado por CPF: ${user?.email}")
                 return user
             }
@@ -114,7 +199,7 @@ class FirestoreUserRepository @Inject constructor(
                 .await()
             
             if (!cnpjQuery.isEmpty) {
-                val user = cnpjQuery.documents[0].toObject(UserFirestore::class.java)
+            val user = cnpjQuery.documents[0].data?.let { mapUser(cnpjQuery.documents[0].id, it) }
                 android.util.Log.d("FirestoreUserRepository", "Usuário encontrado por CNPJ: ${user?.email}")
                 return user
             }
@@ -127,6 +212,93 @@ class FirestoreUserRepository @Inject constructor(
         }
     }
 
+    private fun mapUser(id: String, data: Map<String, Any?>): UserFirestore {
+        fun parseDate(value: Any?): java.util.Date? = when (value) {
+            is java.util.Date -> value
+            is com.google.firebase.Timestamp -> value.toDate()
+            is Long -> java.util.Date(value)
+            is Int -> java.util.Date(value.toLong())
+            else -> null
+        }
+
+        return UserFirestore(
+            uid = id,
+            email = data["email"] as? String ?: "",
+            displayName = data["displayName"] as? String,
+            photoURL = data["photoURL"] as? String,
+            phone = data["phone"] as? String,
+            role = data["role"] as? String ?: "client",
+            pendingAccountType = data["pendingAccountType"] as? Boolean ?: false,
+            profileComplete = data["profileComplete"] as? Boolean ?: false,
+            verified = data["verified"] as? Boolean ?: false,
+            cpf = data["cpf"] as? String,
+            rg = data["rg"] as? String,
+            cnpj = data["cnpj"] as? String,
+            birthDate = parseDate(data["birthDate"]),
+            documentFront = data["documentFront"] as? String,
+            documentBack = data["documentBack"] as? String,
+            selfie = data["selfie"] as? String,
+            address = (data["address"] as? Map<*, *>)?.let { addr ->
+                com.taskgoapp.taskgo.core.model.Address(
+                    id = addr["id"] as? String ?: "",
+                    name = addr["name"] as? String ?: "",
+                    phone = addr["phone"] as? String ?: "",
+                    cep = addr["cep"] as? String ?: (addr["zipCode"] as? String ?: ""),
+                    street = addr["street"] as? String ?: "",
+                    district = addr["district"] as? String ?: "",
+                    city = addr["city"] as? String ?: "",
+                    state = addr["state"] as? String ?: "",
+                    number = addr["number"] as? String ?: "",
+                    complement = addr["complement"] as? String,
+                    neighborhood = addr["neighborhood"] as? String ?: "",
+                    zipCode = addr["zipCode"] as? String ?: "",
+                    country = addr["country"] as? String ?: "Brasil"
+                )
+            },
+            addressProof = data["addressProof"] as? String,
+            verifiedAt = parseDate(data["verifiedAt"]),
+            verifiedBy = data["verifiedBy"] as? String,
+            biometricEnabled = data["biometricEnabled"] as? Boolean ?: false,
+            twoFactorEnabled = data["twoFactorEnabled"] as? Boolean ?: false,
+            twoFactorMethod = data["twoFactorMethod"] as? String,
+            stripeAccountId = data["stripeAccountId"] as? String,
+            stripeChargesEnabled = data["stripeChargesEnabled"] as? Boolean ?: false,
+            stripePayoutsEnabled = data["stripePayoutsEnabled"] as? Boolean ?: false,
+            stripeDetailsSubmitted = data["stripeDetailsSubmitted"] as? Boolean ?: false,
+            documents = (data["documents"] as? List<*>)?.mapNotNull { it as? String },
+            documentsApproved = data["documentsApproved"] as? Boolean ?: false,
+            documentsApprovedAt = parseDate(data["documentsApprovedAt"]),
+            documentsApprovedBy = data["documentsApprovedBy"] as? String,
+            preferredCategories = (data["preferredCategories"] as? List<*>)?.mapNotNull { it as? String },
+            userIdentifier = data["userIdentifier"] as? String,
+            notificationSettings = (data["notificationSettings"] as? Map<*, *>)?.let {
+                com.taskgoapp.taskgo.data.firestore.models.NotificationSettingsFirestore(
+                    push = it["push"] as? Boolean ?: true,
+                    promos = it["promos"] as? Boolean ?: true,
+                    sound = it["sound"] as? Boolean ?: true,
+                    lockscreen = it["lockscreen"] as? Boolean ?: true,
+                    email = it["email"] as? Boolean ?: false,
+                    sms = it["sms"] as? Boolean ?: false
+                )
+            },
+            privacySettings = (data["privacySettings"] as? Map<*, *>)?.let {
+                com.taskgoapp.taskgo.data.firestore.models.PrivacySettingsFirestore(
+                    locationSharing = it["locationSharing"] as? Boolean ?: true,
+                    profileVisible = it["profileVisible"] as? Boolean ?: true,
+                    contactInfoSharing = it["contactInfoSharing"] as? Boolean ?: false,
+                    analytics = it["analytics"] as? Boolean ?: true,
+                    personalizedAds = it["personalizedAds"] as? Boolean ?: false,
+                    dataCollection = it["dataCollection"] as? Boolean ?: true,
+                    thirdPartySharing = it["thirdPartySharing"] as? Boolean ?: false
+                )
+            },
+            language = data["language"] as? String ?: "pt",
+            rating = (data["rating"] as? Number)?.toDouble(),
+            createdAt = parseDate(data["createdAt"]),
+            updatedAt = parseDate(data["updatedAt"])
+        )
+    }
+
     suspend fun updateUser(user: UserFirestore): Result<Unit> {
         return try {
             // Validar que uid não está vazio
@@ -137,6 +309,10 @@ class FirestoreUserRepository @Inject constructor(
             
             android.util.Log.d("FirestoreUserRepository", "Salvando usuário no Firestore: uid=${user.uid}, email=${user.email}, displayName=${user.displayName}")
             
+            // Calcular userIdentifier automaticamente
+            val userIdentifier = com.taskgoapp.taskgo.core.utils.UserIdentifier.generateUserId(user)
+            android.util.Log.d("FirestoreUserRepository", "UserIdentifier calculado: $userIdentifier para role=${user.role}")
+            
             // Converter UserFirestore para Map, tratando Date corretamente
             val dataMap = mutableMapOf<String, Any?>(
                 "uid" to user.uid,
@@ -145,6 +321,7 @@ class FirestoreUserRepository @Inject constructor(
                 "photoURL" to user.photoURL,
                 "phone" to user.phone,
                 "role" to user.role,
+                "pendingAccountType" to user.pendingAccountType,
                 "profileComplete" to user.profileComplete,
                 "verified" to user.verified,
                 "cpf" to user.cpf,
@@ -169,6 +346,7 @@ class FirestoreUserRepository @Inject constructor(
                 "documentsApprovedAt" to (user.documentsApprovedAt?.let { com.google.firebase.Timestamp(it) }),
                 "documentsApprovedBy" to user.documentsApprovedBy,
                 "preferredCategories" to user.preferredCategories,
+                "userIdentifier" to userIdentifier,
                 "notificationSettings" to user.notificationSettings?.let { settings ->
                     mapOf(
                         "push" to settings.push,
@@ -223,6 +401,9 @@ class FirestoreUserRepository @Inject constructor(
             
             android.util.Log.d("FirestoreUserRepository", "Usuário salvo com sucesso no Firestore: ${user.uid}")
             Result.success(Unit)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            android.util.Log.w("FirestoreUserRepository", "Operação de salvamento cancelada: ${e.message}")
+            throw e // Re-lançar CancellationException para propagar corretamente
         } catch (e: Exception) {
             android.util.Log.e("FirestoreUserRepository", "Erro ao salvar usuário no Firestore: ${e.message}", e)
             Result.failure(e)
@@ -241,7 +422,8 @@ class FirestoreUserRepository @Inject constructor(
     }
 
     suspend fun promoteToProvider(uid: String): Result<Unit> {
-        return updateField(uid, "role", "provider")
+        // Atualizar para "partner" em vez de "provider" (legacy)
+        return updateField(uid, "role", "partner")
     }
 
     suspend fun approveDocuments(uid: String, documents: List<String>, approvedBy: String): Result<Unit> {

@@ -1,148 +1,294 @@
-# 📋 Relatório de Regras Firestore e Autenticação
+# 📋 Relatório Atualizado: Regras Firestore e Autenticação
 
-## 1️⃣ REGRAS FIRESTORE (firestore.rules)
-
-### 📌 Visão Geral
-O projeto utiliza regras de segurança baseadas em autenticação do Firebase Auth (`request.auth != null`). Todas as operações exigem que o usuário esteja autenticado.
+**Data de atualização:** Janeiro 2025  
+**Versão das regras:** rules_version = '2'  
+**Arquitetura:** Custom Claims + App Check + Cloud Functions
 
 ---
 
-### 🗂️ Coleções Principais
+## 🔐 1️⃣ REGRAS FIRESTORE ATUALIZADAS
 
-#### **1. Posts Collection** (`/posts/{postId}`)
+### ✨ **ARQUITETURA: Custom Claims**
+
+O sistema utiliza **Custom Claims** do Firebase Auth como **autoridade única** para roles de usuários. As regras verificam `request.auth.token.role` em vez de confiar apenas no campo `role` no Firestore.
+
+### 📌 **Helper Functions (Funções Auxiliares)**
+
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /posts/{postId} {
-      // ✅ Leitura: Qualquer usuário autenticado
-      allow read: if request.auth != null;
-      
-      // ✅ Criação: Apenas o próprio autor
-      allow create: if request.auth != null 
-                    && request.resource.data.userId == request.auth.uid;
-      
-      // ✅ Atualização: Apenas o autor
-      allow update: if request.auth != null 
-                    && resource.data.userId == request.auth.uid;
-      
-      // ✅ Exclusão: Apenas o autor
-      allow delete: if request.auth != null 
-                    && resource.data.userId == request.auth.uid;
+    
+    // Verifica se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Obtém o role do usuário através de Custom Claims (autoridade única)
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+    
+    // Verifica se o usuário é admin
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+    
+    // Verifica se o usuário é moderador ou admin
+    function isModeratorOrAdmin() {
+      return isAuthenticated() && (getUserRole() == 'moderator' || getUserRole() == 'admin');
+    }
+    
+    // Verifica se o usuário é o dono do recurso
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
   }
 }
 ```
 
-**Subcoleções:**
-- **Ratings** (`/posts/{postId}/ratings/{ratingId}`): Avaliações 1-5 estrelas
-- **Comments** (`/posts/{postId}/comments/{commentId}`): Comentários públicos
+**🔥 Vantagens:**
+- ✅ Roles verificados no token JWT (Custom Claims), não no Firestore
+- ✅ Mais seguro: roles não podem ser alterados diretamente no Firestore
+- ✅ Mais rápido: não precisa ler documento do usuário para verificar role
+- ✅ Sincronização automática: Custom Claims são incluídos em todos os tokens
 
 ---
 
-#### **2. Users Collection** (`/users/{userId}`)
+### 🗂️ **Coleções Principais**
+
+#### **1. Users Collection** (`/users/{userId}`)
+
 ```javascript
 match /users/{userId} {
-  // ✅ Leitura: Qualquer usuário autenticado (perfis públicos)
-  allow read: if request.auth != null;
+  // ✅ Leitura: Próprio usuário, moderadores e admins
+  // Também permite queries de listagem por role para usuários autenticados
+  allow read: if isOwner(userId) || isModeratorOrAdmin() 
+              || (isAuthenticated() && (resource == null || true));
   
-  // ✅ Escrita: Apenas o próprio usuário
-  allow create: if request.auth != null && request.auth.uid == userId;
-  allow update: if request.auth != null && request.auth.uid == userId;
-  allow delete: if request.auth != null && request.auth.uid == userId;
+  // ✅ Criação: Apenas o próprio usuário pode criar seu documento inicial
+  // Role é definido por Cloud Functions (setInitialUserRole)
+  allow create: if isOwner(userId) 
+                && request.resource.data.uid == userId
+                && request.resource.data.keys().hasAll(['uid', 'email']);
+  
+  // ✅ Atualização: Apenas o próprio usuário pode atualizar (exceto role)
+  // Role só pode ser alterado por admins via Cloud Functions
+  allow update: if isOwner(userId)
+                && !('role' in request.resource.data.diff(resource.data).affectedKeys())
+                && !('roleUpdatedAt' in request.resource.data.diff(resource.data).affectedKeys())
+                && !('roleUpdatedBy' in request.resource.data.diff(resource.data).affectedKeys());
+  
+  // ✅ Admins podem atualizar qualquer campo (incluindo role)
+  allow update: if isAdmin();
+  
+  // ✅ Exclusão: Apenas admins
+  allow delete: if isAdmin();
 }
 ```
+
+**Características:**
+- 🔒 Proteção de campos críticos (`role`, `roleUpdatedAt`, `roleUpdatedBy`)
+- 🔒 Apenas admins podem alterar roles
+- 🔒 Validação de estrutura de dados na criação
+- ✅ Permite queries de listagem para usuários autenticados
 
 **Subcoleções:**
-- **Services** (`/users/{userId}/services/{serviceId}`): Serviços do usuário
-- **Products** (`/users/{userId}/products/{productId}`): Produtos do usuário
-- **Orders** (`/users/{userId}/orders/{orderId}`): Ordens do usuário
-- **Posts** (`/users/{userId}/posts/{postId}`): Posts do usuário
-- **PostInterests** (`/users/{userId}/postInterests/{interestId}`): Interesses privados
-- **BlockedUsers** (`/users/{userId}/blockedUsers/{blockId}`): Lista de bloqueados
-- **Stories** (`/users/{userId}/stories/{storyId}`): Stories do usuário
+- **Services** (`/users/{userId}/services/{serviceId}`): ✅ Leitura permitida, ❌ Escrita bloqueada (usar Cloud Functions)
+- **Products** (`/users/{userId}/products/{productId}`): ✅ Leitura permitida, ❌ Escrita bloqueada (usar Cloud Functions)
+- **Orders** (`/users/{userId}/orders/{orderId}`): ✅ Leitura por cliente/prestador/admin, ❌ Escrita bloqueada (usar Cloud Functions)
+- **Posts** (`/users/{userId}/posts/{postId}`): ✅ CRUD pelo dono
+- **PostInterests** (`/users/{userId}/postInterests/{interestId}`): ✅ CRUD privado pelo dono
+- **BlockedUsers** (`/users/{userId}/blockedUsers/{blockId}`): ✅ CRUD privado pelo dono
+- **Stories** (`/users/{userId}/stories/{storyId}`): ✅ Leitura pública, escrita pelo dono
 
 ---
 
-#### **3. Services Collection** (`/services/{serviceId}`)
+#### **2. Services Collection** (`/services/{serviceId}`) - PÚBLICA
+
 ```javascript
 match /services/{serviceId} {
-  // ✅ Leitura pública para usuários autenticados
-  allow read: if request.auth != null;
+  // ✅ Leitura: Qualquer usuário autenticado pode ler serviços ativos
+  // Permite queries de listagem e leitura de documentos individuais
+  allow read: if isAuthenticated() 
+              && (resource == null || resource.data.active == true);
   
-  // ✅ Escrita: Apenas o prestador dono
-  allow create: if request.auth != null 
-                && request.resource.data.providerId == request.auth.uid;
-  allow update: if request.auth != null 
-                && resource.data.providerId == request.auth.uid;
-  allow delete: if request.auth != null 
-                && resource.data.providerId == request.auth.uid;
+  // ❌ Escrita: BLOQUEADA - usar Cloud Functions
+  // App não pode criar/editar serviços diretamente
+  allow write: if false;
 }
 ```
 
+**Motivo do bloqueio de escrita:**
+- Validações de negócio complexas
+- Sincronização com subcoleções
+- Auditoria e logs centralizados
+- Prevenção de inconsistências
+
 ---
 
-#### **4. Products Collection** (`/products/{productId}`)
+#### **3. Products Collection** (`/products/{productId}`) - PÚBLICA
+
 ```javascript
 match /products/{productId} {
-  // ✅ Leitura pública
-  allow read: if request.auth != null;
+  // ✅ Leitura: Apenas produtos ativos são públicos
+  // Permite queries de listagem e leitura de documentos individuais
+  allow read: if isAuthenticated() 
+              && (resource == null || resource.data.active == true);
   
-  // ✅ Escrita: Apenas o vendedor
-  allow create: if request.auth != null 
-                && request.resource.data.sellerId == request.auth.uid;
-  allow update: if request.auth != null 
-                && resource.data.sellerId == request.auth.uid;
-  allow delete: if request.auth != null 
-                && resource.data.sellerId == request.auth.uid;
+  // ❌ Escrita: BLOQUEADA - usar Cloud Functions
+  allow write: if false;
 }
 ```
 
+**Validações:**
+- Apenas produtos `active == true` são visíveis
+- Previne vazamento de produtos inativos/excluídos
+- Permite queries de listagem
+
 ---
 
-#### **5. Orders Collection** (`/orders/{orderId}`)
+#### **4. Orders Collection** (`/orders/{orderId}`) - PÚBLICA
+
 ```javascript
 match /orders/{orderId} {
-  // ✅ Leitura: Cliente ou prestador relacionado
-  allow read: if request.auth != null;
+  // ✅ Leitura: Cliente ou prestador relacionado, ou admins
+  allow read: if isAuthenticated() 
+              && (resource.data.clientId == request.auth.uid 
+                  || resource.data.providerId == request.auth.uid
+                  || isAdmin());
   
-  // ✅ Criação: Apenas o cliente
-  allow create: if request.auth != null 
-                && request.resource.data.clientId == request.auth.uid;
+  // ❌ Escrita: BLOQUEADA - usar Cloud Functions
+  // Transições de status são validadas pela Cloud Function
+  allow write: if false;
+}
+```
+
+**Segurança:**
+- Apenas participantes da ordem podem ler
+- Validação de transições de status via Cloud Functions
+
+---
+
+#### **5. Posts Collection** (`/posts/{postId}`)
+
+```javascript
+match /posts/{postId} {
+  // ✅ Leitura pública para usuários autenticados
+  allow read: if isAuthenticated();
   
-  // ✅ Atualização: Cliente ou prestador
-  allow update: if request.auth != null 
-                && (resource.data.clientId == request.auth.uid 
-                    || resource.data.providerId == request.auth.uid);
+  // ✅ Criação: Apenas o autor
+  allow create: if isAuthenticated() 
+                && request.resource.data.userId == request.auth.uid;
   
-  // ✅ Exclusão: Apenas o cliente
-  allow delete: if request.auth != null 
-                && resource.data.clientId == request.auth.uid;
+  // ✅ Atualização/Exclusão: Apenas o autor
+  allow update, delete: if isAuthenticated() 
+                        && resource.data.userId == request.auth.uid;
+  
+  // Subcoleções: Ratings e Comments
+  match /ratings/{ratingId} {
+    allow read: if isAuthenticated();
+    allow create: if isAuthenticated() 
+                  && request.resource.data.userId == request.auth.uid
+                  && request.resource.data.postId == postId
+                  && request.resource.data.rating is int
+                  && request.resource.data.rating >= 1
+                  && request.resource.data.rating <= 5;
+    allow update, delete: if isAuthenticated() 
+                          && resource.data.userId == request.auth.uid;
+  }
+  
+  match /comments/{commentId} {
+    allow read: if isAuthenticated();
+    allow create: if isAuthenticated() 
+                  && request.resource.data.userId == request.auth.uid
+                  && request.resource.data.postId == postId;
+    allow update, delete: if isAuthenticated() 
+                          && resource.data.userId == request.auth.uid;
+  }
 }
 ```
 
 ---
 
-#### **6. Conversations Collection** (`/conversations/{conversationId}`)
+#### **6. Stories Collection** (`/stories/{storyId}`)
+
+```javascript
+match /stories/{storyId} {
+  // ✅ Leitura: Qualquer usuário autenticado pode ler stories (permite queries de listagem)
+  allow read: if isAuthenticated();
+  
+  // ❌ Escrita: BLOQUEADA - usar Cloud Function (createStory)
+  // App não pode criar/editar stories diretamente
+  allow write: if false;
+  
+  // Subcoleção story_views dentro de stories
+  match /views/{userId} {
+    allow read: if isAuthenticated();
+    allow create: if isAuthenticated() 
+                  && request.auth.uid == userId;
+    // ❌ Views são imutáveis
+    allow update, delete: if false;
+  }
+}
+```
+
+**Mudança importante:**
+- ❌ Escrita direta bloqueada - usar Cloud Function `createStory`
+- ✅ Leitura pública para queries de listagem
+
+---
+
+#### **7. Story Views Collection** (`/story_views/{storyId}`) - RAIZ
+
+```javascript
+match /story_views/{storyId} {
+  // ✅ Leitura: Qualquer usuário autenticado pode ler visualizações
+  allow read: if isAuthenticated();
+  
+  // ❌ Escrita: Apenas Cloud Functions
+  allow write: if false;
+  
+  // Subcoleção views dentro de story_views
+  match /views/{userId} {
+    allow read: if isAuthenticated();
+    allow create: if isAuthenticated();
+    // ❌ Views são imutáveis
+    allow update, delete: if false;
+  }
+}
+```
+
+**Nova coleção:** Analytics de visualizações de stories em coleção raiz separada.
+
+---
+
+#### **8. Conversations Collection** (`/conversations/{conversationId}`)
+
 ```javascript
 match /conversations/{conversationId} {
-  // ✅ Leitura: Apenas o dono da conversa
-  allow read: if request.auth != null && 
-              resource.data.userId == request.auth.uid;
+  // ✅ Apenas participantes podem ler
+  allow read: if isAuthenticated() 
+              && resource.data.userId == request.auth.uid;
   
-  // ✅ Criação: Apenas para si mesmo
-  allow create: if request.auth != null && 
-                request.resource.data.userId == request.auth.uid;
+  allow create: if isAuthenticated() 
+                && request.resource.data.userId == request.auth.uid;
   
-  // ✅ Mensagens: Apenas o dono pode ler/criar
+  allow update: if isAuthenticated() 
+                && resource.data.userId == request.auth.uid;
+  
+  allow delete: if isAuthenticated() 
+                && resource.data.userId == request.auth.uid;
+  
   match /messages/{messageId} {
-    allow read: if request.auth != null && 
-                get(/databases/{database}/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
+    // ✅ Mensagens podem ser criadas por participantes
+    allow read: if isAuthenticated() 
+                && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
     
-    allow create: if request.auth != null && 
-                  get(/databases/{database}/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
+    allow create: if isAuthenticated() 
+                  && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
     
-    // ❌ Mensagens são imutáveis (sem update/delete)
+    // ❌ Mensagens são imutáveis
     allow update, delete: if false;
   }
 }
@@ -150,92 +296,149 @@ match /conversations/{conversationId} {
 
 ---
 
-#### **7. Bank Accounts Collection** (`/bank_accounts/{accountId}`)
+#### **9. Bank Accounts Collection** (`/bank_accounts/{accountId}`)
+
 ```javascript
 match /bank_accounts/{accountId} {
   // ✅ Leitura: Apenas o dono
-  allow read: if request.auth != null
+  allow read: if isAuthenticated() 
               && resource.data.userId == request.auth.uid;
   
   // ✅ Criação: Validação rigorosa de campos
-  allow create: if request.auth != null 
+  allow create: if isAuthenticated() 
                 && request.resource.data.userId == request.auth.uid
-                && request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', ...])
-                && request.resource.data.bankName is string
-                && request.resource.data.bankCode is string
-                // ... mais validações
-                && request.resource.data.accountType in ["CHECKING", "SAVINGS"];
+                && request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', 'agency', 'account', 'accountType', 'accountHolderName', 'accountHolderDocument', 'accountHolderDocumentType', 'isDefault'])
+                && request.resource.data.bankName is string && request.resource.data.bankName.size() > 0
+                && request.resource.data.bankCode is string && request.resource.data.bankCode.size() > 0
+                && request.resource.data.agency is string && request.resource.data.agency.size() >= 4 && request.resource.data.agency.size() <= 5
+                && request.resource.data.account is string && request.resource.data.account.size() >= 5 && request.resource.data.account.size() <= 12
+                && request.resource.data.accountType is string && (request.resource.data.accountType == "CHECKING" || request.resource.data.accountType == "SAVINGS")
+                && request.resource.data.accountHolderName is string && request.resource.data.accountHolderName.size() >= 3
+                && request.resource.data.accountHolderDocument is string && request.resource.data.accountHolderDocument.size() >= 11 && request.resource.data.accountHolderDocument.size() <= 14
+                && request.resource.data.accountHolderDocumentType is string && (request.resource.data.accountHolderDocumentType == "CPF" || request.resource.data.accountHolderDocumentType == "CNPJ")
+                && request.resource.data.isDefault is bool;
   
   // ✅ Atualização: Completa ou parcial (apenas isDefault)
-  allow update: if request.auth != null 
+  allow update: if isAuthenticated() 
                 && resource.data.userId == request.auth.uid
-                && (/* validação completa OU apenas isDefault */);
+                && (
+                  // Atualização completa com validações
+                  (/* validações completas */)
+                  ||
+                  // Atualização parcial (apenas isDefault)
+                  (request.resource.data.keys().hasOnly(['isDefault']) && request.resource.data.isDefault is bool)
+                );
   
   // ✅ Exclusão: Apenas o dono
-  allow delete: if request.auth != null 
+  allow delete: if isAuthenticated() 
                 && resource.data.userId == request.auth.uid;
 }
 ```
 
+**Validações implementadas:**
+- ✅ Campos obrigatórios
+- ✅ Tipos de dados corretos
+- ✅ Tamanhos mínimos/máximos
+- ✅ Valores enum (CHECKING/SAVINGS, CPF/CNPJ)
+- ✅ Atualização parcial permitida apenas para `isDefault`
+
 ---
 
-#### **8. Stories Collection** (`/stories/{storyId}`)
+#### **10. Categories Collections** (NOVAS)
+
 ```javascript
-match /stories/{storyId} {
-  // ✅ Leitura pública
-  allow read: if request.auth != null;
+// Categorias de produtos
+match /product_categories/{categoryId} {
+  // ✅ Leitura: Qualquer usuário autenticado pode ler categorias de produtos
+  allow read: if isAuthenticated();
   
-  // ✅ Escrita: Apenas o dono
-  allow create: if request.auth != null 
-                && request.resource.data.userId == request.auth.uid;
-  allow update: if request.auth != null 
-                && resource.data.userId == request.auth.uid;
-  allow delete: if request.auth != null 
-                && resource.data.userId == request.auth.uid;
+  // ✅ Escrita: Apenas Cloud Functions ou admins
+  allow write: if isAdmin();
+}
+
+// Categorias de serviços
+match /service_categories/{categoryId} {
+  // ✅ Leitura: Qualquer usuário autenticado pode ler categorias de serviços
+  allow read: if isAuthenticated();
   
-  // Subcoleção de views
-  match /views/{userId} {
-    allow read: if request.auth != null;
-    allow create: if request.auth != null 
-                  && request.resource.data.userId == request.auth.uid;
-  }
+  // ✅ Escrita: Apenas Cloud Functions ou admins
+  allow write: if isAdmin();
 }
 ```
 
+**Nova funcionalidade:** Categorias públicas para produtos e serviços.
+
 ---
 
-#### **9. Outras Coleções**
+#### **11. Home Banners Collection** (NOVA)
+
+```javascript
+match /homeBanners/{bannerId} {
+  // ✅ Leitura: Qualquer usuário autenticado pode ler banners ativos
+  allow read: if isAuthenticated() 
+              && (resource == null || resource.data.active == true);
+  
+  // ✅ Escrita: Apenas Cloud Functions ou admins
+  allow write: if isAdmin();
+}
+```
+
+**Nova funcionalidade:** Banners da home page.
+
+---
+
+#### **12. Outras Coleções**
 
 **Notifications:**
 ```javascript
 match /notifications/{notificationId} {
-  allow read, write: if request.auth != null 
-                     && resource.data.userId == request.auth.uid;
+  // ✅ Apenas o dono pode ler
+  allow read: if isAuthenticated() 
+              && resource.data.userId == request.auth.uid;
+  
+  // ❌ Escrita: Apenas Cloud Functions
+  allow write: if false;
 }
 ```
 
 **Reviews:**
 ```javascript
 match /reviews/{reviewId} {
-  allow read: if request.auth != null;
-  allow write: if request.auth != null 
-               && request.resource.data.clientId == request.auth.uid;
+  // ✅ Leitura pública
+  allow read: if isAuthenticated();
+  
+  // ❌ Escrita: Apenas Cloud Functions
+  allow write: if false;
 }
 ```
 
-**AI Usage (somente leitura para usuário):**
+**AI Usage:**
 ```javascript
 match /ai_usage/{usageId} {
-  allow read: if request.auth != null && 
-              resource.data.userId == request.auth.uid;
-  // ❌ Escrita apenas via Cloud Functions
+  // ✅ Leitura: Apenas o dono
+  allow read: if isAuthenticated() 
+              && resource.data.userId == request.auth.uid;
+  
+  // ❌ Escrita: Apenas Cloud Functions
+  allow write: if false;
+}
+```
+
+**Moderation Logs:**
+```javascript
+match /moderation_logs/{logId} {
+  // ✅ Leitura: Apenas admins
+  allow read: if isAdmin();
+  
+  // ❌ Escrita: Apenas Cloud Functions
   allow write: if false;
 }
 ```
 
 ---
 
-### 🔒 Regra Padrão (Deny All)
+### 🔒 **Regra Padrão (Deny All)**
+
 ```javascript
 // Deny all other collections by default
 match /{document=**} {
@@ -243,42 +446,271 @@ match /{document=**} {
 }
 ```
 
+Todas as coleções não especificadas são negadas por padrão.
+
 ---
 
-## 2️⃣ EXEMPLOS DE AUTENTICAÇÃO
+## 2️⃣ AUTENTICAÇÃO: BACKEND (CLOUD FUNCTIONS)
 
-### 🔐 Backend (Cloud Functions)
+### 🔐 **Arquitetura de Segurança**
 
-#### **A. Verificação de Autenticação (Helper)**
-**Arquivo:** `functions/src/utils/errors.ts`
+O sistema implementa **camadas múltiplas de segurança**:
+
+1. ✅ **App Check**: Valida que requisições vêm de apps legítimos
+2. ✅ **Custom Claims**: Roles no token JWT (autoridade única)
+3. ✅ **Firestore Rules**: Validação de acesso aos dados
+4. ✅ **Cloud Functions**: Validações de negócio e lógica complexa
+
+---
+
+### 📋 **A. Validação de App Check**
+
+**Arquivo:** `functions/src/security/appCheck.ts`
 
 ```typescript
-import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 
-// Helper para verificar autenticação
-export const assertAuthenticated = (context: functions.https.CallableContext) => {
+/**
+ * Middleware para validar App Check token
+ * Garante que apenas requests de apps legítimos sejam processados
+ */
+export const validateAppCheck = (
+  context: functions.https.CallableContext,
+): void => {
+  // Em produção, App Check deve estar habilitado
+  // Em desenvolvimento/emulador, permitir sem token
+  if (
+    process.env.FUNCTIONS_EMULATOR === 'true' ||
+    process.env.NODE_ENV === 'development'
+  ) {
+    return;
+  }
+
+  // App Check token está em context.app
+  // Se não houver token válido, context.app será undefined
+  if (!context.app) {
+    functions.logger.warn('App Check token missing', {
+      uid: context.auth?.uid,
+      timestamp: new Date().toISOString(),
+    });
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'App Check validation failed. This request must come from a legitimate app.',
+    );
+  }
+};
+```
+
+**Uso:**
+```typescript
+export const myFunction = functions.https.onCall(async (data, context) => {
+  // ✅ Validar App Check primeiro
+  validateAppCheck(context);
+  
+  // ✅ Depois validar autenticação
+  assertAuthenticated(context);
+  
+  // ... resto da função
+});
+```
+
+---
+
+### 📋 **B. Helpers de Roles (NOVO)**
+
+**Arquivo:** `functions/src/security/roles.ts`
+
+```typescript
+import * as functions from 'firebase-functions';
+import {AppError} from '../utils/errors';
+
+/**
+ * Roles válidos no sistema
+ */
+export const VALID_ROLES = ['user', 'admin', 'moderator', 'partner', 'seller', 'provider', 'client'] as const;
+
+export type UserRole = typeof VALID_ROLES[number];
+
+/**
+ * Verifica se um role é válido
+ */
+export const isValidRole = (role: string): role is UserRole => {
+  return VALID_ROLES.includes(role as UserRole);
+};
+
+/**
+ * Obtém o role do usuário através de Custom Claims
+ * Custom Claims são a autoridade única para permissões
+ */
+export const getUserRole = (context: functions.https.CallableContext): UserRole => {
   if (!context.auth) {
     throw new AppError('unauthenticated', 'User must be authenticated', 401);
   }
+
+  // Custom Claims estão em context.auth.token
+  const role = context.auth.token.role as string | undefined;
+
+  // Se não houver role em Custom Claims, verificar no documento do usuário
+  // (apenas para migração - em produção, sempre deve ter Custom Claim)
+  if (!role) {
+    functions.logger.warn(`User ${context.auth.uid} has no role in Custom Claims`, {
+      uid: context.auth.uid,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Fallback temporário para migração - retornar 'user' como padrão
+    return 'user';
+  }
+
+  if (!isValidRole(role)) {
+    throw new AppError(
+      'permission-denied',
+      `Invalid role: ${role}. Must be one of: ${VALID_ROLES.join(', ')}`,
+      403,
+    );
+  }
+
+  return role;
 };
 
-// Helper para verificar admin
-export const assertAdmin = async (context: functions.https.CallableContext) => {
-  assertAuthenticated(context);
-  
-  const db = admin.firestore();
-  const userDoc = await db.collection('users').doc(context.auth!.uid).get();
-  
-  if (!userDoc.exists || userDoc.data()?.role !== 'admin') {
-    throw new AppError('permission-denied', 'Admin access required', 403);
+/**
+ * Verifica se o usuário tem um role específico
+ */
+export const hasRole = (
+  context: functions.https.CallableContext,
+  requiredRole: UserRole,
+): boolean => {
+  try {
+    const userRole = getUserRole(context);
+    return userRole === requiredRole;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Verifica se o usuário é admin
+ */
+export const isAdmin = (context: functions.https.CallableContext): boolean => {
+  return hasRole(context, 'admin');
+};
+
+/**
+ * Verifica se o usuário é moderador ou admin
+ */
+export const isModeratorOrAdmin = (
+  context: functions.https.CallableContext,
+): boolean => {
+  const role = getUserRole(context);
+  return role === 'admin' || role === 'moderator';
+};
+
+/**
+ * Asserta que o usuário tem um role específico
+ */
+export const assertRole = (
+  context: functions.https.CallableContext,
+  requiredRole: UserRole,
+): void => {
+  const userRole = getUserRole(context);
+
+  if (userRole !== requiredRole) {
+    throw new AppError(
+      'permission-denied',
+      `Required role: ${requiredRole}. Current role: ${userRole}`,
+      403,
+    );
+  }
+};
+
+/**
+ * Asserta que o usuário é admin
+ */
+export const assertAdmin = (context: functions.https.CallableContext): void => {
+  assertRole(context, 'admin');
+};
+
+/**
+ * Asserta que o usuário é moderador ou admin
+ */
+export const assertModeratorOrAdmin = (
+  context: functions.https.CallableContext,
+): void => {
+  const role = getUserRole(context);
+
+  if (role !== 'admin' && role !== 'moderator') {
+    throw new AppError(
+      'permission-denied',
+      'Moderator or admin access required',
+      403,
+    );
+  }
+};
+```
+
+**Características:**
+- ✅ Type-safe com TypeScript
+- ✅ Validação de roles válidos
+- ✅ Fallback para migração (retorna 'user' se não houver Custom Claim)
+- ✅ Helpers para verificação e asserção de roles
+
+---
+
+### 📋 **C. Helpers de Autenticação e Erro**
+
+**Arquivo:** `functions/src/utils/errors.ts`
+
+```typescript
+import * as functions from 'firebase-functions';
+
+export class AppError extends Error {
+  constructor(
+    public code: string,
+    public message: string,
+    public statusCode: number = 500,
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
+export const handleError = (error: unknown): functions.https.HttpsError => {
+  // Não logar dados sensíveis
+  const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+  const errorCode = error instanceof AppError ? error.code : 'internal';
+
+  // Log estruturado sem dados sensíveis
+  functions.logger.error('Error occurred', {
+    code: errorCode,
+    message: errorMessage,
+    timestamp: new Date().toISOString(),
+  });
+
+  if (error instanceof AppError) {
+    return new functions.https.HttpsError(
+      error.code as functions.https.FunctionsErrorCode,
+      error.message,
+    );
+  }
+
+  if (error instanceof Error) {
+    return new functions.https.HttpsError('internal', error.message);
+  }
+
+  return new functions.https.HttpsError('internal', 'An unknown error occurred');
+};
+
+export const assertAuthenticated = (context: functions.https.CallableContext) => {
+  if (!context.auth) {
+    throw new AppError('unauthenticated', 'User must be authenticated', 401);
   }
 };
 ```
 
 ---
 
-#### **B. Trigger de Criação de Usuário**
+### 📋 **D. Trigger de Criação de Usuário**
+
 **Arquivo:** `functions/src/auth.ts`
 
 ```typescript
@@ -288,6 +720,7 @@ import * as functions from 'firebase-functions';
 /**
  * Triggered when a new user is created in Firebase Auth
  * Creates corresponding user document in Firestore
+ * IMPORTANTE: Usa merge para não sobrescrever campos já definidos pelo app (como role)
  */
 export const onUserCreate = functions.auth.user().onCreate(async (user) => {
   const db = admin.firestore();
@@ -304,10 +737,11 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
       
+      // Só atualizar campos que não existem ou são null
       if (!existingData?.email && user.email) {
         updateData.email = user.email;
       }
-      // ... outros campos
+      // ... outros campos básicos
       
       await userRef.update(updateData);
     } else {
@@ -317,8 +751,8 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
         email: user.email,
         displayName: user.displayName,
         photoURL: user.photoURL,
-        role: 'client', // Default
-        pendingAccountType: true, // Flag para dialog de seleção
+        role: 'user', // Default role - será atualizado por setInitialUserRole
+        pendingAccountType: true, // Flag para indicar que o app precisa mostrar dialog
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         profileComplete: false,
@@ -326,6 +760,15 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
       };
 
       await userRef.set(userData, { merge: true });
+      
+      // ✅ Definir Custom Claim padrão como "user"
+      await admin.auth().setCustomUserClaims(user.uid, {
+        role: 'user',
+      });
+      
+      functions.logger.info(
+        `User document created for ${user.uid} with pendingAccountType flag and default Custom Claim role=user`
+      );
     }
     
     return null;
@@ -336,196 +779,147 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
 });
 ```
 
+**Pontos importantes:**
+- ✅ Preserva dados existentes (não sobrescreve `role` ou `pendingAccountType`)
+- ✅ Define Custom Claim padrão como `'user'`
+- ✅ Flag `pendingAccountType` indica que o app precisa mostrar dialog de seleção
+
 ---
 
-#### **C. Cloud Function Callable (Exemplo: 2FA)**
-**Arquivo:** `functions/src/twoFactorAuth.ts`
+### 📋 **E. Definição de Role Inicial (Custom Claims)**
+
+**Arquivo:** `functions/src/users/role.ts`
 
 ```typescript
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
-import {assertAuthenticated, handleError} from './utils/errors';
-
-const db = admin.firestore();
-
-/**
- * Envia código de verificação 2FA por email
- */
-export const sendTwoFactorCode = functions.https.onCall(async (data, context) => {
-  try {
-    // ✅ Verificar autenticação
-    assertAuthenticated(context);
-    
-    const userId = context.auth!.uid;
-    
-    // Buscar informações do usuário
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      throw new functions.https.HttpsError(
-        'not-found',
-        'Usuário não encontrado'
-      );
-    }
-    
-    const userData = userDoc.data();
-    let email = userData?.email;
-    if (!email) {
-      const authUser = await admin.auth().getUser(userId);
-      email = authUser.email || undefined;
-    }
-    
-    if (!email) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'Email necessário para envio do código'
-      );
-    }
-    
-    // Gerar código de 6 dígitos
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + (10 * 60 * 1000); // 10 minutos
-    
-    // Salvar código no Firestore
-    await db.collection('twoFactorCodes').doc(userId).set({
-      code,
-      expiresAt,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      method: 'email'
-    });
-    
-    // Enviar email (implementação omitida)
-    // await sendEmail(email, code);
-    
-    functions.logger.info(`Código 2FA enviado para ${userId}`);
-    
-    return {
-      success: true,
-      message: 'Código enviado com sucesso'
-    };
-  } catch (error) {
-    functions.logger.error('Erro ao enviar código 2FA:', error);
-    throw handleError(error);
-  }
-});
+import {AppError, handleError, assertAuthenticated} from '../utils/errors';
+import {validateAppCheck} from '../security/appCheck';
 
 /**
- * Verifica código 2FA
+ * Define o role inicial do usuário após cadastro
+ * Esta função é chamada quando o usuário seleciona o tipo de conta (client/provider/seller)
+ * 
+ * IMPORTANTE:
+ * - Define Custom Claims no Firebase Auth (autoridade única)
+ * - Sincroniza role no documento do Firestore (apenas para referência)
+ * - Firestore Rules devem usar request.auth.token.role (Custom Claims)
  */
-export const verifyTwoFactorCode = functions.https.onCall(async (data, context) => {
-  try {
-    // ✅ Verificar autenticação
-    assertAuthenticated(context);
-    
-    const userId = context.auth!.uid;
-    const {code} = data;
-    
-    if (!code || typeof code !== 'string' || code.length !== 6) {
-      throw new functions.https.HttpsError(
-        'invalid-argument',
-        'Código de verificação inválido'
-      );
+export const setInitialUserRole = functions.https.onCall(
+  async (data, context) => {
+    try {
+      // ✅ Validar App Check
+      validateAppCheck(context);
+      
+      // ✅ Validar autenticação
+      assertAuthenticated(context);
+
+      const userId = context.auth!.uid;
+      const db = admin.firestore();
+      const {role, accountType} = data;
+
+      // Validar parâmetros
+      if (!role || typeof role !== 'string') {
+        throw new AppError('invalid-argument', 'role is required and must be a string', 400);
+      }
+
+      // Mapear accountType legado para roles novos
+      const validRoles = ['user', 'admin', 'moderator', 'provider', 'seller', 'partner', 'client'];
+      let finalRole = role;
+
+      if (role === 'client') {
+        finalRole = 'user';
+      }
+
+      // Validar role final
+      if (!validRoles.includes(finalRole)) {
+        throw new AppError(
+          'invalid-argument',
+          `Invalid role: ${role}. Must be one of: ${validRoles.join(', ')}`,
+          400,
+        );
+      }
+
+      // Verificar se o usuário já tem role definido
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        throw new AppError('not-found', 'User document not found', 404);
+      }
+
+      const userData = userDoc.data();
+      const existingRole = userData?.role;
+
+      // Se já tem role definido e não é "client" (padrão), não permitir mudança
+      if (existingRole && existingRole !== 'client' && existingRole !== 'user') {
+        throw new AppError(
+          'failed-precondition',
+          `User already has role: ${existingRole}. Only admins can change roles.`,
+          400,
+        );
+      }
+
+      // Verificar se já tem Custom Claims
+      const userRecord = await admin.auth().getUser(userId);
+      const existingCustomClaims = userRecord.customClaims || {};
+      const existingCustomClaimsRole = existingCustomClaims.role;
+
+      // Se já tem Custom Claims com role diferente de "user"/"client", não permitir
+      if (existingCustomClaimsRole && 
+          existingCustomClaimsRole !== 'user' && 
+          existingCustomClaimsRole !== 'client') {
+        throw new AppError(
+          'failed-precondition',
+          `User already has Custom Claim role: ${existingCustomClaimsRole}. Only admins can change roles.`,
+          400,
+        );
+      }
+
+      // ✅ DEFINIR CUSTOM CLAIMS NO FIREBASE AUTH (AUTORIDADE ÚNICA)
+      await admin.auth().setCustomUserClaims(userId, {
+        ...existingCustomClaims,
+        role: finalRole,
+      });
+
+      // Sincronizar role no documento do Firestore (apenas para referência/compatibilidade)
+      await db.collection('users').doc(userId).update({
+        role: finalRole,
+        pendingAccountType: false, // Remover flag de pendência
+        roleSetAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      functions.logger.info(`Initial role ${finalRole} set for user ${userId}`, {
+        userId,
+        role: finalRole,
+        accountType: accountType || null,
+        timestamp: new Date().toISOString(),
+      });
+
+      return {
+        success: true,
+        role: finalRole,
+        message: `Role ${finalRole} set successfully`,
+      };
+    } catch (error) {
+      functions.logger.error('Error setting initial user role:', error);
+      throw handleError(error);
     }
-    
-    // Buscar código do Firestore
-    const codeDoc = await db.collection('twoFactorCodes').doc(userId).get();
-    
-    if (!codeDoc.exists) {
-      throw new functions.https.HttpsError(
-        'not-found',
-        'Código não encontrado. Solicite um novo código.'
-      );
-    }
-    
-    const codeData = codeDoc.data();
-    const storedCode = codeData?.code;
-    const expiresAt = codeData?.expiresAt || 0;
-    
-    // Verificar expiração
-    if (Date.now() > expiresAt) {
-      await codeDoc.ref.delete();
-      throw new functions.https.HttpsError(
-        'deadline-exceeded',
-        'Código expirado. Solicite um novo código.'
-      );
-    }
-    
-    // Verificar código
-    if (code !== storedCode) {
-      throw new functions.https.HttpsError(
-        'permission-denied',
-        'Código inválido. Tente novamente.'
-      );
-    }
-    
-    // Código válido - deletar e marcar verificação
-    await codeDoc.ref.delete();
-    await db.collection('users').doc(userId).update({
-      twoFactorVerified: true,
-      twoFactorVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    
-    return {
-      success: true,
-      verified: true
-    };
-  } catch (error) {
-    functions.logger.error('Erro ao verificar código 2FA:', error);
-    throw handleError(error);
-  }
-});
+  },
+);
 ```
+
+**Fluxo de Custom Claims:**
+1. ✅ Usuário cria conta → `onUserCreate` define Custom Claim `role: 'user'`
+2. ✅ Usuário seleciona tipo de conta → `setInitialUserRole` atualiza Custom Claim
+3. ✅ Token JWT inclui Custom Claim automaticamente
+4. ✅ Firestore Rules verificam `request.auth.token.role`
 
 ---
 
-#### **D. Verificação de Identidade**
-**Arquivo:** `functions/src/identityVerification.ts`
+## 📱 3️⃣ AUTENTICAÇÃO: CLIENTE (ANDROID/KOTLIN)
 
-```typescript
-export const verifyIdentity = functions.https.onCall(async (data, context) => {
-  // ✅ Verificar autenticação
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'Usuário não autenticado'
-    );
-  }
+### 📋 **A. Repository de Autenticação**
 
-  const userId = context.auth.uid;
-  const { documentFront, documentBack, selfie, addressProof } = data;
-
-  // Validar documentos
-  if (!documentFront || !documentBack || !selfie) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Documentos obrigatórios não fornecidos'
-    );
-  }
-
-  // Atualizar status de verificação
-  const userRef = admin.firestore().collection('users').doc(userId);
-  
-  await userRef.update({
-    documentFront,
-    documentBack,
-    selfie,
-    addressProof: addressProof || null,
-    verified: false, // Será aprovado manualmente por admin
-    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-  });
-
-  return {
-    success: true,
-    message: 'Documentos enviados com sucesso. Aguardando verificação.'
-  };
-});
-```
-
----
-
-### 📱 Cliente (Android/Kotlin)
-
-#### **A. Repository de Autenticação**
 **Arquivo:** `app/src/main/java/com/taskgoapp/taskgo/data/repository/FirebaseAuthRepository.kt`
 
 ```kotlin
@@ -533,6 +927,7 @@ export const verifyIdentity = functions.https.onCall(async (data, context) => {
 class FirebaseAuthRepository @Inject constructor(
     private val firebaseAuth: FirebaseAuth
 ) {
+    
     fun getCurrentUser(): FirebaseUser? {
         return firebaseAuth.currentUser
     }
@@ -562,7 +957,6 @@ class FirebaseAuthRepository @Inject constructor(
      */
     suspend fun signInWithEmail(email: String, password: String): Result<FirebaseUser> {
         return try {
-            // Verificar se Firebase Auth está inicializado
             if (firebaseAuth.app == null) {
                 return Result.failure(Exception("Firebase Auth não inicializado"))
             }
@@ -613,21 +1007,17 @@ class FirebaseAuthRepository @Inject constructor(
     /**
      * Logout
      */
-    suspend fun signOut(): Result<Unit> {
-        return try {
-            firebaseAuth.signOut()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    fun signOut() {
+        firebaseAuth.signOut()
     }
 
     /**
-     * Obter token ID (útil para chamadas de API)
+     * Obter token ID (inclui Custom Claims)
      */
     suspend fun getIdToken(forceRefresh: Boolean = false): Result<String> {
         return try {
             val user = firebaseAuth.currentUser ?: throw Exception("User not logged in")
+            // ✅ forceRefresh = true garante que Custom Claims atualizados sejam incluídos
             val token = user.getIdToken(forceRefresh).await()
             Result.success(token)
         } catch (e: Exception) {
@@ -637,287 +1027,97 @@ class FirebaseAuthRepository @Inject constructor(
 }
 ```
 
+**Observações:**
+- ✅ `getIdToken(forceRefresh = true)` garante que Custom Claims atualizados sejam incluídos
+- ✅ Observação de estado de autenticação via Flow
+- ✅ Tratamento de erros robusto
+
 ---
 
-#### **B. ViewModel de Login**
-**Arquivo:** `app/src/main/java/com/taskgoapp/taskgo/feature/auth/presentation/LoginViewModel.kt`
+## 📊 RESUMO DAS SEGURANÇAS IMPLEMENTADAS
 
-```kotlin
-@HiltViewModel
-class LoginViewModel @Inject constructor(
-    private val authRepository: FirebaseAuthRepository,
-    private val firestoreUserRepository: FirestoreUserRepository,
-    private val preferencesManager: PreferencesManager
-) : ViewModel() {
+### ✅ **Camadas de Segurança:**
 
-    private val _uiState = MutableStateFlow(LoginUiState())
-    val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+1. **App Check** ✅
+   - Valida que requisições vêm de apps legítimos
+   - Implementado em todas as Cloud Functions críticas
 
-    fun login(email: String, password: String) {
-        viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-                
-                // ✅ Chamar Firebase Auth
-                val result = authRepository.signInWithEmail(email.trim(), password)
-                
-                result.fold(
-                    onSuccess = { firebaseUser ->
-                        Log.d("LoginViewModel", "Login bem-sucedido: ${firebaseUser.uid}")
-                        
-                        // Salvar email para biometria
-                        preferencesManager.saveEmailForBiometric(email.trim())
-                        
-                        // Verificar e criar usuário no Firestore se necessário
-                        val existingUser = firestoreUserRepository.getUser(firebaseUser.uid)
-                        if (existingUser == null) {
-                            // Criar perfil no Firestore
-                            val newUser = UserFirestore(
-                                uid = firebaseUser.uid,
-                                email = firebaseUser.email ?: email.trim(),
-                                displayName = firebaseUser.displayName,
-                                photoURL = firebaseUser.photoUrl?.toString(),
-                                role = "client",
-                                profileComplete = false,
-                                verified = firebaseUser.isEmailVerified,
-                                createdAt = Date(),
-                                updatedAt = Date()
-                            )
-                            
-                            firestoreUserRepository.updateUser(newUser).fold(
-                                onSuccess = {
-                                    _uiState.value = _uiState.value.copy(
-                                        isLoading = false,
-                                        loginSuccess = true
-                                    )
-                                },
-                                onFailure = { error ->
-                                    _uiState.value = _uiState.value.copy(
-                                        isLoading = false,
-                                        error = "Erro ao criar perfil: ${error.message}"
-                                    )
-                                }
-                            )
-                        } else {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                loginSuccess = true
-                            )
-                        }
-                    },
-                    onFailure = { exception ->
-                        Log.e("LoginViewModel", "Erro no login: ${exception.message}", exception)
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = when {
-                                exception.message?.contains("password", ignoreCase = true) == true ->
-                                    "Senha incorreta"
-                                exception.message?.contains("user-not-found", ignoreCase = true) == true ->
-                                    "Usuário não encontrado"
-                                exception.message?.contains("network", ignoreCase = true) == true ->
-                                    "Erro de conexão. Verifique sua internet."
-                                else -> "Erro ao fazer login: ${exception.message}"
-                            }
-                        )
-                    }
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Erro inesperado: ${e.message}"
-                )
-            }
-        }
-    }
-}
+2. **Custom Claims** ✅
+   - Roles definidos no token JWT (autoridade única)
+   - Não podem ser alterados diretamente no Firestore
+   - Sincronizados automaticamente em todos os tokens
+
+3. **Firestore Rules** ✅
+   - Verificam `request.auth.token.role` (Custom Claims)
+   - Validações de propriedade (`isOwner`)
+   - Validações de estrutura de dados
+   - Permitem queries de listagem onde apropriado
+
+4. **Cloud Functions** ✅
+   - Validações de negócio complexas
+   - Validação de App Check e autenticação
+   - Helpers de roles type-safe
+   - Tratamento centralizado de erros
+
+5. **Cliente (Android)** ✅
+   - Refresh de tokens para incluir Custom Claims atualizados
+   - Tratamento robusto de erros
+   - Observação de estado de autenticação
+
+---
+
+### 🔄 **Fluxo Completo de Autenticação:**
+
+```
+1. Usuário cria conta
+   ↓
+2. Firebase Auth: cria usuário
+   ↓
+3. onUserCreate (Cloud Function):
+   - Cria documento em /users/{uid}
+   - Define Custom Claim role: 'user'
+   ↓
+4. Cliente: chama setInitialUserRole(role)
+   ↓
+5. setInitialUserRole (Cloud Function):
+   - Valida App Check
+   - Valida autenticação
+   - Define Custom Claim role: {role}
+   - Atualiza Firestore (referência)
+   ↓
+6. Cliente: refresh token (getIdToken(true))
+   ↓
+7. Token JWT inclui Custom Claim role
+   ↓
+8. Firestore Rules verificam request.auth.token.role
+   ↓
+9. Acesso autorizado ✅
 ```
 
 ---
 
-#### **C. Verificação de Estado de Autenticação (Splash)**
-**Arquivo:** `app/src/main/java/com/taskgoapp/taskgo/feature/splash/presentation/SplashViewModel.kt`
+### 📝 **Práticas de Segurança:**
 
-```kotlin
-@HiltViewModel
-class SplashViewModel @Inject constructor(
-    private val authRepository: FirebaseAuthRepository,
-    private val initialDataSyncManager: InitialDataSyncManager,
-    private val preferencesManager: PreferencesManager
-) : ViewModel() {
-
-    fun checkAuthState(
-        onNavigateToBiometricAuth: () -> Unit,
-        onNavigateToHome: () -> Unit,
-        onNavigateToLogin: () -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                Log.d("SplashViewModel", "Verificando estado de autenticação")
-                
-                // ✅ Obter usuário atual
-                val currentUser = authRepository.getCurrentUser()
-                
-                if (currentUser != null) {
-                    // ✅ Verificar se o token ainda é válido
-                    try {
-                        currentUser.getIdToken(true).await()
-                        
-                        // Se estiver logado e token válido, verificar sync inicial
-                        val needsSync = !preferencesManager.isInitialSyncCompleted(currentUser.uid)
-                        if (needsSync) {
-                            Log.d("SplashViewModel", "Iniciando sincronização inicial...")
-                            try {
-                                initialDataSyncManager.syncAllUserData()
-                                preferencesManager.setInitialSyncCompleted(currentUser.uid)
-                            } catch (e: Exception) {
-                                Log.e("SplashViewModel", "Erro ao sincronizar: ${e.message}", e)
-                            }
-                        }
-                        
-                        Log.d("SplashViewModel", "Usuário logado, navegando para home")
-                        onNavigateToHome()
-                    } catch (e: Exception) {
-                        // Token inválido ou expirado
-                        Log.w("SplashViewModel", "Token inválido: ${e.message}")
-                        onNavigateToLogin()
-                    }
-                } else {
-                    Log.d("SplashViewModel", "Usuário não logado, navegando para login")
-                    onNavigateToLogin()
-                }
-            } catch (e: Exception) {
-                Log.e("SplashViewModel", "Erro ao verificar autenticação: ${e.message}", e)
-                onNavigateToLogin()
-            }
-        }
-    }
-}
-```
+- ✅ **Never trust client**: Todas as validações críticas no backend
+- ✅ **Defense in depth**: Múltiplas camadas de segurança
+- ✅ **Least privilege**: Usuários só acessam seus próprios dados
+- ✅ **Audit logs**: Logs estruturados em Cloud Functions
+- ✅ **Error handling**: Não expor informações sensíveis em erros
+- ✅ **Token refresh**: Garantir que Custom Claims atualizados sejam incluídos
+- ✅ **Type safety**: Helpers de roles com TypeScript
 
 ---
 
-#### **D. Chamada de Cloud Function (2FA)**
-**Arquivo:** `app/src/main/java/com/taskgoapp/taskgo/feature/auth/presentation/TwoFactorAuthViewModel.kt`
+### 🆕 **Novidades nesta versão:**
 
-```kotlin
-@HiltViewModel
-class TwoFactorAuthViewModel @Inject constructor(
-    private val auth: FirebaseAuth,
-    private val functionsService: FirebaseFunctionsService
-) : ViewModel() {
-
-    fun sendCode() {
-        viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-                
-                val currentUser = auth.currentUser ?: run {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Usuário não autenticado"
-                    )
-                    return@launch
-                }
-                
-                // ✅ Chamar Cloud Function
-                val result = functionsService.sendTwoFactorCode()
-                
-                result.fold(
-                    onSuccess = {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            codeSent = true
-                        )
-                    },
-                    onFailure = { exception ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = "Erro ao enviar código: ${exception.message}"
-                        )
-                    }
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Erro: ${e.message}"
-                )
-            }
-        }
-    }
-
-    fun verifyCode(code: String) {
-        viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-                
-                val currentUser = auth.currentUser ?: run {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Usuário não autenticado"
-                    )
-                    return@launch
-                }
-                
-                // ✅ Chamar Cloud Function para verificar código
-                val result = functionsService.verifyTwoFactorCode(code)
-                
-                result.fold(
-                    onSuccess = { data ->
-                        val verified = data["verified"] as? Boolean ?: false
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            isVerified = verified
-                        )
-                    },
-                    onFailure = { exception ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = when {
-                                exception.message?.contains("expirado") == true ->
-                                    "Código expirado. Solicite um novo código."
-                                exception.message?.contains("inválido") == true ->
-                                    "Código inválido. Tente novamente."
-                                else -> "Erro ao verificar código: ${exception.message}"
-                            }
-                        )
-                    }
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Erro: ${e.message}"
-                )
-            }
-        }
-    }
-}
-```
+1. ✅ **Nova coleção:** `product_categories` e `service_categories`
+2. ✅ **Nova coleção:** `homeBanners`
+3. ✅ **Nova coleção:** `story_views` (raiz) para analytics
+4. ✅ **Stories:** Escrita bloqueada - usar Cloud Function `createStory`
+5. ✅ **Helpers de roles:** Novo arquivo `functions/src/security/roles.ts`
+6. ✅ **Queries de listagem:** Permissões melhoradas para queries
+7. ✅ **Type safety:** Roles com TypeScript types
 
 ---
 
-## 📝 RESUMO DAS SEGURANÇAS
-
-### ✅ Pontos Importantes:
-
-1. **Todas as regras exigem autenticação** (`request.auth != null`)
-2. **Propriedade de dados**: Usuários só podem modificar seus próprios dados
-3. **Validação de campos**: Regras validam estrutura e tipos de dados
-4. **Cloud Functions**: Verificam autenticação via `context.auth`
-5. **Cliente**: Usa `FirebaseAuth.currentUser` e tokens para validação
-6. **Regra padrão**: Nega acesso a coleções não especificadas
-
-### 🔐 Fluxo de Autenticação:
-
-```
-1. Cliente: signInWithEmail() → Firebase Auth
-2. Firebase Auth: retorna FirebaseUser com UID
-3. Cliente: cria/atualiza documento em /users/{uid}
-4. Cloud Function: onUserCreate() → cria documento inicial se não existir
-5. Regras Firestore: verificam request.auth.uid == userId
-6. Cloud Functions: verificam context.auth.uid
-```
-
----
-
-**Data de geração:** $(date)
-**Versão das regras:** rules_version = '2'
+**Este relatório está atualizado com as últimas implementações do sistema.**

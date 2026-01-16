@@ -4,6 +4,8 @@
 **Versão das regras:** rules_version = '2'  
 **Arquitetura:** Custom Claims + App Check + Cloud Functions
 
+> 📱 **Relatório complementar:** Para entender como o frontend Android se comunica com o backend, consulte [`RELATORIO_FRONTEND_E_COMUNICACAO_BACKEND.md`](./RELATORIO_FRONTEND_E_COMUNICACAO_BACKEND.md)
+
 ---
 
 ## 🔐 1️⃣ REGRAS FIRESTORE ATUALIZADAS
@@ -1105,6 +1107,131 @@ class FirebaseAuthRepository @Inject constructor(
 - ✅ **Error handling**: Não expor informações sensíveis em erros
 - ✅ **Token refresh**: Garantir que Custom Claims atualizados sejam incluídos
 - ✅ **Type safety**: Helpers de roles com TypeScript
+
+---
+
+### 🔄 **Como as Regras São Aplicadas na Prática:**
+
+#### **Exemplo 1: Criar Produto**
+
+**Frontend (Android):**
+```kotlin
+// ❌ TENTATIVA DIRETA (bloqueada pelas regras)
+firestore.collection("products").add(productData)
+// ERRO: Permission denied - write blocked
+
+// ✅ CORRETO (via Cloud Function)
+functionsService.createProduct(
+    title = product.title,
+    description = product.description,
+    category = product.category,
+    price = product.price
+)
+```
+
+**Backend (Cloud Function):**
+```typescript
+export const createProduct = functions.https.onCall(async (data, context) => {
+  validateAppCheck(context);        // ✅ Valida app legítimo
+  assertAuthenticated(context);      // ✅ Valida autenticação
+  const role = getUserRole(context); // ✅ Lê Custom Claim do token
+  
+  // Validações de negócio...
+  
+  // ✅ Escrita com privilégios admin (bypass das regras)
+  await db.collection('products').add(productData);
+});
+```
+
+**Resultado:**
+- ✅ Escrita bloqueada no cliente (regras do Firestore)
+- ✅ Validações executadas no backend
+- ✅ Produto criado com privilégios elevados (Cloud Function)
+
+---
+
+#### **Exemplo 2: Ler Produtos**
+
+**Frontend (Android):**
+```kotlin
+// ✅ PERMITIDO (regras permitem leitura de produtos ativos)
+firestore.collection("products")
+    .whereEqualTo("active", true)
+    .addSnapshotListener { snapshot, error ->
+        // ✅ Sucesso: produtos retornados
+    }
+```
+
+**Regra aplicada:**
+```javascript
+match /products/{productId} {
+  allow read: if isAuthenticated() 
+              && (resource == null || resource.data.active == true);
+}
+```
+
+**Resultado:**
+- ✅ Leitura permitida para usuários autenticados
+- ✅ Apenas produtos `active == true` são retornados
+- ✅ Regra valida no momento da query
+
+---
+
+#### **Exemplo 3: Atualizar Perfil de Usuário**
+
+**Frontend (Android):**
+```kotlin
+// ✅ PERMITIDO (usuário pode atualizar próprio perfil)
+firestore.collection("users").document(userId)
+    .update(mapOf("displayName" to newName))
+    .await()
+```
+
+**Regra aplicada:**
+```javascript
+match /users/{userId} {
+  allow update: if isOwner(userId)
+                && !('role' in request.resource.data.diff(resource.data).affectedKeys());
+}
+```
+
+**Resultado:**
+- ✅ Usuário pode atualizar próprio perfil
+- ❌ Não pode alterar campo `role` (protegido)
+- ✅ Validação ocorre no Firestore antes da escrita
+
+---
+
+#### **Exemplo 4: Admin Acessando Dados**
+
+**Frontend (Android):**
+```kotlin
+// ✅ PERMITIDO (admin tem acesso especial)
+firestore.collection("users")
+    .whereEqualTo("role", "provider")
+    .get()
+    .await()
+```
+
+**Regra aplicada:**
+```javascript
+match /users/{userId} {
+  allow read: if isOwner(userId) || isModeratorOrAdmin();
+}
+```
+
+**Custom Claims no token:**
+```json
+{
+  "uid": "admin123",
+  "role": "admin"  // ✅ Custom Claim
+}
+```
+
+**Resultado:**
+- ✅ Admin pode ler todos os usuários
+- ✅ Custom Claim `role: 'admin'` é verificado
+- ✅ Regra `isModeratorOrAdmin()` retorna `true`
 
 ---
 

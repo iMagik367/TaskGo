@@ -102,10 +102,7 @@ object AppModule {
             FirestoreProductsRepositoryImpl(
                 firestore = firestore,
                 firebaseAuth = firebaseAuth,
-                cartDao = cartDao,
-                productDao = productDao,
-                syncManager = syncManager,
-                realtimeRepository = realtimeRepository
+                cartDao = cartDao
             )
         } else {
             ProductsRepositoryImpl(productDao, cartDao)
@@ -387,8 +384,7 @@ object AppModule {
         return com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository(
             firestore = firestore,
             realtimeRepository = realtimeRepository,
-            authRepository = authRepository,
-            useLocalCache = false // desabilita cache local de serviços
+            authRepository = authRepository
         )
     }
     

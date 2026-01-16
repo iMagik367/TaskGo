@@ -4,6 +4,7 @@ export const COLLECTIONS = {
   PAYMENTS: 'payments',
   NOTIFICATIONS: 'notifications',
   SERVICES: 'services',
+  PRODUCTS: 'products',
   REVIEWS: 'reviews',
   REPORTS: 'reports',
 } as const;

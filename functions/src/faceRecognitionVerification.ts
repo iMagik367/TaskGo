@@ -439,18 +439,32 @@ async function downloadImageFromUrl(url: string): Promise<Buffer> {
  * Chamada pelo app quando o usuário envia documentos
  */
 export const startIdentityVerification = functions.https.onCall(async (data, context) => {
-  // Verificar autenticação
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'Usuário não autenticado'
-    );
-  }
-
-  const userId = context.auth.uid;
-  const {documentFrontUrl, documentBackUrl, selfieUrl, addressProofUrl} = data;
-
   try {
+    // Validar App Check
+    if (context.app === undefined && 
+        process.env.FUNCTIONS_EMULATOR !== 'true' && 
+        process.env.NODE_ENV !== 'development') {
+      functions.logger.warn('App Check token missing for startIdentityVerification', {
+        uid: context.auth?.uid,
+        timestamp: new Date().toISOString(),
+      });
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'App Check validation failed'
+      );
+    }
+    
+    // Verificar autenticação
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Usuário não autenticado'
+      );
+    }
+
+    const userId = context.auth.uid;
+    const {documentFrontUrl, documentBackUrl, selfieUrl, addressProofUrl} = data;
+
     // Validar que todos os documentos obrigatórios foram enviados
     if (!documentFrontUrl || !selfieUrl) {
       throw new functions.https.HttpsError(
@@ -484,14 +498,22 @@ export const startIdentityVerification = functions.https.onCall(async (data, con
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    functions.logger.info(`Identity verification started for user ${userId}`, {
+      userId,
+      timestamp: new Date().toISOString(),
+    });
+
     return {
       success: true,
       message: 'Verificação iniciada. Processando em tempo real...',
       userId,
     };
   } catch (error) {
-    console.error('Erro ao iniciar verificação:', error);
+    functions.logger.error('Error starting identity verification:', error);
     const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
     throw new functions.https.HttpsError(
       'internal',
       'Erro ao processar verificação de identidade',

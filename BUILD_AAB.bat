@@ -3,7 +3,7 @@ echo ========================================
 echo Building AAB Release Bundle
 echo ========================================
 echo.
-echo Version: 1.0.72 (Code: 73)
+echo Version: 1.0.76 (Code: 77)
 echo.
 
 cd /d "%~dp0"

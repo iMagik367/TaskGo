@@ -72,13 +72,13 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
       }
     } else {
       // Documento não existe - criar com flag pendingAccountType para indicar que o app precisa mostrar dialog
-      // O app vai atualizar o role correto após o usuário selecionar o tipo de conta
+      // O app vai chamar setInitialUserRole para definir o role correto (incluindo Custom Claims)
       const userData = {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName,
         photoURL: user.photoURL,
-        role: 'client', // Default role - será atualizado pelo app se accountType for diferente
+        role: 'user', // Default role - será atualizado por setInitialUserRole quando o usuário selecionar tipo de conta
         pendingAccountType: true, // Flag para indicar que o app precisa mostrar dialog de seleção
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -87,7 +87,15 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
       };
 
       await userRef.set(userData, { merge: true });
-      functions.logger.info(`User document created for ${user.uid} with pendingAccountType flag`);
+      
+      // Definir Custom Claim padrão como "user" (será atualizado por setInitialUserRole se necessário)
+      await admin.auth().setCustomUserClaims(user.uid, {
+        role: 'user',
+      });
+      
+      functions.logger.info(
+        `User document created for ${user.uid} with pendingAccountType flag and default Custom Claim role=user`
+      );
     }
     
     return null;

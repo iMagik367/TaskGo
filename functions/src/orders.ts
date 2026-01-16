@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS, ORDER_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 type OrderDocument = {
   clientId: string;
@@ -25,6 +26,10 @@ type OrderDocument = {
  */
 export const createOrder = functions.https.onCall(async (data, context) => {
   try {
+    // Validar App Check
+    validateAppCheck(context);
+    
+    // Verificar autenticação
     assertAuthenticated(context);
     
     const db = admin.firestore();
@@ -123,6 +128,10 @@ export const createOrder = functions.https.onCall(async (data, context) => {
  */
 export const updateOrderStatus = functions.https.onCall(async (data, context) => {
   try {
+    // Validar App Check
+    validateAppCheck(context);
+    
+    // Verificar autenticação
     assertAuthenticated(context);
     
     const db = admin.firestore();
@@ -225,6 +234,10 @@ export const updateOrderStatus = functions.https.onCall(async (data, context) =>
  */
 export const getMyOrders = functions.https.onCall(async (data, context) => {
   try {
+    // Validar App Check
+    validateAppCheck(context);
+    
+    // Verificar autenticação
     assertAuthenticated(context);
     
     const db = admin.firestore();

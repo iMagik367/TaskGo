@@ -1,4 +1,3 @@
-import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 
 export class AppError extends Error {
@@ -13,7 +12,16 @@ export class AppError extends Error {
 }
 
 export const handleError = (error: unknown): functions.https.HttpsError => {
-  functions.logger.error('Error occurred:', error);
+  // Não logar dados sensíveis
+  const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+  const errorCode = error instanceof AppError ? error.code : 'internal';
+
+  // Log estruturado sem dados sensíveis
+  functions.logger.error('Error occurred', {
+    code: errorCode,
+    message: errorMessage,
+    timestamp: new Date().toISOString(),
+  });
 
   if (error instanceof AppError) {
     return new functions.https.HttpsError(
@@ -32,16 +40,5 @@ export const handleError = (error: unknown): functions.https.HttpsError => {
 export const assertAuthenticated = (context: functions.https.CallableContext) => {
   if (!context.auth) {
     throw new AppError('unauthenticated', 'User must be authenticated', 401);
-  }
-};
-
-export const assertAdmin = async (context: functions.https.CallableContext) => {
-  assertAuthenticated(context);
-  
-  const db = admin.firestore();
-  const userDoc = await db.collection('users').doc(context.auth!.uid).get();
-  
-  if (!userDoc.exists || userDoc.data()?.role !== 'admin') {
-    throw new AppError('permission-denied', 'Admin access required', 403);
   }
 };

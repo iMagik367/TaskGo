@@ -1,7 +1,7 @@
 @echo off
 echo ========================================
 echo Building AAB Release Bundle (Direct Build)
-echo Version: 1.0.71 (Code: 72)
+echo Version: 1.0.76 (Code: 77)
 echo ========================================
 echo.
 

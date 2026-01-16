@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 const db = admin.firestore();
 
@@ -9,6 +10,10 @@ const db = admin.firestore();
  */
 export const sendTwoFactorCode = functions.https.onCall(async (data, context) => {
   try {
+    // Validar App Check
+    validateAppCheck(context);
+    
+    // Verificar autenticação
     assertAuthenticated(context);
     
     const userId = context.auth!.uid;
@@ -85,6 +90,10 @@ export const sendTwoFactorCode = functions.https.onCall(async (data, context) =>
  */
 export const verifyTwoFactorCode = functions.https.onCall(async (data, context) => {
   try {
+    // Validar App Check
+    validateAppCheck(context);
+    
+    // Verificar autenticação
     assertAuthenticated(context);
     
     const userId = context.auth!.uid;

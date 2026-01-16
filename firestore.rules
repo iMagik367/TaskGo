@@ -1,380 +1,358 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Posts collection
-    match /posts/{postId} {
-      // Leitura: Qualquer usuário autenticado pode ler posts
-      allow read: if request.auth != null;
+    
+    // ==========================================
+    // HELPER FUNCTIONS
+    // ==========================================
+    
+    // Verifica se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Obtém o role do usuário através de Custom Claims (autoridade única)
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+    
+    // Verifica se o usuário é admin
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+    
+    // Verifica se o usuário é moderador ou admin
+    function isModeratorOrAdmin() {
+      return isAuthenticated() && (getUserRole() == 'moderator' || getUserRole() == 'admin');
+    }
+    
+    // Verifica se o usuário é o dono do recurso
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // ==========================================
+    // USERS COLLECTION
+    // ==========================================
+    
+    match /users/{userId} {
+      // Leitura: Próprio usuário, moderadores e admins
+      allow read: if isOwner(userId) || isModeratorOrAdmin();
       
-      // Criação: Apenas usuário autenticado, userId deve corresponder ao autor
-      allow create: if request.auth != null 
+      // Criação: Apenas o próprio usuário pode criar seu documento inicial
+      // Role é definido por Cloud Functions (setInitialUserRole)
+      allow create: if isOwner(userId) 
+                    && request.resource.data.uid == userId
+                    && request.resource.data.keys().hasAll(['uid', 'email']);
+      
+      // Atualização: Apenas o próprio usuário pode atualizar (exceto role)
+      // Role só pode ser alterado por admins via Cloud Functions
+      allow update: if isOwner(userId)
+                    && !('role' in request.resource.data.diff(resource.data).affectedKeys())
+                    && !('roleUpdatedAt' in request.resource.data.diff(resource.data).affectedKeys())
+                    && !('roleUpdatedBy' in request.resource.data.diff(resource.data).affectedKeys());
+      
+      // Admins podem atualizar qualquer campo (incluindo role) - mas usar Cloud Functions preferencialmente
+      allow update: if isAdmin();
+      
+      // Exclusão: Apenas admins ou o próprio usuário (através de Cloud Function)
+      allow delete: if isAdmin();
+      
+      // Subcoleções de usuário
+      match /services/{serviceId} {
+        // Leitura: Apenas leitura através de Cloud Functions
+        // App não deve ler diretamente - usar Cloud Functions
+        allow read: if isAuthenticated();
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions (createService, updateService, deleteService)
+        allow write: if false;
+      }
+      
+      match /products/{productId} {
+        // Leitura: Apenas leitura através de Cloud Functions
+        allow read: if isAuthenticated();
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions (createProduct, updateProduct, deleteProduct)
+        allow write: if false;
+      }
+      
+      match /orders/{orderId} {
+        // Leitura: Cliente ou prestador relacionado, ou admins
+        allow read: if isOwner(userId) 
+                    || (isAuthenticated() && (
+                        resource.data.clientId == request.auth.uid 
+                        || resource.data.providerId == request.auth.uid
+                        || isAdmin()
+                      ));
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions (createOrder, updateOrderStatus)
+        allow write: if false;
+      }
+      
+      match /posts/{postId} {
+        allow read: if isAuthenticated();
+        allow create: if isOwner(userId) 
+                      && request.resource.data.userId == userId;
+        allow update, delete: if isOwner(userId) 
+                              && resource.data.userId == userId;
+      }
+      
+      match /postInterests/{interestId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /blockedUsers/{blockId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /stories/{storyId} {
+        allow read: if isAuthenticated();
+        allow create: if isOwner(userId) 
+                      && request.resource.data.userId == userId;
+        allow update, delete: if isOwner(userId) 
+                              && resource.data.userId == userId;
+      }
+    }
+    
+    // ==========================================
+    // SERVICES COLLECTION (pública)
+    // ==========================================
+    
+    match /services/{serviceId} {
+      // Leitura: Qualquer usuário autenticado pode ler serviços ativos
+      allow read: if isAuthenticated() 
+                  && (resource.data.active == true);
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions (createService, updateService, deleteService)
+      // App não pode criar/editar serviços diretamente
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // PRODUCTS COLLECTION (pública)
+    // ==========================================
+    
+    match /products/{productId} {
+      // Leitura: Apenas produtos com status "active" são públicos
+      allow read: if isAuthenticated() 
+                  && resource.data.status == 'active'
+                  && resource.data.active == true;
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions (createProduct, updateProduct, deleteProduct)
+      // App não pode criar/editar produtos diretamente
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // ORDERS COLLECTION (pública)
+    // ==========================================
+    
+    match /orders/{orderId} {
+      // Leitura: Cliente ou prestador relacionado, ou admins
+      allow read: if isAuthenticated() 
+                  && (resource.data.clientId == request.auth.uid 
+                      || resource.data.providerId == request.auth.uid
+                      || isAdmin());
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions (createOrder, updateOrderStatus)
+      // App não pode criar/editar ordens diretamente
+      // Transições de status são validadas pela Cloud Function
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // POSTS COLLECTION
+    // ==========================================
+    
+    match /posts/{postId} {
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() 
                     && request.resource.data.userId == request.auth.uid;
       
-      // Atualização: Apenas o autor do post
-      allow update: if request.auth != null 
-                    && resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() 
+                            && resource.data.userId == request.auth.uid;
       
-      // Exclusão: Apenas o autor do post
-      allow delete: if request.auth != null 
-                    && resource.data.userId == request.auth.uid;
-      
-      // Subcoleção: Avaliações de posts (posts/{postId}/ratings)
       match /ratings/{ratingId} {
-        // Leitura: Qualquer usuário autenticado pode ler avaliações
-        allow read: if request.auth != null;
-        
-        // Escrita: Apenas usuários autenticados podem avaliar
-        allow create: if request.auth != null 
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() 
                       && request.resource.data.userId == request.auth.uid
                       && request.resource.data.postId == postId
                       && request.resource.data.rating is int
                       && request.resource.data.rating >= 1
                       && request.resource.data.rating <= 5;
-        allow update: if request.auth != null 
-                      && resource.data.userId == request.auth.uid
-                      && request.resource.data.rating is int
-                      && request.resource.data.rating >= 1
-                      && request.resource.data.rating <= 5;
-        allow delete: if request.auth != null 
-                      && resource.data.userId == request.auth.uid;
+        allow update, delete: if isAuthenticated() 
+                              && resource.data.userId == request.auth.uid;
       }
       
-      // Subcoleção: Comentários de posts (posts/{postId}/comments)
       match /comments/{commentId} {
-        // Leitura: Qualquer usuário autenticado pode ler comentários
-        allow read: if request.auth != null;
-        
-        // Escrita: Apenas usuários autenticados podem comentar
-        allow create: if request.auth != null 
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() 
                       && request.resource.data.userId == request.auth.uid
                       && request.resource.data.postId == postId;
-        allow update: if request.auth != null 
-                      && resource.data.userId == request.auth.uid;
-        allow delete: if request.auth != null 
-                      && resource.data.userId == request.auth.uid;
+        allow update, delete: if isAuthenticated() 
+                              && resource.data.userId == request.auth.uid;
       }
     }
     
-    // Users collection - documentos de usuário
-    match /users/{userId} {
-      // Permite leitura e escrita para o próprio usuário (incluindo notificationSettings e privacySettings)
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+    // ==========================================
+    // CONVERSATIONS COLLECTION
+    // ==========================================
+    
+    match /conversations/{conversationId} {
+      // Apenas participantes podem ler
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
       
-      // Subcoleção: Serviços do usuário (users/{userId}/services)
-      match /services/{serviceId} {
-        // Leitura: Qualquer usuário autenticado pode ler (para visualização pública)
-        allow read: if request.auth != null;
-        
-        // Escrita: Apenas o dono do serviço (userId da subcoleção)
-        allow create: if request.auth != null 
-                      && request.auth.uid == userId
-                      && request.resource.data.providerId == userId;
-        allow update: if request.auth != null 
-                      && request.auth.uid == userId
-                      && resource.data.providerId == userId;
-        allow delete: if request.auth != null 
-                      && request.auth.uid == userId;
-      }
+      allow create: if isAuthenticated() 
+                    && request.resource.data.userId == request.auth.uid;
       
-      // Subcoleção: Produtos do usuário (users/{userId}/products)
-      match /products/{productId} {
-        // Leitura: Qualquer usuário autenticado pode ler (para visualização pública)
-        allow read: if request.auth != null;
-        
-        // Escrita: Apenas o dono do produto (userId da subcoleção)
-        allow create: if request.auth != null 
-                      && request.auth.uid == userId
-                      && request.resource.data.sellerId == userId;
-        allow update: if request.auth != null 
-                      && request.auth.uid == userId
-                      && resource.data.sellerId == userId;
-        allow delete: if request.auth != null 
-                      && request.auth.uid == userId;
-      }
+      allow update: if isAuthenticated() 
+                    && resource.data.userId == request.auth.uid;
       
-      // Subcoleção: Ordens do usuário (users/{userId}/orders)
-      match /orders/{orderId} {
-        // Leitura: Apenas o dono (cliente) ou prestador relacionado
-        allow read: if request.auth != null 
-                    && (request.auth.uid == userId 
-                        || resource.data.clientId == request.auth.uid 
-                        || resource.data.providerId == request.auth.uid);
-        
-        // Escrita: Apenas o dono (cliente que criou a ordem)
-        allow create: if request.auth != null 
-                      && request.auth.uid == userId
-                      && request.resource.data.clientId == userId;
-        allow update: if request.auth != null 
-                      && (request.auth.uid == userId 
-                          || resource.data.clientId == request.auth.uid 
-                          || resource.data.providerId == request.auth.uid);
-        allow delete: if request.auth != null 
-                      && request.auth.uid == userId;
-      }
+      allow delete: if isAuthenticated() 
+                    && resource.data.userId == request.auth.uid;
       
-      // Subcoleção: Posts do usuário (users/{userId}/posts)
-      match /posts/{postId} {
-        // Leitura: Qualquer usuário autenticado pode ler (para visualização pública)
-        allow read: if request.auth != null;
+      match /messages/{messageId} {
+        // Apenas participantes podem ler
+        allow read: if isAuthenticated() 
+                    && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
         
-        // Escrita: Apenas o dono do post (userId da subcoleção)
-        allow create: if request.auth != null 
-                      && request.auth.uid == userId
-                      && request.resource.data.userId == userId;
-        allow update: if request.auth != null 
-                      && request.auth.uid == userId
-                      && resource.data.userId == userId;
-        allow delete: if request.auth != null 
-                      && request.auth.uid == userId;
-      }
-      
-      // Subcoleção: Interesses em posts (users/{userId}/postInterests)
-      match /postInterests/{interestId} {
-        // Leitura: Apenas o próprio usuário pode ler seus interesses
-        allow read: if request.auth != null 
-                    && request.auth.uid == userId;
+        // Mensagens podem ser criadas por participantes (ou via Cloud Function)
+        allow create: if isAuthenticated() 
+                      && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
         
-        // Escrita: Apenas o próprio usuário pode criar/atualizar seus interesses
-        allow create: if request.auth != null 
-                      && request.auth.uid == userId
-                      && request.resource.data.postId is string
-                      && request.resource.data.isInterested is bool;
-        allow update: if request.auth != null 
-                      && request.auth.uid == userId;
-        allow delete: if request.auth != null 
-                      && request.auth.uid == userId;
-      }
-      
-      // Subcoleção: Usuários bloqueados (users/{userId}/blockedUsers)
-      match /blockedUsers/{blockId} {
-        // Leitura: Apenas o próprio usuário pode ler sua lista de bloqueados
-        allow read: if request.auth != null 
-                    && request.auth.uid == userId;
-        
-        // Escrita: Apenas o próprio usuário pode bloquear/desbloquear
-        allow create: if request.auth != null 
-                      && request.auth.uid == userId
-                      && request.resource.data.blockedId is string
-                      && request.resource.data.blockedId != userId; // Não pode bloquear a si mesmo
-        allow update: if request.auth != null 
-                      && request.auth.uid == userId;
-        allow delete: if request.auth != null 
-                      && request.auth.uid == userId;
-      }
-      
-      // Subcoleção: Stories do usuário (users/{userId}/stories)
-      match /stories/{storyId} {
-        // Leitura: Qualquer usuário autenticado pode ler (para visualização pública)
-        allow read: if request.auth != null;
-        
-        // Escrita: Apenas o dono da story (userId da subcoleção)
-        allow create: if request.auth != null 
-                      && request.auth.uid == userId
-                      && request.resource.data.userId == userId;
-        allow update: if request.auth != null 
-                      && request.auth.uid == userId
-                      && resource.data.userId == userId;
-        allow delete: if request.auth != null 
-                      && request.auth.uid == userId;
+        // Mensagens são imutáveis
+        allow update, delete: if false;
       }
     }
     
-    // Coleção pública de serviços (para queries eficientes)
-    match /services/{serviceId} {
-      // Leitura: Qualquer usuário autenticado pode ler
-      allow read: if request.auth != null;
-      
-      // Escrita: Apenas o prestador dono do serviço
-      allow create: if request.auth != null 
-                    && request.resource.data.providerId == request.auth.uid;
-      allow update: if request.auth != null 
-                    && resource.data.providerId == request.auth.uid;
-      allow delete: if request.auth != null 
-                    && resource.data.providerId == request.auth.uid;
-    }
+    // ==========================================
+    // NOTIFICATIONS COLLECTION
+    // ==========================================
     
-    // Coleção pública de produtos (para queries eficientes)
-    match /products/{productId} {
-      // Leitura: Qualquer usuário autenticado pode ler
-      allow read: if request.auth != null;
-      
-      // Escrita: Apenas o vendedor dono do produto
-      allow create: if request.auth != null 
-                    && request.resource.data.sellerId == request.auth.uid;
-      allow update: if request.auth != null 
-                    && resource.data.sellerId == request.auth.uid;
-      allow delete: if request.auth != null 
-                    && resource.data.sellerId == request.auth.uid;
-    }
-    
-    // Coleção pública de ordens (para prestadores verem ordens pendentes)
-    match /orders/{orderId} {
-      // Leitura: Qualquer usuário autenticado pode ler (para prestadores verem ordens)
-      allow read: if request.auth != null;
-      
-      // Escrita: Apenas o cliente que criou ou prestador relacionado
-      allow create: if request.auth != null 
-                    && request.resource.data.clientId == request.auth.uid;
-      allow update: if request.auth != null 
-                    && (resource.data.clientId == request.auth.uid 
-                        || resource.data.providerId == request.auth.uid);
-      allow delete: if request.auth != null 
-                    && resource.data.clientId == request.auth.uid;
-    }
-    
-    // Outras coleções existentes (notifications, reviews, etc.)
     match /notifications/{notificationId} {
-      allow read, write: if request.auth != null 
-                         && resource.data.userId == request.auth.uid;
+      // Apenas o dono pode ler suas notificações
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
+      
+      // Escrita: Apenas Cloud Functions podem criar notificações
+      allow write: if false;
     }
+    
+    // ==========================================
+    // REVIEWS COLLECTION
+    // ==========================================
     
     match /reviews/{reviewId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null 
-                   && request.resource.data.clientId == request.auth.uid;
+      allow read: if isAuthenticated();
+      
+      // Escrita: Apenas Cloud Functions podem criar reviews
+      // Validações de estado devem ser feitas na Cloud Function
+      allow write: if false;
     }
     
-    // Story Views Collection (analytics)
-    match /story_views/{storyId} {
-      // Leitura: Apenas o dono da story pode ler analytics
-      allow read: if request.auth != null 
-                  && get(/databases/$(database)/documents/stories/$(storyId)).data.userId == request.auth.uid;
-      
-      // Escrita de views: Qualquer usuário autenticado pode registrar visualização
-      match /views/{userId} {
-        allow write: if request.auth != null && request.auth.uid == userId;
-      }
-      
-      // Escrita de ações: Qualquer usuário autenticado pode registrar ações
-      match /actions/{actionId} {
-        allow write: if request.auth != null 
-                     && request.resource.data.userId == request.auth.uid;
-      }
-      
-      // Escrita de interações: Qualquer usuário autenticado pode registrar interações
-      match /interactions/{interactionId} {
-        allow write: if request.auth != null 
-                     && request.resource.data.userId == request.auth.uid;
-      }
-    }
+    // ==========================================
+    // STORIES COLLECTION
+    // ==========================================
     
-    // Stories collection (pública)
     match /stories/{storyId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
-
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() 
+                    && request.resource.data.userId == request.auth.uid;
+      
+      allow update, delete: if isAuthenticated() 
+                            && resource.data.userId == request.auth.uid;
+      
       match /views/{userId} {
-        allow read: if request.auth != null;
-        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() 
+                      && request.auth.uid == userId;
+        allow update, delete: if false;
       }
     }
-
-  // AI Conversations collection
-  match /conversations/{conversationId} {
-    // Users can only read their own conversations
-    allow read: if request.auth != null && 
-      resource.data.userId == request.auth.uid;
     
-    // Users can only create conversations for themselves
-    allow create: if request.auth != null && 
-      request.resource.data.userId == request.auth.uid;
+    // ==========================================
+    // BANK ACCOUNTS COLLECTION
+    // ==========================================
     
-    // Users can only update their own conversations
-    allow update: if request.auth != null && 
-      resource.data.userId == request.auth.uid;
-    
-    // Users can only delete their own conversations
-    allow delete: if request.auth != null && 
-      resource.data.userId == request.auth.uid;
-    
-    // Messages subcollection
-    match /messages/{messageId} {
-      // Users can only read messages from their own conversations
-      allow read: if request.auth != null && 
-        get(/databases/{database}/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
-      
-      // Only Cloud Functions can create messages (via server-side logic)
-      allow create: if request.auth != null && 
-        get(/databases/{database}/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
-      
-      // Messages are immutable (no update/delete)
-      allow update, delete: if false;
-    }
-  }
-  
-  // AI Usage analytics (read-only for users, write via Cloud Functions)
-  match /ai_usage/{usageId} {
-    // Users can only read their own usage
-    allow read: if request.auth != null && 
-      resource.data.userId == request.auth.uid;
-    
-    // Only Cloud Functions can write (via server-side logic)
-    allow write: if false;
-  }
-  
-  // Moderation logs (admin only)
-  match /moderation_logs/{logId} {
-    // Only admins can read moderation logs
-    allow read: if false; // TODO: Add admin check if needed
-    allow write: if false; // Only Cloud Functions can write
-  }
-  
-    // Bank accounts collection
     match /bank_accounts/{accountId} {
-      // Leitura (get/list): avaliada por documento; garante owner
-      allow read: if request.auth != null
+      // Leitura: Apenas o dono
+      allow read: if isAuthenticated() 
                   && resource.data.userId == request.auth.uid;
+      
+      // Criação: Apenas o próprio usuário
+      allow create: if isAuthenticated() 
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', 'agency', 'account', 'accountType', 'accountHolderName', 'accountHolderDocument', 'accountHolderDocumentType', 'isDefault'])
+                    && request.resource.data.bankName is string && request.resource.data.bankName.size() > 0
+                    && request.resource.data.bankCode is string && request.resource.data.bankCode.size() > 0
+                    && request.resource.data.agency is string && request.resource.data.agency.size() >= 4 && request.resource.data.agency.size() <= 5
+                    && request.resource.data.account is string && request.resource.data.account.size() >= 5 && request.resource.data.account.size() <= 12
+                    && request.resource.data.accountType is string && (request.resource.data.accountType == "CHECKING" || request.resource.data.accountType == "SAVINGS")
+                    && request.resource.data.accountHolderName is string && request.resource.data.accountHolderName.size() >= 3
+                    && request.resource.data.accountHolderDocument is string && request.resource.data.accountHolderDocument.size() >= 11 && request.resource.data.accountHolderDocument.size() <= 14
+                    && request.resource.data.accountHolderDocumentType is string && (request.resource.data.accountHolderDocumentType == "CPF" || request.resource.data.accountHolderDocumentType == "CNPJ")
+                    && request.resource.data.isDefault is bool;
+      
+      // Atualização: Apenas o dono (com validações)
+      allow update: if isAuthenticated() 
+                    && resource.data.userId == request.auth.uid
+                    && (
+                      (
+                        request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', 'agency', 'account', 'accountType', 'accountHolderName', 'accountHolderDocument', 'accountHolderDocumentType', 'isDefault'])
+                        && request.resource.data.userId == request.auth.uid
+                        && request.resource.data.bankName is string && request.resource.data.bankName.size() > 0
+                        && request.resource.data.bankCode is string && request.resource.data.bankCode.size() > 0
+                        && request.resource.data.agency is string && request.resource.data.agency.size() >= 4 && request.resource.data.agency.size() <= 5
+                        && request.resource.data.account is string && request.resource.data.account.size() >= 5 && request.resource.data.account.size() <= 12
+                        && request.resource.data.accountType is string && (request.resource.data.accountType == "CHECKING" || request.resource.data.accountType == "SAVINGS")
+                        && request.resource.data.accountHolderName is string && request.resource.data.accountHolderName.size() >= 3
+                        && request.resource.data.accountHolderDocument is string && request.resource.data.accountHolderDocument.size() >= 11 && request.resource.data.accountHolderDocument.size() <= 14
+                        && request.resource.data.accountHolderDocumentType is string && (request.resource.data.accountHolderDocumentType == "CPF" || request.resource.data.accountHolderDocumentType == "CNPJ")
+                        && request.resource.data.isDefault is bool
+                      )
+                      ||
+                      (
+                        request.resource.data.keys().hasOnly(['isDefault']) &&
+                        request.resource.data.isDefault is bool
+                      )
+                    );
+      
+      allow delete: if isAuthenticated() 
+                    && resource.data.userId == request.auth.uid;
+    }
     
-    // Users can only create bank accounts for themselves
-    allow create: if request.auth != null 
-                  && request.resource.data.userId == request.auth.uid
-                  && request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', 'agency', 'account', 'accountType', 'accountHolderName', 'accountHolderDocument', 'accountHolderDocumentType', 'isDefault'])
-                  && request.resource.data.bankName is string && request.resource.data.bankName.size() > 0
-                  && request.resource.data.bankCode is string && request.resource.data.bankCode.size() > 0
-                  && request.resource.data.agency is string && request.resource.data.agency.size() >= 4 && request.resource.data.agency.size() <= 5
-                  && request.resource.data.account is string && request.resource.data.account.size() >= 5 && request.resource.data.account.size() <= 12
-                  && request.resource.data.accountType is string && (request.resource.data.accountType == "CHECKING" || request.resource.data.accountType == "SAVINGS")
-                  && request.resource.data.accountHolderName is string && request.resource.data.accountHolderName.size() >= 3
-                  && request.resource.data.accountHolderDocument is string && request.resource.data.accountHolderDocument.size() >= 11 && request.resource.data.accountHolderDocument.size() <= 14
-                  && request.resource.data.accountHolderDocumentType is string && (request.resource.data.accountHolderDocumentType == "CPF" || request.resource.data.accountHolderDocumentType == "CNPJ")
-                  && request.resource.data.isDefault is bool;
+    // ==========================================
+    // AI CONVERSATIONS COLLECTION
+    // ==========================================
     
-    // Users can update their own bank accounts
-    // Permitir atualização completa ou parcial (apenas isDefault)
-    allow update: if request.auth != null 
-                  && resource.data.userId == request.auth.uid
-                  && (
-                    (
-                      request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', 'agency', 'account', 'accountType', 'accountHolderName', 'accountHolderDocument', 'accountHolderDocumentType', 'isDefault'])
-                      && request.resource.data.userId == request.auth.uid
-                      && request.resource.data.bankName is string && request.resource.data.bankName.size() > 0
-                      && request.resource.data.bankCode is string && request.resource.data.bankCode.size() > 0
-                      && request.resource.data.agency is string && request.resource.data.agency.size() >= 4 && request.resource.data.agency.size() <= 5
-                      && request.resource.data.account is string && request.resource.data.account.size() >= 5 && request.resource.data.account.size() <= 12
-                      && request.resource.data.accountType is string && (request.resource.data.accountType == "CHECKING" || request.resource.data.accountType == "SAVINGS")
-                      && request.resource.data.accountHolderName is string && request.resource.data.accountHolderName.size() >= 3
-                      && request.resource.data.accountHolderDocument is string && request.resource.data.accountHolderDocument.size() >= 11 && request.resource.data.accountHolderDocument.size() <= 14
-                      && request.resource.data.accountHolderDocumentType is string && (request.resource.data.accountHolderDocumentType == "CPF" || request.resource.data.accountHolderDocumentType == "CNPJ")
-                      && request.resource.data.isDefault is bool
-                    )
-                    ||
-                    (
-                      request.resource.data.keys().hasOnly(['isDefault']) &&
-                      request.resource.data.isDefault is bool
-                    )
-                  );
+    match /ai_usage/{usageId} {
+      // Leitura: Apenas o dono
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
+      
+      // Escrita: Apenas Cloud Functions
+      allow write: if false;
+    }
     
-    // Users can only delete their own bank accounts
-    allow delete: if request.auth != null 
-                 && resource.data.userId == request.auth.uid;
-  }
-
-    // Deny all other collections by default
+    // ==========================================
+    // MODERATION LOGS COLLECTION
+    // ==========================================
+    
+    match /moderation_logs/{logId} {
+      // Apenas admins podem ler
+      allow read: if isAdmin();
+      
+      // Escrita: Apenas Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // DEFAULT DENY ALL
+    // ==========================================
+    
     match /{document=**} {
       allow read, write: if false;
     }

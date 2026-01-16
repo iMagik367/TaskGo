@@ -187,6 +187,21 @@ async function callGemini(
  */
 export const aiChatProxy = functions.https.onCall(async (data, context) => {
   try {
+    // Validar App Check
+    if (context.app === undefined && 
+        process.env.FUNCTIONS_EMULATOR !== 'true' && 
+        process.env.NODE_ENV !== 'development') {
+      functions.logger.warn('App Check token missing for aiChatProxy', {
+        uid: context.auth?.uid,
+        timestamp: new Date().toISOString(),
+      });
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'App Check validation failed'
+      );
+    }
+    
+    // Verificar autenticação
     assertAuthenticated(context);
     
     const db = admin.firestore();

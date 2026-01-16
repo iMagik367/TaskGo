@@ -37,6 +37,13 @@ export * from './clearAllData';
 export * from './migrateToPartner';
 export * from './ssr-app';
 
+// New organized modules
+export * from './admin/roles';
+export * from './users/role';
+export * from './services/index';
+export * from './products/index';
+export * from './scripts/migrateExistingUsers';
+
 // Health check endpoint
 export const health = functions.https.onRequest((req, res) => {
   res.json({status: 'ok', timestamp: new Date().toISOString()});

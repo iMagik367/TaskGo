@@ -1,23 +1,23 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import {validateAppCheck} from './security/appCheck';
+import {assertAuthenticated, handleError} from './utils/errors';
 
 /**
  * Cloud Function para verificar identidade do usuário
  * Analisa documentos enviados e atualiza status de verificação
  */
 export const verifyIdentity = functions.https.onCall(async (data, context) => {
-  // Verificar autenticação
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'Usuário não autenticado'
-    );
-  }
-
-  const userId = context.auth.uid;
-  const { documentFront, documentBack, selfie, addressProof } = data;
-
   try {
+    // Validar App Check
+    validateAppCheck(context);
+    
+    // Verificar autenticação
+    assertAuthenticated(context);
+
+    const userId = context.auth!.uid;
+    const { documentFront, documentBack, selfie, addressProof } = data;
+
     // Validar que todos os documentos obrigatórios foram enviados
     if (!documentFront || !documentBack || !selfie) {
       throw new functions.https.HttpsError(
@@ -40,21 +40,18 @@ export const verifyIdentity = functions.https.onCall(async (data, context) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // TODO: Integrar com serviço de verificação de documentos (ex: Serpro, Serasa)
-    // Por enquanto, apenas salva os documentos
+    functions.logger.info(`Identity verification submitted for user ${userId}`, {
+      userId,
+      timestamp: new Date().toISOString(),
+    });
 
     return {
       success: true,
       message: 'Documentos enviados com sucesso. Aguardando verificação.'
     };
   } catch (error) {
-    console.error('Erro ao verificar identidade:', error);
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    throw new functions.https.HttpsError(
-      'internal',
-      'Erro ao processar verificação de identidade',
-      message
-    );
+    functions.logger.error('Error verifying identity:', error);
+    throw handleError(error);
   }
 });
 
@@ -62,37 +59,39 @@ export const verifyIdentity = functions.https.onCall(async (data, context) => {
  * Cloud Function para aprovar/rejeitar verificação de identidade (apenas admin)
  */
 export const approveIdentityVerification = functions.https.onCall(async (data, context) => {
-  // Verificar autenticação
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'Usuário não autenticado'
-    );
-  }
-
-  // Verificar se é admin
-  const adminUser = await admin.firestore()
-    .collection('users')
-    .doc(context.auth.uid)
-    .get();
-
-  if (adminUser.data()?.role !== 'admin') {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'Apenas administradores podem aprovar verificações'
-    );
-  }
-
-  const { userId, approved, reason } = data;
-
   try {
+    // Validar App Check
+    validateAppCheck(context);
+    
+    // Verificar autenticação e permissão de admin
+    assertAuthenticated(context);
+    
+    // Verificar se é admin (usar Custom Claims ou documento como fallback)
+    const isAdmin = context.auth!.token.role === 'admin';
+    if (!isAdmin) {
+      // Fallback para documento do Firestore
+      const adminUser = await admin.firestore()
+        .collection('users')
+        .doc(context.auth!.uid)
+        .get();
+
+      if (adminUser.data()?.role !== 'admin') {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Apenas administradores podem aprovar verificações'
+        );
+      }
+    }
+
+    const { userId, approved, reason } = data;
+
     const userRef = admin.firestore().collection('users').doc(userId);
     
     if (approved) {
       await userRef.update({
         verified: true,
         verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-        verifiedBy: context.auth.uid,
+        verifiedBy: context.auth!.uid,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
     } else {
@@ -105,18 +104,20 @@ export const approveIdentityVerification = functions.https.onCall(async (data, c
       });
     }
 
+    functions.logger.info(`Identity verification ${approved ? 'approved' : 'rejected'} for user ${userId}`, {
+      adminId: context.auth!.uid,
+      targetUserId: userId,
+      approved,
+      timestamp: new Date().toISOString(),
+    });
+
     return {
       success: true,
       message: approved ? 'Verificação aprovada' : 'Verificação rejeitada'
     };
   } catch (error) {
-    console.error('Erro ao aprovar verificação:', error);
-    const message = error instanceof Error ? error.message : 'Erro desconhecido';
-    throw new functions.https.HttpsError(
-      'internal',
-      'Erro ao processar aprovação',
-      message
-    );
+    functions.logger.error('Error approving identity verification:', error);
+    throw handleError(error);
   }
 });
 

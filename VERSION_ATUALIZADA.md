@@ -2,25 +2,25 @@
 
 ## 📊 NOVA VERSÃO
 
-**Version Code:** `77` (incrementado de 76)  
-**Version Name:** `1.0.76` (incrementado de 1.0.75)
+**Version Code:** `78` (incrementado de 77)  
+**Version Name:** `1.0.77` (incrementado de 1.0.76)
 
 ---
 
 ## ✅ ARQUIVOS ATUALIZADOS
 
 ### 1. `app/build.gradle.kts`
-- ✅ `versionCode = 77`
-- ✅ `versionName = "1.0.76"`
+- ✅ `versionCode = 78`
+- ✅ `versionName = "1.0.77"`
 
 ### 2. Scripts de Build Atualizados:
-- ✅ `BUILD_AAB.bat` - Version: 1.0.76 (Code: 77)
-- ✅ `BUILD_AAB_ROBUSTO.bat` - Version: 1.0.76 (Code: 77)
-- ✅ `BUILD_AAB_CURSOR.ps1` - Versao: 1.0.76 (Code: 77)
-- ✅ `BUILD_CLEAN.bat` - Versao: 1.0.76 (Code: 77)
-- ✅ `BUILD_DIRECT_NO_CLEAN.bat` - Version: 1.0.76 (Code: 77)
-- ✅ `BUILD_WITH_FIXED_R8.bat` - Version: 1.0.76 (Code: 77)
-- ✅ `BUILD_SEM_TIMEOUT.bat` - Versao: 1.0.76 (Code: 77)
+- ✅ `BUILD_AAB.bat` - Version: 1.0.77 (Code: 78)
+- ✅ `BUILD_AAB_ROBUSTO.bat` - Version: 1.0.77 (Code: 78)
+- ✅ `BUILD_AAB_CURSOR.ps1` - Versao: 1.0.77 (Code: 78)
+- ✅ `BUILD_CLEAN.bat` - Versao: 1.0.77 (Code: 78)
+- ✅ `BUILD_DIRECT_NO_CLEAN.bat` - Version: 1.0.77 (Code: 78)
+- ✅ `BUILD_WITH_FIXED_R8.bat` - Version: 1.0.77 (Code: 78)
+- ✅ `BUILD_SEM_TIMEOUT.bat` - Versao: 1.0.77 (Code: 78)
 
 ---
 

@@ -66,35 +66,57 @@ class FirestoreServicesRepository @Inject constructor(
      * NOTA: Esta coleção pública é sincronizada quando serviços são criados/atualizados
      */
     fun observeAllActiveServices(): Flow<List<ServiceFirestore>> = callbackFlow {
+        var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
-            val listenerRegistration = publicServicesCollection
+            listenerRegistration = publicServicesCollection
                 .whereEqualTo("active", true)
                 .limit(50) // Aumentar limite para melhor cobertura
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         android.util.Log.e("FirestoreServicesRepo", "Erro ao observar serviços ativos: ${error.message}", error)
-                        trySend(emptyList())
+                        try {
+                            trySend(emptyList())
+                        } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                            // Canal já foi fechado, ignorar
+                        } catch (e: Exception) {
+                            android.util.Log.w("FirestoreServicesRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                        }
                         return@addSnapshotListener
                     }
                     
-                    val services = snapshot?.documents?.mapNotNull { doc ->
-                        try {
-                            doc.toObject(ServiceFirestore::class.java)?.copy(id = doc.id)
-                        } catch (e: Exception) {
-                            android.util.Log.e("FirestoreServicesRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
-                            null
-                        }
-                    }?.sortedByDescending { it.createdAt }
-                    ?: emptyList()
-                    
-                    trySend(services)
+                    try {
+                        val services = snapshot?.documents?.mapNotNull { doc ->
+                            try {
+                                doc.toObject(ServiceFirestore::class.java)?.copy(id = doc.id)
+                            } catch (e: Exception) {
+                                android.util.Log.e("FirestoreServicesRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
+                                null
+                            }
+                        }?.sortedByDescending { it.createdAt }
+                        ?: emptyList()
+                        
+                        trySend(services)
+                    } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                        // Canal já foi fechado, ignorar
+                    } catch (e: Exception) {
+                        android.util.Log.w("FirestoreServicesRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                    }
                 }
-            
-            awaitClose { listenerRegistration.remove() }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao configurar listener de serviços ativos: ${e.message}", e)
-            trySend(emptyList())
-            close()
+            try {
+                trySend(emptyList())
+            } catch (ex: Exception) {
+                // Ignorar se não conseguir enviar
+            }
+        }
+        
+        awaitClose { 
+            try {
+                listenerRegistration?.remove()
+            } catch (e: Exception) {
+                android.util.Log.w("FirestoreServicesRepo", "Erro ao remover listener: ${e.message}")
+            }
         }
     }
     

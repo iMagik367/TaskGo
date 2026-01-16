@@ -1,7 +1,7 @@
 # Script para executar build AAB no Cursor sem timeout
 Write-Host "========================================"
 Write-Host "Building AAB Release Bundle"
-Write-Host "Versao: 1.0.76 (Code: 77)"
+Write-Host "Versao: 1.0.79 (Code: 80)"
 Write-Host "========================================"
 Write-Host ""
 

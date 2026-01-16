@@ -251,6 +251,19 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
         content: message,
       });
 
+      // Verificar se a conversa existe, se não, criar
+      const conversationRef = db.collection('conversations').doc(conversationId);
+      const conversationDoc = await conversationRef.get();
+      
+      if (!conversationDoc.exists) {
+        // Criar documento da conversa se não existir
+        await conversationRef.set({
+          userId: context.auth!.uid,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
       // Save user message to Firestore
       await db.collection('conversations').doc(conversationId).collection('messages').add({
         role: 'user',
@@ -259,7 +272,7 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
       });
 
       // Update conversation updatedAt
-      await db.collection('conversations').doc(conversationId).update({
+      await conversationRef.update({
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     } else {
@@ -323,14 +336,26 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
 
     // Save AI response to conversation history
     if (conversationId) {
-      await db.collection('conversations').doc(conversationId).collection('messages').add({
+      const conversationRef = db.collection('conversations').doc(conversationId);
+      
+      // Garantir que o documento existe antes de atualizar
+      const conversationDoc = await conversationRef.get();
+      if (!conversationDoc.exists) {
+        await conversationRef.set({
+          userId: context.auth!.uid,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      
+      await conversationRef.collection('messages').add({
         role: 'assistant',
         content: responseMessage,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       // Update conversation updatedAt
-      await db.collection('conversations').doc(conversationId).update({
+      await conversationRef.update({
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }

@@ -264,6 +264,7 @@ class FirestoreOrderRepository @Inject constructor(
         state: String? = null,
         category: String? = null
     ): Flow<List<OrderFirestore>> = callbackFlow {
+        var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
             var query = publicOrdersCollection
                 .whereEqualTo("status", "pending")
@@ -274,42 +275,63 @@ class FirestoreOrderRepository @Inject constructor(
                 query = query.whereEqualTo("category", category)
             }
             
-            val listenerRegistration = query
+            listenerRegistration = query
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         android.util.Log.e("FirestoreOrderRepo", "Erro ao observar ordens locais: ${error.message}", error)
-                        trySend(emptyList())
+                        try {
+                            trySend(emptyList())
+                        } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                            // Canal já foi fechado, ignorar
+                        } catch (e: Exception) {
+                            android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                        }
                         return@addSnapshotListener
                     }
                     
-                    val orders = snapshot?.documents?.mapNotNull { doc ->
-                        try {
-                            doc.toObject(OrderFirestore::class.java)?.copy(id = doc.id)
-                        } catch (e: Exception) {
-                            android.util.Log.e("FirestoreOrderRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
-                            null
-                        }
-                    }?.filter { order ->
-                        // Filtrar por localização se fornecida
-                        if (city != null || state != null) {
-                            val location = order.location.lowercase()
-                            val matchesCity = city == null || location.contains(city.lowercase())
-                            val matchesState = state == null || location.contains(state.lowercase())
-                            matchesCity && matchesState
-                        } else {
-                            true
-                        }
-                    } ?: emptyList()
-                    
-                    trySend(orders)
+                    try {
+                        val orders = snapshot?.documents?.mapNotNull { doc ->
+                            try {
+                                doc.toObject(OrderFirestore::class.java)?.copy(id = doc.id)
+                            } catch (e: Exception) {
+                                android.util.Log.e("FirestoreOrderRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
+                                null
+                            }
+                        }?.filter { order ->
+                            // Filtrar por localização se fornecida
+                            if (city != null || state != null) {
+                                val location = order.location.lowercase()
+                                val matchesCity = city == null || location.contains(city.lowercase())
+                                val matchesState = state == null || location.contains(state.lowercase())
+                                matchesCity && matchesState
+                            } else {
+                                true
+                            }
+                        } ?: emptyList()
+                        
+                        trySend(orders)
+                    } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                        // Canal já foi fechado, ignorar
+                    } catch (e: Exception) {
+                        android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                    }
                 }
-            
-            awaitClose { listenerRegistration.remove() }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreOrderRepo", "Erro ao configurar listener de ordens locais: ${e.message}", e)
-            trySend(emptyList())
-            close()
+            try {
+                trySend(emptyList())
+            } catch (ex: Exception) {
+                // Ignorar se não conseguir enviar
+            }
+        }
+        
+        awaitClose { 
+            try {
+                listenerRegistration?.remove()
+            } catch (e: Exception) {
+                android.util.Log.w("FirestoreOrderRepo", "Erro ao remover listener: ${e.message}")
+            }
         }
     }
     

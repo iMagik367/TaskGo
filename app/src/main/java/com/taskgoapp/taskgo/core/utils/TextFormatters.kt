@@ -38,45 +38,49 @@ object TextFormatters {
     }
     
     /**
-     * Formata preço para exibição brasileira (R$ 1.234,56)
+     * Formata preço para exibição brasileira (1.234,56)
      * Aceita entrada como "1234.56" ou "1234,56" ou "123456"
+     * NÃO adiciona ",00" automaticamente - apenas formata o que foi digitado
      */
     fun formatPrice(value: String): String {
         // Se vazio, retorna vazio
         if (value.isEmpty()) return ""
         
+        // Remove caracteres não numéricos exceto vírgula
+        val clean = value.replace(Regex("[^0-9,]"), "")
+        
+        if (clean.isEmpty()) return ""
+        
         // Detecta se há vírgula (separador decimal brasileiro)
-        val hasComma = value.contains(",")
+        val hasComma = clean.contains(",")
         
         if (hasComma) {
-            // Há vírgula: tudo antes da vírgula é parte inteira (pontos são separadores de milhar), tudo após são centavos
-            val parts = value.split(",")
-            val integerPart = parts[0].replace(Regex("[^0-9]"), "") // Remove pontos (separadores de milhar)
-            val decimalPart = parts.getOrNull(1)?.replace(Regex("[^0-9]"), "")?.take(2)?.padEnd(2, '0') ?: "00"
+            // Há vírgula: tudo antes da vírgula é parte inteira, tudo após são centavos (máximo 2 dígitos)
+            val parts = clean.split(",")
+            val integerPart = parts[0].replace(Regex("[^0-9]"), "")
+            val decimalPart = parts.getOrNull(1)?.replace(Regex("[^0-9]"), "")?.take(2) ?: ""
+            
+            // Se parte inteira está vazia, retorna apenas centavos
+            if (integerPart.isEmpty()) {
+                return if (decimalPart.isNotEmpty()) "0,$decimalPart" else ""
+            }
             
             // Formata parte inteira com separador de milhar (ponto)
-            val formattedInteger = if (integerPart.isNotEmpty() && integerPart != "0") {
-                integerPart.reversed().chunked(3).joinToString(".").reversed()
-            } else {
-                "0"
-            }
+            val formattedInteger = integerPart.reversed().chunked(3).joinToString(".").reversed()
             
-            return "$formattedInteger,$decimalPart"
+            return if (decimalPart.isNotEmpty()) {
+                "$formattedInteger,$decimalPart"
+            } else {
+                formattedInteger
+            }
         } else {
-            // Não há vírgula: remover pontos (tratá-los como separadores de milhar sendo digitados)
-            // e tratar tudo como parte inteira, adicionando ",00" ao final
-            val clean = value.replace(Regex("[^0-9]"), "")
+            // Não há vírgula: apenas formata parte inteira com separador de milhar
+            // NÃO adiciona ",00" automaticamente - deixa o usuário digitar
+            val cleanDigits = clean.replace(Regex("[^0-9]"), "")
+            if (cleanDigits.isEmpty()) return ""
             
-            if (clean.isEmpty()) return ""
-            
-            // Sem vírgula, trata tudo como parte inteira e adiciona ",00"
-            val formattedInteger = if (clean.isNotEmpty() && clean != "0") {
-                clean.reversed().chunked(3).joinToString(".").reversed()
-            } else {
-                "0"
-            }
-            
-            return "$formattedInteger,00"
+            val formattedInteger = cleanDigits.reversed().chunked(3).joinToString(".").reversed()
+            return formattedInteger
         }
     }
     

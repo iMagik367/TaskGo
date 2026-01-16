@@ -139,7 +139,9 @@ class GoogleCloudAIService @Inject constructor(
             isHealthy = isOk
             
             if (!isOk) {
-                android.util.Log.w("GoogleCloudAIService", "Health check failed: ${response.code}")
+                // 404 pode indicar que a API não está configurada ou endpoint incorreto
+                // Não é crítico, apenas usar fallback
+                android.util.Log.w("GoogleCloudAIService", "Health check failed: ${response.code} - API pode não estar disponível, usando fallback")
             }
             
             isOk

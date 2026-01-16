@@ -23,6 +23,7 @@ data class ProductFormState(
     val title: String = "",
     val price: String = "",
     val description: String = "",
+    val category: String = "Geral", // Categoria do produto (obrigatória para Cloud Function)
     val sellerName: String = "",
     val imageUris: List<String> = emptyList(),
     val featured: Boolean = false, // Produto em destaque
@@ -39,7 +40,8 @@ class ProductFormViewModel @Inject constructor(
     private val documentVerificationManager: com.taskgoapp.taskgo.core.security.DocumentVerificationManager,
     private val locationManager: com.taskgoapp.taskgo.core.location.LocationManager,
     private val storageRepository: com.taskgoapp.taskgo.data.repository.FirebaseStorageRepository,
-    private val authRepository: com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
+    private val authRepository: com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository,
+    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProductFormState())
@@ -71,6 +73,7 @@ class ProductFormViewModel @Inject constructor(
                         title = p.title,
                         price = p.price.toString(),
                         description = p.description.orEmpty(),
+                        category = p.category ?: "Geral",
                         sellerName = p.sellerName.orEmpty(),
                         imageUris = p.imageUris,
                         featured = p.featured ?: false
@@ -273,17 +276,53 @@ class ProductFormViewModel @Inject constructor(
                     sellerId = currentUser?.uid,
                     sellerName = s.sellerName.ifBlank { null },
                     imageUris = imageUrls,
+                    category = s.category.ifBlank { "Geral" },
                     featured = s.featured && s.discountPercentage.replace(Regex("[^0-9]"), "").toDoubleOrNull()?.let { it > 0 } == true,
                     discountPercentage = s.discountPercentage.replace(Regex("[^0-9]"), "").toDoubleOrNull()?.let { it / 100 },
                     latitude = latitude,
                     longitude = longitude
                 )
                 
-                Log.d("ProductFormViewModel", "Salvando produto no repositório: id=$productId, title=${product.title}, price=${product.price}")
-                productsRepository.upsertProduct(product)
-                Log.d("ProductFormViewModel", "Produto salvo com sucesso no repositório")
+                Log.d("ProductFormViewModel", "Salvando produto via Cloud Function: id=$productId, title=${product.title}, price=${product.price}")
                 
-                _uiState.value = _uiState.value.copy(isSaving = false, saved = true)
+                // Usar Cloud Function createProduct ao invés de escrita direta
+                val createResult = if (s.id == null) {
+                    // Criar novo produto
+                    functionsService.createProduct(
+                        title = product.title,
+                        description = product.description ?: "",
+                        category = product.category ?: "Geral",
+                        price = product.price,
+                        images = product.imageUris,
+                        stock = null,
+                        active = true
+                    )
+                } else {
+                    // Atualizar produto existente
+                    val updates = mapOf(
+                        "title" to product.title,
+                        "description" to (product.description ?: ""),
+                        "category" to (product.category ?: "Geral"),
+                        "price" to product.price,
+                        "images" to product.imageUris,
+                        "active" to (product.active ?: true)
+                    )
+                    functionsService.updateProduct(productId, updates)
+                }
+                
+                createResult.fold(
+                    onSuccess = {
+                        Log.d("ProductFormViewModel", "Produto salvo com sucesso via Cloud Function")
+                        _uiState.value = _uiState.value.copy(isSaving = false, saved = true)
+                    },
+                    onFailure = { error ->
+                        Log.e("ProductFormViewModel", "Erro ao salvar produto via Cloud Function: ${error.message}", error)
+                        _uiState.value = _uiState.value.copy(
+                            isSaving = false,
+                            error = "Erro ao salvar produto: ${error.message}"
+                        )
+                    }
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isSaving = false,

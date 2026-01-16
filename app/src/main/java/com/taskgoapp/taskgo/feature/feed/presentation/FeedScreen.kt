@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import com.taskgoapp.taskgo.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.collectAsState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -327,8 +328,20 @@ fun FeedScreen(
     
     // Viewer de Stories
     selectedUserIdForStory?.let { userId ->
-        val userStories = storiesUiState.stories.filter { it.userId == userId }
         val isOwnStory = userId == viewModel.currentUserId
+        
+        // Para stories próprias, buscar diretamente do repositório
+        // Para stories de outros, usar as já carregadas
+        val userStoriesFlow = remember(userId) {
+            if (isOwnStory) {
+                storiesViewModel.observeUserStories(userId)
+            } else {
+                kotlinx.coroutines.flow.flowOf(storiesUiState.stories.filter { it.userId == userId })
+            }
+        }
+        
+        val userStories by userStoriesFlow.collectAsState(initial = emptyList())
+        
         if (userStories.isNotEmpty()) {
             StoriesViewerScreen(
                 stories = userStories,

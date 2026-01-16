@@ -413,9 +413,10 @@ object AppModule {
     @Singleton
     fun provideStoriesRepository(
         firestore: FirebaseFirestore,
-        authRepository: FirebaseAuthRepository
+        authRepository: FirebaseAuthRepository,
+        functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
     ): com.taskgoapp.taskgo.domain.repository.StoriesRepository {
-        return com.taskgoapp.taskgo.data.repository.FirestoreStoriesRepository(firestore, authRepository)
+        return com.taskgoapp.taskgo.data.repository.FirestoreStoriesRepository(firestore, authRepository, functionsService)
     }
     
     @Provides

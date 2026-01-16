@@ -28,7 +28,8 @@ data class ChatListUiState(
 @HiltViewModel
 class ChatListViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val chatStorage: ChatStorage
+    private val chatStorage: ChatStorage,
+    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(ChatListUiState())
@@ -46,12 +47,18 @@ class ChatListViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             try {
-                val chats = getChatsFromStorage()
+                // Carregar do storage local primeiro (para exibição rápida)
+                val localChats = getChatsFromStorage()
                 _uiState.value = _uiState.value.copy(
-                    chats = chats,
-                    filteredChats = filterChats(chats, _uiState.value.searchQuery),
+                    chats = localChats,
+                    filteredChats = filterChats(localChats, _uiState.value.searchQuery),
                     isLoading = false
                 )
+                
+                // Tentar carregar do Firestore (conversas salvas)
+                // Nota: A Cloud Function aiChatProxy já salva conversas automaticamente
+                // Aqui podemos tentar buscar conversas do usuário se houver uma função para isso
+                // Por enquanto, usamos apenas o storage local que é atualizado quando mensagens são enviadas
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

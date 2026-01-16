@@ -58,6 +58,7 @@ class ChatAIViewModel @Inject constructor(
     private val audioRecorderManager: AudioRecorderManager,
     private val textToSpeechManager: TextToSpeechManager,
     private val chatStorage: ChatStorage,
+    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     
@@ -67,9 +68,52 @@ class ChatAIViewModel @Inject constructor(
     fun initializeChat(chatId: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(chatId = chatId)
-            // Carregar mensagens salvas do storage
+            // Carregar mensagens salvas do storage local
             val savedMessages = chatStorage.loadMessages(chatId)
             _uiState.value = _uiState.value.copy(messages = savedMessages)
+            
+            // Tentar carregar do Firestore também (se existir)
+            try {
+                val historyResult = functionsService.getConversationHistory(chatId)
+                historyResult.fold(
+                    onSuccess = { data ->
+                        // Se houver mensagens no Firestore, usar elas (mais atualizadas)
+                        val firestoreMessages = (data["messages"] as? List<Map<String, Any>>)?.mapNotNull { msgData ->
+                            try {
+                                val role = msgData["role"] as? String ?: return@mapNotNull null
+                                val content = msgData["content"] as? String ?: return@mapNotNull null
+                                val timestamp = (msgData["timestamp"] as? Map<String, Any>)?.let {
+                                    // Converter Firestore Timestamp para Long
+                                    val seconds = (it["_seconds"] as? Number)?.toLong() ?: 0L
+                                    val nanos = (it["_nanoseconds"] as? Number)?.toLong() ?: 0L
+                                    seconds * 1000 + nanos / 1_000_000
+                                } ?: System.currentTimeMillis()
+                                
+                                AiMessage(
+                                    id = timestamp,
+                                    text = content,
+                                    isFromAi = role == "assistant",
+                                    timestamp = timestamp
+                                )
+                            } catch (e: Exception) {
+                                null
+                            }
+                        } ?: emptyList()
+                        
+                        if (firestoreMessages.isNotEmpty()) {
+                            _uiState.value = _uiState.value.copy(messages = firestoreMessages)
+                            // Sincronizar com storage local
+                            chatStorage.saveMessages(chatId, firestoreMessages)
+                        }
+                    },
+                    onFailure = {
+                        // Se não encontrar no Firestore, usar mensagens locais
+                        android.util.Log.d("ChatAIViewModel", "Conversa não encontrada no Firestore, usando mensagens locais")
+                    }
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("ChatAIViewModel", "Erro ao carregar histórico do Firestore: ${e.message}", e)
+            }
         }
     }
     
@@ -106,32 +150,36 @@ class ChatAIViewModel @Inject constructor(
         
         viewModelScope.launch {
             try {
-                // Converter anexos de imagem para base64
-                val imageDataList = attachments
-                    .filter { it.type == com.taskgoapp.taskgo.feature.chatai.data.AttachmentType.IMAGE }
-                    .mapNotNull { attachment ->
-                        convertImageToBase64(attachment.uri, attachment.mimeType)
-                    }
-                
-                // Converter histórico de mensagens para formato da API
-                val chatMessages = _uiState.value.messages.map { msg ->
-                    val msgImageData = msg.attachments
-                        .filter { it.type == com.taskgoapp.taskgo.feature.chatai.data.AttachmentType.IMAGE }
-                        .mapNotNull { attachment ->
-                            convertImageToBase64(attachment.uri, attachment.mimeType)
+                // Criar ou obter conversationId
+                var conversationId = _uiState.value.chatId
+                if (conversationId == null) {
+                    // Criar nova conversa no Firestore
+                    val createResult = functionsService.createConversation()
+                    createResult.fold(
+                        onSuccess = { data ->
+                            conversationId = data["conversationId"] as? String
+                            if (conversationId != null) {
+                                _uiState.value = _uiState.value.copy(chatId = conversationId)
+                            }
+                        },
+                        onFailure = {
+                            android.util.Log.w("ChatAIViewModel", "Erro ao criar conversa no Firestore, continuando sem conversationId")
                         }
-                    
-                    com.taskgoapp.taskgo.core.ai.ChatMessage(
-                        role = if (msg.isFromAi) "assistant" else "user",
-                        content = msg.text,
-                        imageData = msgImageData
                     )
                 }
                 
-                // Adicionar system prompt
-                val result = aiService.sendMessage(chatMessages, AppSystemPrompt.SYSTEM_MESSAGE)
-                result.fold(
-                    onSuccess = { responseText ->
+                // Usar Cloud Function aiChatProxy que salva automaticamente no Firestore
+                val chatResult = functionsService.aiChatProxy(text, conversationId)
+                chatResult.fold(
+                    onSuccess = { data ->
+                        val responseText = data["response"] as? String ?: ""
+                        val returnedConversationId = data["conversationId"] as? String
+                        
+                        // Atualizar conversationId se foi criado
+                        if (returnedConversationId != null && _uiState.value.chatId == null) {
+                            _uiState.value = _uiState.value.copy(chatId = returnedConversationId)
+                        }
+                        
                         val aiMessage = AiMessage(
                             id = System.currentTimeMillis(),
                             text = responseText,
@@ -144,12 +192,12 @@ class ChatAIViewModel @Inject constructor(
                             isLoading = false
                         )
                         
-                        // Salvar mensagens no storage
+                        // Salvar mensagens no storage local também (para cache offline)
                         _uiState.value.chatId?.let { chatId ->
                             chatStorage.saveMessages(chatId, updatedMessages)
                         }
                         
-                        android.util.Log.d("ChatAIViewModel", "Resposta da AI recebida com sucesso")
+                        android.util.Log.d("ChatAIViewModel", "Resposta da AI recebida com sucesso e salva no Firestore")
                     },
                     onFailure = { error ->
                         _uiState.value = _uiState.value.copy(
@@ -159,6 +207,7 @@ class ChatAIViewModel @Inject constructor(
                     }
                 )
             } catch (e: Exception) {
+                android.util.Log.e("ChatAIViewModel", "Erro ao enviar mensagem: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message ?: "Erro desconhecido"

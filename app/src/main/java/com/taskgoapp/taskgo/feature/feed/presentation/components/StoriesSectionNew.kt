@@ -45,8 +45,18 @@ fun StoriesSectionNew(
         currentUserId != null && stories.any { it.userId == currentUserId }
     }
     
-    // Agrupar stories por usuário: prioriza story não vista para mostrar o anel colorido
+    // Separar stories do usuário atual das de outros usuários
+    val currentUserStories = remember(stories, currentUserId) {
+        if (currentUserId != null) {
+            stories.filter { it.userId == currentUserId }
+        } else {
+            emptyList()
+        }
+    }
+    
+    // Agrupar stories de outros usuários: prioriza story não vista para mostrar o anel colorido
     val uniqueUserStories = stories
+        .filter { it.userId != currentUserId } // Excluir stories do usuário atual
         .groupBy { it.userId }
         .mapValues { (_, stories) ->
             stories.firstOrNull { !it.isViewed } ?: stories.first()
@@ -59,7 +69,8 @@ fun StoriesSectionNew(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // Meu Story (primeiro) - apenas se pode criar stories
+        // Meu Story (primeiro) - sempre mostra se pode criar stories
+        // Se tiver stories próprias, permite visualizar; senão, permite criar
         if (onCreateStoryClick != null) {
             item {
                 StoryCircle(
@@ -67,7 +78,15 @@ fun StoriesSectionNew(
                     avatarUrl = currentUserAvatarUrl,
                     isMyStory = true,
                     hasStories = currentUserHasStories,
-                    onClick = onCreateStoryClick
+                    onClick = {
+                        if (currentUserHasStories && currentUserId != null) {
+                            // Se tem stories, permite visualizar
+                            onStoryClick(currentUserId)
+                        } else {
+                            // Se não tem, permite criar
+                            onCreateStoryClick()
+                        }
+                    }
                 )
             }
         }

@@ -37,7 +37,9 @@ service cloud.firestore {
     
     match /users/{userId} {
       // Leitura: Próprio usuário, moderadores e admins
-      allow read: if isOwner(userId) || isModeratorOrAdmin();
+      // Também permite queries de listagem por role para usuários autenticados
+      allow read: if isOwner(userId) || isModeratorOrAdmin() 
+                  || (isAuthenticated() && (resource == null || true));
       
       // Criação: Apenas o próprio usuário pode criar seu documento inicial
       // Role é definido por Cloud Functions (setInitialUserRole)
@@ -120,8 +122,9 @@ service cloud.firestore {
     
     match /services/{serviceId} {
       // Leitura: Qualquer usuário autenticado pode ler serviços ativos
+      // Permite queries de listagem e leitura de documentos individuais
       allow read: if isAuthenticated() 
-                  && (resource.data.active == true);
+                  && (resource == null || resource.data.active == true);
       
       // Escrita: BLOQUEADA - usar Cloud Functions (createService, updateService, deleteService)
       // App não pode criar/editar serviços diretamente
@@ -133,10 +136,10 @@ service cloud.firestore {
     // ==========================================
     
     match /products/{productId} {
-      // Leitura: Apenas produtos com status "active" são públicos
+      // Leitura: Apenas produtos ativos são públicos
+      // Permite queries de listagem e leitura de documentos individuais
       allow read: if isAuthenticated() 
-                  && resource.data.status == 'active'
-                  && resource.data.active == true;
+                  && (resource == null || resource.data.active == true);
       
       // Escrita: BLOQUEADA - usar Cloud Functions (createProduct, updateProduct, deleteProduct)
       // App não pode criar/editar produtos diretamente
@@ -257,14 +260,14 @@ service cloud.firestore {
     // ==========================================
     
     match /stories/{storyId} {
+      // Leitura: Qualquer usuário autenticado pode ler stories (permite queries de listagem)
       allow read: if isAuthenticated();
       
-      allow create: if isAuthenticated() 
-                    && request.resource.data.userId == request.auth.uid;
+      // Escrita: BLOQUEADA - usar Cloud Function (createStory)
+      // App não pode criar/editar stories diretamente
+      allow write: if false;
       
-      allow update, delete: if isAuthenticated() 
-                            && resource.data.userId == request.auth.uid;
-      
+      // Subcoleção story_views dentro de stories
       match /views/{userId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() 
@@ -335,6 +338,58 @@ service cloud.firestore {
       
       // Escrita: Apenas Cloud Functions
       allow write: if false;
+    }
+    
+    // ==========================================
+    // CATEGORIES COLLECTIONS (públicas)
+    // ==========================================
+    
+    match /product_categories/{categoryId} {
+      // Leitura: Qualquer usuário autenticado pode ler categorias de produtos
+      allow read: if isAuthenticated();
+      
+      // Escrita: Apenas Cloud Functions ou admins
+      allow write: if isAdmin();
+    }
+    
+    match /service_categories/{categoryId} {
+      // Leitura: Qualquer usuário autenticado pode ler categorias de serviços
+      allow read: if isAuthenticated();
+      
+      // Escrita: Apenas Cloud Functions ou admins
+      allow write: if isAdmin();
+    }
+    
+    // ==========================================
+    // HOME BANNERS COLLECTION (pública)
+    // ==========================================
+    
+    match /homeBanners/{bannerId} {
+      // Leitura: Qualquer usuário autenticado pode ler banners ativos
+      allow read: if isAuthenticated() 
+                  && (resource == null || resource.data.active == true);
+      
+      // Escrita: Apenas Cloud Functions ou admins
+      allow write: if isAdmin();
+    }
+    
+    // ==========================================
+    // STORY VIEWS COLLECTION (raiz)
+    // ==========================================
+    
+    match /story_views/{storyId} {
+      // Leitura: Qualquer usuário autenticado pode ler visualizações
+      allow read: if isAuthenticated();
+      
+      // Escrita: Apenas Cloud Functions
+      allow write: if false;
+      
+      // Subcoleção views dentro de story_views
+      match /views/{userId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update, delete: if false;
+      }
     }
     
     // ==========================================

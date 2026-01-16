@@ -19,15 +19,25 @@ export const createProduct = functions.https.onCall(
       const userId = context.auth!.uid;
       const db = admin.firestore();
 
-      // Verificar role do usuário (através de Custom Claims)
-      const userRole = getUserRole(context);
+      // Verificar role do usuário (primeiro Custom Claims, depois documento)
+      let userRole: string;
+      try {
+        userRole = getUserRole(context);
+      } catch {
+        // Se não tiver em Custom Claims, verificar no documento
+        const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+        if (!userDoc.exists) {
+          throw new AppError('not-found', 'User not found', 404);
+        }
+        userRole = userDoc.data()?.role || 'user';
+      }
 
-      // Apenas sellers/partners podem criar produtos
-      const allowedRoles = ['seller', 'partner'];
+      // Apenas sellers/partners/providers podem criar produtos
+      const allowedRoles = ['seller', 'partner', 'provider'];
       if (!allowedRoles.includes(userRole)) {
         throw new AppError(
           'permission-denied',
-          'Only sellers and partners can create products',
+          `Only sellers, partners, and providers can create products. Current role: ${userRole}`,
           403,
         );
       }

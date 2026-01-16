@@ -25,7 +25,8 @@ import javax.inject.Singleton
 @Singleton
 class FirestoreStoriesRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val authRepository: FirebaseAuthRepository
+    private val authRepository: FirebaseAuthRepository,
+    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 ) : StoriesRepository {
     
     private val storiesCollection = firestore.collection("stories")
@@ -74,6 +75,23 @@ class FirestoreStoriesRepository @Inject constructor(
                             )
                         }
                         
+                        // Converter createdAt e expiresAt corretamente (pode vir como Long ou Timestamp)
+                        val createdAtValue = data["createdAt"]
+                        val createdAt = when (createdAtValue) {
+                            is com.google.firebase.Timestamp -> createdAtValue
+                            is Long -> com.google.firebase.Timestamp(createdAtValue / 1000, ((createdAtValue % 1000) * 1_000_000).toInt())
+                            is java.util.Date -> com.google.firebase.Timestamp(createdAtValue)
+                            else -> null
+                        }
+                        
+                        val expiresAtValue = data["expiresAt"]
+                        val expiresAt = when (expiresAtValue) {
+                            is com.google.firebase.Timestamp -> expiresAtValue
+                            is Long -> com.google.firebase.Timestamp(expiresAtValue / 1000, ((expiresAtValue % 1000) * 1_000_000).toInt())
+                            is java.util.Date -> com.google.firebase.Timestamp(expiresAtValue)
+                            else -> null
+                        }
+                        
                         val storyFirestore = StoryFirestore(
                             id = doc.id,
                             userId = data["userId"] as? String ?: "",
@@ -83,8 +101,8 @@ class FirestoreStoriesRepository @Inject constructor(
                             mediaType = data["mediaType"] as? String ?: "image",
                             thumbnailUrl = data["thumbnailUrl"] as? String,
                             caption = data["caption"] as? String,
-                            createdAt = data["createdAt"] as? com.google.firebase.Timestamp,
-                            expiresAt = data["expiresAt"] as? com.google.firebase.Timestamp,
+                            createdAt = createdAt,
+                            expiresAt = expiresAt,
                             viewsCount = (data["viewsCount"] as? Number)?.toInt() ?: 0,
                             location = locationFirestore
                         )
@@ -167,6 +185,23 @@ class FirestoreStoriesRepository @Inject constructor(
                                 )
                             }
                             
+                            // Converter createdAt e expiresAt corretamente (pode vir como Long ou Timestamp)
+                            val createdAtValue = data["createdAt"]
+                            val createdAt = when (createdAtValue) {
+                                is com.google.firebase.Timestamp -> createdAtValue
+                                is Long -> com.google.firebase.Timestamp(createdAtValue / 1000, ((createdAtValue % 1000) * 1_000_000).toInt())
+                                is java.util.Date -> com.google.firebase.Timestamp(createdAtValue)
+                                else -> null
+                            }
+                            
+                            val expiresAtValue = data["expiresAt"]
+                            val expiresAt = when (expiresAtValue) {
+                                is com.google.firebase.Timestamp -> expiresAtValue
+                                is Long -> com.google.firebase.Timestamp(expiresAtValue / 1000, ((expiresAtValue % 1000) * 1_000_000).toInt())
+                                is java.util.Date -> com.google.firebase.Timestamp(expiresAtValue)
+                                else -> null
+                            }
+                            
                             val storyFirestore = StoryFirestore(
                                 id = doc.id,
                                 userId = data["userId"] as? String ?: "",
@@ -176,8 +211,8 @@ class FirestoreStoriesRepository @Inject constructor(
                                 mediaType = data["mediaType"] as? String ?: "image",
                                 thumbnailUrl = data["thumbnailUrl"] as? String,
                                 caption = data["caption"] as? String,
-                                createdAt = data["createdAt"] as? com.google.firebase.Timestamp,
-                                expiresAt = data["expiresAt"] as? com.google.firebase.Timestamp,
+                                createdAt = createdAt,
+                                expiresAt = expiresAt,
                                 viewsCount = (data["viewsCount"] as? Number)?.toInt() ?: 0,
                                 location = locationFirestore
                             )
@@ -214,22 +249,9 @@ class FirestoreStoriesRepository @Inject constructor(
                 return com.taskgoapp.taskgo.core.model.Result.Error(Exception("userId da story não corresponde ao usuário autenticado"))
             }
             
-            // Converter Story para Map para Firestore
-            val storyData = hashMapOf<String, Any>(
-                "userId" to story.userId,
-                "userName" to story.userName,
-                "userAvatarUrl" to (story.userAvatarUrl ?: ""),
-                "mediaUrl" to story.mediaUrl,
-                "mediaType" to story.mediaType,
-                "caption" to (story.caption ?: ""),
-                "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
-                "expiresAt" to com.google.firebase.Timestamp(story.expiresAt),
-                "viewsCount" to story.viewsCount
-            )
-            
-            story.thumbnailUrl?.let { storyData["thumbnailUrl"] = it }
-            story.location?.let { location ->
-                storyData["location"] = hashMapOf(
+            // Preparar dados para Cloud Function
+            val locationMap = story.location?.let { location ->
+                mapOf(
                     "city" to location.city,
                     "state" to location.state,
                     "latitude" to location.latitude,
@@ -237,22 +259,30 @@ class FirestoreStoriesRepository @Inject constructor(
                 )
             }
             
-            // Criar na subcoleção do usuário (fonte de verdade)
-            val userStoriesCollection = getUserStoriesCollection(story.userId)
-            val userDocRef = userStoriesCollection.document(story.id)
-            userDocRef.set(storyData).await()
+            // Usar Cloud Function createStory (backend como autoridade)
+            val result = functionsService.createStory(
+                mediaUrl = story.mediaUrl,
+                mediaType = story.mediaType,
+                caption = story.caption,
+                thumbnailUrl = story.thumbnailUrl,
+                location = locationMap,
+                expiresAt = story.expiresAt.time
+            )
             
-            // Criar também na coleção pública (para queries eficientes)
-            try {
-                val publicDocRef = storiesCollection.document(story.id)
-                publicDocRef.set(storyData).await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreStoriesRepository", "Erro ao salvar story na coleção pública: ${e.message}")
-                // Não falhar se pública falhar, mas logar o erro
-            }
-            
-            android.util.Log.d("FirestoreStoriesRepository", "Story criada com sucesso: ${story.id}")
-            com.taskgoapp.taskgo.core.model.Result.Success(story.id)
+            // Converter de kotlin.Result para com.taskgoapp.taskgo.core.model.Result
+            return result.fold(
+                onSuccess = { data ->
+                    val storyId = data["storyId"] as? String
+                        ?: return com.taskgoapp.taskgo.core.model.Result.Error(Exception("Story ID não retornado pela Cloud Function"))
+                    
+                    android.util.Log.d("FirestoreStoriesRepository", "Story criada com sucesso via Cloud Function: $storyId")
+                    com.taskgoapp.taskgo.core.model.Result.Success(storyId)
+                },
+                onFailure = { error ->
+                    android.util.Log.e("FirestoreStoriesRepository", "Erro ao criar story via Cloud Function: ${error.message}", error)
+                    com.taskgoapp.taskgo.core.model.Result.Error(error)
+                }
+            )
         } catch (e: Exception) {
             android.util.Log.e("FirestoreStoriesRepository", "Erro ao criar story: ${e.message}", e)
             com.taskgoapp.taskgo.core.model.Result.Error(e)
@@ -378,6 +408,23 @@ class FirestoreStoriesRepository @Inject constructor(
                         )
                     }
                     
+                    // Converter createdAt e expiresAt corretamente (pode vir como Long ou Timestamp)
+                    val createdAtValue = data["createdAt"]
+                    val createdAt = when (createdAtValue) {
+                        is com.google.firebase.Timestamp -> createdAtValue
+                        is Long -> com.google.firebase.Timestamp(createdAtValue / 1000, ((createdAtValue % 1000) * 1_000_000).toInt())
+                        is java.util.Date -> com.google.firebase.Timestamp(createdAtValue)
+                        else -> null
+                    }
+                    
+                    val expiresAtValue = data["expiresAt"]
+                    val expiresAt = when (expiresAtValue) {
+                        is com.google.firebase.Timestamp -> expiresAtValue
+                        is Long -> com.google.firebase.Timestamp(expiresAtValue / 1000, ((expiresAtValue % 1000) * 1_000_000).toInt())
+                        is java.util.Date -> com.google.firebase.Timestamp(expiresAtValue)
+                        else -> null
+                    }
+                    
                     val storyFirestore = StoryFirestore(
                         id = doc.id,
                         userId = data["userId"] as? String ?: "",
@@ -387,8 +434,8 @@ class FirestoreStoriesRepository @Inject constructor(
                         mediaType = data["mediaType"] as? String ?: "image",
                         thumbnailUrl = data["thumbnailUrl"] as? String,
                         caption = data["caption"] as? String,
-                        createdAt = data["createdAt"] as? com.google.firebase.Timestamp,
-                        expiresAt = data["expiresAt"] as? com.google.firebase.Timestamp,
+                        createdAt = createdAt,
+                        expiresAt = expiresAt,
                         viewsCount = (data["viewsCount"] as? Number)?.toInt() ?: 0,
                         location = locationFirestore
                     )

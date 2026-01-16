@@ -1,7 +1,9 @@
 package com.taskgoapp.taskgo.data.firebase
 
+import android.util.Log
 import com.taskgoapp.taskgo.data.firestore.models.ProposalDetails
 import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.functions.FirebaseFunctionsException
 import com.google.firebase.functions.HttpsCallableResult
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -107,6 +109,26 @@ class FirebaseFunctionsService @Inject constructor(
 
     suspend fun createDashboardLink(): Result<Map<String, Any>> {
         return executeFunction("createDashboardLink", null)
+    }
+
+    // Stories Functions
+    suspend fun createStory(
+        mediaUrl: String,
+        mediaType: String = "image",
+        caption: String? = null,
+        thumbnailUrl: String? = null,
+        location: Map<String, Any>? = null,
+        expiresAt: Long? = null
+    ): Result<Map<String, Any>> {
+        val data = mapOf(
+            "mediaUrl" to mediaUrl,
+            "mediaType" to mediaType
+        ).plus(caption?.let { mapOf("caption" to it) } ?: emptyMap())
+         .plus(thumbnailUrl?.let { mapOf("thumbnailUrl" to it) } ?: emptyMap())
+         .plus(location?.let { mapOf("location" to it) } ?: emptyMap())
+         .plus(expiresAt?.let { mapOf("expiresAt" to it) } ?: emptyMap())
+        
+        return executeFunction("createStory", data)
     }
 
     // AI Chat Functions
@@ -216,6 +238,43 @@ class FirebaseFunctionsService @Inject constructor(
         return executeFunction("startIdentityVerification", data)
     }
     
+    // Product Functions
+    suspend fun createProduct(
+        title: String,
+        description: String,
+        category: String,
+        price: Double,
+        images: List<String> = emptyList(),
+        stock: Int? = null,
+        active: Boolean = true
+    ): Result<Map<String, Any>> {
+        val data = mapOf(
+            "title" to title,
+            "description" to description,
+            "category" to category,
+            "price" to price,
+            "images" to images,
+            "active" to active
+        ).plus(stock?.let { mapOf("stock" to it) } ?: emptyMap())
+        return executeFunction("createProduct", data)
+    }
+    
+    suspend fun updateProduct(
+        productId: String,
+        updates: Map<String, Any>
+    ): Result<Map<String, Any>> {
+        val data = mapOf(
+            "productId" to productId,
+            "updates" to updates
+        )
+        return executeFunction("updateProduct", data)
+    }
+    
+    suspend fun deleteProduct(productId: String): Result<Map<String, Any>> {
+        val data = mapOf("productId" to productId)
+        return executeFunction("deleteProduct", data)
+    }
+    
     // Product Payment Functions
     suspend fun createProductPaymentIntent(orderId: String): Result<Map<String, Any>> {
         val data = mapOf("orderId" to orderId)
@@ -291,6 +350,7 @@ class FirebaseFunctionsService @Inject constructor(
         data: Map<String, Any>?
     ): Result<Map<String, Any>> {
         return try {
+            Log.d("FirebaseFunctionsService", "Chamando função: $functionName com dados: $data")
             val callable = functions.getHttpsCallable(functionName)
             val result: Any? = if (data != null) {
                 callable.call(data).await()
@@ -304,8 +364,40 @@ class FirebaseFunctionsService @Inject constructor(
             }
             val resultData = dataField?.get(result) as? Map<String, Any>
             
+            Log.d("FirebaseFunctionsService", "Função $functionName executada com sucesso")
             Result.success(resultData ?: emptyMap())
+        } catch (e: FirebaseFunctionsException) {
+            val code = e.code
+            val message = e.message ?: "Erro desconhecido"
+            val details = e.details
+            
+            Log.e("FirebaseFunctionsService", "Erro na função $functionName: code=$code, message=$message, details=$details", e)
+            
+            // Criar mensagem de erro mais clara
+            val errorMessage = when (code) {
+                FirebaseFunctionsException.Code.PERMISSION_DENIED -> {
+                    "Permissão negada: $message"
+                }
+                FirebaseFunctionsException.Code.UNAUTHENTICATED -> {
+                    "Não autenticado: Faça login novamente"
+                }
+                FirebaseFunctionsException.Code.INVALID_ARGUMENT -> {
+                    "Dados inválidos: $message"
+                }
+                FirebaseFunctionsException.Code.NOT_FOUND -> {
+                    "Recurso não encontrado: $message"
+                }
+                FirebaseFunctionsException.Code.FAILED_PRECONDITION -> {
+                    "Pré-condição falhou: $message"
+                }
+                else -> {
+                    "Erro ao executar $functionName: $message"
+                }
+            }
+            
+            Result.failure(Exception(errorMessage, e))
         } catch (e: Exception) {
+            Log.e("FirebaseFunctionsService", "Erro inesperado na função $functionName: ${e.message}", e)
             Result.failure(e)
         }
     }

@@ -4,7 +4,7 @@ import {AppError} from '../utils/errors';
 /**
  * Roles válidos no sistema
  */
-export const VALID_ROLES = ['user', 'admin', 'moderator'] as const;
+export const VALID_ROLES = ['user', 'admin', 'moderator', 'partner', 'seller', 'provider', 'client'] as const;
 
 export type UserRole = typeof VALID_ROLES[number];
 

@@ -256,9 +256,11 @@ class FirestoreOrdersRepositoryImpl @Inject constructor(
             }
         )
         
-        syncScope.launch {
-            realtimeRepository.savePurchaseOrder(orderId, orderData)
-        }
+        // REMOVIDO: savePurchaseOrder está DEPRECATED e lança UnsupportedOperationException
+        // Ordens devem ser criadas apenas via Cloud Functions para garantir segurança
+        // syncScope.launch {
+        //     realtimeRepository.savePurchaseOrder(orderId, orderData)
+        // }
         
         // 3. Agenda sincronização com Firestore após 1 minuto
         syncManager.scheduleSync(

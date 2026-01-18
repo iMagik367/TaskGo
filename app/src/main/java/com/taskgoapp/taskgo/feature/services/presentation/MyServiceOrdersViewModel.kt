@@ -38,6 +38,7 @@ class MyServiceOrdersViewModel @Inject constructor(
     private fun loadOrders() {
         val currentUser = firebaseAuth.currentUser
         if (currentUser == null) {
+            android.util.Log.e("MyServiceOrdersVM", "Usuário não autenticado")
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 error = "Usuário não autenticado"
@@ -45,22 +46,32 @@ class MyServiceOrdersViewModel @Inject constructor(
             return
         }
         
+        android.util.Log.d("MyServiceOrdersVM", "🔵 Carregando ordens para cliente: ${currentUser.uid}")
+        
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             
             try {
+                // CRÍTICO: Observar coleção pública 'orders' onde clientId == userId
+                // A Cloud Function createOrder salva na coleção pública, não na subcoleção
                 orderRepository.observeOrders(currentUser.uid, "client")
                     .catch { e ->
+                        android.util.Log.e("MyServiceOrdersVM", "❌ Erro ao observar ordens: ${e.message}", e)
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             error = "Erro ao carregar ordens: ${e.message}"
                         )
                     }
                     .collect { orders ->
+                        android.util.Log.d("MyServiceOrdersVM", "📦 Ordens recebidas: ${orders.size}")
+                        orders.forEach { order ->
+                            android.util.Log.d("MyServiceOrdersVM", "   - Order ${order.id}: status=${order.status}, category=${order.category}")
+                        }
+                        
                         val orderItems = orders.map { order ->
                             ServiceOrderItem(
                                 id = order.id,
-                                category = order.serviceId.takeIf { it.isNotBlank() } ?: "Serviço",
+                                category = order.category ?: order.serviceId?.takeIf { it.isNotBlank() } ?: "Serviço",
                                 details = order.details,
                                 location = order.location,
                                 budget = order.budget,
@@ -69,6 +80,7 @@ class MyServiceOrdersViewModel @Inject constructor(
                                 createdAt = order.createdAt
                             )
                         }
+                        android.util.Log.d("MyServiceOrdersVM", "✅ ${orderItems.size} ordens processadas e atualizadas na UI")
                         _uiState.value = _uiState.value.copy(
                             orders = orderItems,
                             isLoading = false,
@@ -76,6 +88,7 @@ class MyServiceOrdersViewModel @Inject constructor(
                         )
                     }
             } catch (e: Exception) {
+                android.util.Log.e("MyServiceOrdersVM", "❌ Erro ao carregar ordens: ${e.message}", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = "Erro ao carregar ordens: ${e.message}"
@@ -108,6 +121,15 @@ class MyServiceOrdersViewModel @Inject constructor(
                 )
             }
         }
+    }
+    
+    /**
+     * Força recarregamento das ordens
+     * Útil após criar uma nova ordem para garantir que aparece na lista
+     */
+    fun refreshOrders() {
+        android.util.Log.d("MyServiceOrdersVM", "🔄 Forçando recarregamento de ordens...")
+        loadOrders()
     }
 }
 

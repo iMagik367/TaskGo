@@ -1,7 +1,7 @@
 {
   "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null",
+    ".read": false,
+    ".write": false,
     
     "users": {
       "$uid": {
@@ -13,53 +13,50 @@
     
     "services": {
       "$serviceId": {
-        ".read": "auth != null",
-        ".write": "auth != null && (data.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
-        ".validate": "newData.hasChild('providerId') && (newData.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".read": "auth != null && (!data.exists() || data.child('active').val() == true)",
+        ".write": false
       }
     },
     
     "orders": {
       "$orderId": {
-        ".read": "auth != null && (data.child('clientId').val() == auth.uid || data.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
-        ".write": "auth != null && (data.child('clientId').val() == auth.uid || data.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
-        ".validate": "newData.hasChild('clientId') && (newData.child('clientId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".read": "auth != null && (!data.exists() || data.child('clientId').val() == auth.uid || data.child('providerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": false
       }
     },
     
     "products": {
       "$productId": {
-        ".read": "auth != null",
-        ".write": "auth != null && (data.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
-        ".validate": "newData.hasChild('sellerId') && (newData.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".read": "auth != null && (!data.exists() || data.child('active').val() == true)",
+        ".write": false
       }
     },
     
     "purchase_orders": {
       "$orderId": {
-        ".read": "auth != null && (data.child('clientId').val() == auth.uid || data.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
-        ".write": "auth != null && (data.child('clientId').val() == auth.uid || data.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".read": "auth != null && (!data.exists() || data.child('clientId').val() == auth.uid || data.child('sellerId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": false
       }
     },
     
     "messages": {
       "$conversationId": {
-        ".read": "auth != null && (data.child('participants').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
-        ".write": "auth != null && (data.child('participants').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".read": "auth != null && (!data.exists() || data.child('participants').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": false
       }
     },
     
     "notifications": {
       "$notificationId": {
-        ".read": "auth != null && data.child('userId').val() == auth.uid",
-        ".write": "auth != null && (data.child('userId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".read": "auth != null && (!data.exists() || data.child('userId').val() == auth.uid)",
+        ".write": false
       }
     },
     
     "reviews": {
       "$reviewId": {
         ".read": "auth != null",
-        ".write": "auth != null && (data.child('clientId').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".write": false
       }
     },
     
@@ -78,13 +75,12 @@
         }
       }
     },
+    
     "identity_verifications": {
       "$userId": {
         ".read": "auth != null && (auth.uid == $userId || root.child('users').child(auth.uid).child('role').val() == 'admin')",
-        ".write": "auth != null && auth.uid == $userId",
-        ".validate": "newData.hasChild('userId') && newData.child('userId').val() == auth.uid"
+        ".write": false
       }
     }
   }
 }
-

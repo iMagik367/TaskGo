@@ -1,7 +1,8 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
-const db = admin.firestore();
+import {getFirestore} from './utils/firestore';
+const db = getFirestore();
 
 /**
  * Sincronização bidirecional entre coleções públicas e subcoleções do usuário

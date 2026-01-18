@@ -1,12 +1,11 @@
 import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
-
+import {getFirestore} from './utils/firestore';
 /**
  * SSR leve para post/produto/perfil.
  * Busca dados no Firestore e retorna HTML com metatags OG/Twitter e deep link.
  * Rotas esperadas: /post/{id}, /product/{id}, /user/{id}
  */
-const db = admin.firestore();
+const db = getFirestore();
 
 type PageKind = 'post' | 'product' | 'user';
 

@@ -48,7 +48,7 @@ fun PrivacyScreen(
     val lgpdManager = remember(context) { 
         com.taskgoapp.taskgo.core.security.LGPDComplianceManager(
             context,
-            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
         )
     }
     val functionsService = remember {

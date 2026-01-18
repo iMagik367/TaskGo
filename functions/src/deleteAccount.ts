@@ -1,7 +1,9 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import {validateAppCheck} from './security/appCheck';
+import {getFirestore} from './utils/firestore';
 
-const db = admin.firestore();
+const db = getFirestore();
 const rtdb = admin.database();
 const storage = admin.storage();
 
@@ -10,17 +12,18 @@ const storage = admin.storage();
  * Atende aos requisitos do Google Play Store para exclusão de dados
  */
 export const deleteUserAccount = functions.https.onCall(async (data, context) => {
-  // Verificar autenticação
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'Usuário não autenticado'
-    );
-  }
-
-  const userId = context.auth.uid;
-
   try {
+    validateAppCheck(context);
+    
+    // Verificar autenticação
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Usuário não autenticado'
+      );
+    }
+
+    const userId = context.auth.uid;
     functions.logger.info(`Iniciando exclusão de conta para usuário: ${userId}`);
 
     // 1. Deletar dados do Firestore
@@ -193,7 +196,9 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
       message: 'Conta deletada com sucesso'
     };
   } catch (error: unknown) {
+    // Erro já tratado acima
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    const userId = context.auth?.uid || 'unknown';
     functions.logger.error(`Erro ao deletar conta do usuário ${userId}:`, error);
     throw new functions.https.HttpsError(
       'internal',

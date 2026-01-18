@@ -15,6 +15,13 @@ class FirebaseFunctionsService @Inject constructor(
 ) {
 
     // Auth Functions
+    suspend fun setInitialUserRole(role: String, accountType: String? = null): Result<Map<String, Any>> {
+        val data = mapOf(
+            "role" to role
+        ).plus(accountType?.let { mapOf("accountType" to it) } ?: emptyMap())
+        return executeFunction("setInitialUserRole", data)
+    }
+
     suspend fun promoteToProvider(): Result<Map<String, Any>> {
         return executeFunction("promoteToProvider", null)
     }
@@ -111,6 +118,44 @@ class FirebaseFunctionsService @Inject constructor(
         return executeFunction("createDashboardLink", null)
     }
 
+    // Services Functions
+    suspend fun createService(
+        title: String,
+        description: String,
+        category: String,
+        price: Double? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        active: Boolean = true
+    ): Result<Map<String, Any>> {
+        val data = mapOf(
+            "title" to title,
+            "description" to description,
+            "category" to category,
+            "active" to active
+        ).plus(price?.let { mapOf("price" to it) } ?: emptyMap())
+         .plus(latitude?.let { mapOf("latitude" to it) } ?: emptyMap())
+         .plus(longitude?.let { mapOf("longitude" to it) } ?: emptyMap())
+        
+        return executeFunction("createService", data)
+    }
+    
+    suspend fun updateService(
+        serviceId: String,
+        updates: Map<String, Any>
+    ): Result<Map<String, Any>> {
+        val data = mapOf(
+            "serviceId" to serviceId,
+            "updates" to updates
+        )
+        return executeFunction("updateService", data)
+    }
+    
+    suspend fun deleteService(serviceId: String): Result<Map<String, Any>> {
+        val data = mapOf("serviceId" to serviceId)
+        return executeFunction("deleteService", data)
+    }
+
     // Stories Functions
     suspend fun createStory(
         mediaUrl: String,
@@ -146,6 +191,11 @@ class FirebaseFunctionsService @Inject constructor(
     suspend fun getConversationHistory(conversationId: String): Result<Map<String, Any>> {
         val data = mapOf("conversationId" to conversationId)
         return executeFunction("getConversationHistory", data)
+    }
+    
+    suspend fun listConversations(limit: Int = 50): Result<Map<String, Any>> {
+        val data = mapOf("limit" to limit)
+        return executeFunction("listConversations", data)
     }
 
     // Notification Functions

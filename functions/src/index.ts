@@ -43,6 +43,7 @@ export * from './users/role';
 export * from './services/index';
 export * from './products/index';
 export * from './scripts/migrateExistingUsers';
+export * from './migrate-database';
 
 // Health check endpoint
 export const health = functions.https.onRequest((req, res) => {

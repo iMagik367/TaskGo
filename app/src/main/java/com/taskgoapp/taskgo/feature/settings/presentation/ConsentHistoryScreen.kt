@@ -36,7 +36,7 @@ fun ConsentHistoryScreen(
     val lgpdManager = remember(context) {
         LGPDComplianceManager(
             context,
-            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
         )
     }
     val auth = FirebaseAuth.getInstance()

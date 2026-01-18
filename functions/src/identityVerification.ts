@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import {validateAppCheck} from './security/appCheck';
 import {assertAuthenticated, handleError} from './utils/errors';
 
@@ -27,7 +28,7 @@ export const verifyIdentity = functions.https.onCall(async (data, context) => {
     }
 
     // Atualizar status de verificação no Firestore
-    const userRef = admin.firestore().collection('users').doc(userId);
+    const userRef = getFirestore().collection('users').doc(userId);
     
     await userRef.update({
       documentFront,
@@ -70,7 +71,7 @@ export const approveIdentityVerification = functions.https.onCall(async (data, c
     const isAdmin = context.auth!.token.role === 'admin';
     if (!isAdmin) {
       // Fallback para documento do Firestore
-      const adminUser = await admin.firestore()
+      const adminUser = await getFirestore()
         .collection('users')
         .doc(context.auth!.uid)
         .get();
@@ -85,7 +86,7 @@ export const approveIdentityVerification = functions.https.onCall(async (data, c
 
     const { userId, approved, reason } = data;
 
-    const userRef = admin.firestore().collection('users').doc(userId);
+    const userRef = getFirestore().collection('users').doc(userId);
     
     if (approved) {
       await userRef.update({

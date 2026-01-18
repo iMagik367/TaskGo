@@ -1,7 +1,7 @@
 @echo off
 echo ========================================
 echo Limpando e Building AAB Release Bundle
-echo Versao: 1.0.79 (Code: 80)
+echo Versao: 1.0.86 (Code: 86)
 echo ========================================
 echo.
 
@@ -96,7 +96,9 @@ if exist "%LOCKED_FILE%" (
 )
 REM Executar build com flags adicionais para evitar problemas com arquivos travados
 REM --rerun-tasks força a reexecucao de todas as tasks, evitando cache de arquivos travados
-call .\gradlew.bat bundleRelease --no-daemon --rerun-tasks --no-build-cache
+REM --max-workers=2 limita workers paralelos para evitar sobrecarga de memoria
+REM --no-configuration-cache evita problemas de cache de configuracao
+call .\gradlew.bat bundleRelease --no-daemon --rerun-tasks --no-build-cache --max-workers=2 --no-configuration-cache
 
 if %ERRORLEVEL% EQU 0 (
     echo.

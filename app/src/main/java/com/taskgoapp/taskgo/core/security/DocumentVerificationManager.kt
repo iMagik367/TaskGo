@@ -54,7 +54,7 @@ class DocumentVerificationManager @Inject constructor(
         
         return try {
             val notificationRepository = com.taskgoapp.taskgo.data.repository.FirestoreNotificationRepository(
-                com.google.firebase.firestore.FirebaseFirestore.getInstance(),
+                com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance(),
                 auth
             )
             

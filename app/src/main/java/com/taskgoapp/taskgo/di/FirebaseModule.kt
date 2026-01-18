@@ -8,6 +8,7 @@ import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.database.FirebaseDatabase
+import com.taskgoapp.taskgo.core.firebase.FirestoreHelper
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -40,8 +41,8 @@ object FirebaseModule {
                 useEmulator("10.0.2.2", 8080)
             }
         } else {
-            // Production Firestore
-            FirebaseFirestore.getInstance()
+            // Production Firestore - CRÍTICO: Usar database 'taskgo' ao invés de 'default'
+            FirestoreHelper.getInstance()
         }
         
         // Configurar para melhor performance - cache offline e leitura rápida

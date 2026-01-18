@@ -1,8 +1,10 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import Stripe from 'stripe';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -14,9 +16,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
  */
 export const createProductPaymentIntent = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {orderId} = data;
 
     if (!orderId) {
@@ -136,9 +139,10 @@ export const createProductPaymentIntent = functions.https.onCall(async (data, co
  */
 export const confirmProductPayment = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {paymentIntentId} = data;
 
     if (!paymentIntentId) {
@@ -238,9 +242,10 @@ export const confirmProductPayment = functions.https.onCall(async (data, context
  */
 export const transferPaymentToSeller = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {orderId} = data;
 
     if (!orderId) {
@@ -418,9 +423,10 @@ export const transferPaymentToSeller = functions.https.onCall(async (data, conte
  */
 export const refundProductPayment = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {orderId, reason} = data;
 
     if (!orderId) {

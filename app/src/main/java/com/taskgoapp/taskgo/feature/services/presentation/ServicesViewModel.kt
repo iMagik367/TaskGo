@@ -11,6 +11,7 @@ import com.taskgoapp.taskgo.data.local.datastore.FilterPreferencesManager
 import com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreProvidersRepository
+import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.data.firestore.models.OrderFirestore
 import com.taskgoapp.taskgo.domain.repository.CategoriesRepository
 import com.taskgoapp.taskgo.domain.repository.ServiceRepository
@@ -46,7 +47,8 @@ class ServicesViewModel @Inject constructor(
     private val orderRepository: FirestoreOrderRepository,
     private val providersRepository: FirestoreProvidersRepository,
     private val firebaseAuth: FirebaseAuth,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val firestoreUserRepository: FirestoreUserRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ServicesUiState())
@@ -85,26 +87,88 @@ class ServicesViewModel @Inject constructor(
     // Para prestadores, observar todas as ordens pendentes
     private val _selectedCategoryForOrders = MutableStateFlow<String?>(null)
     
-    private val _userLocation = MutableStateFlow<android.location.Location?>(null)
+    // CRÍTICO: Armazenar cidade e estado separadamente para usar nas queries por localização
+    private val _userCity = MutableStateFlow<String?>(null)
+    private val _userState = MutableStateFlow<String?>(null)
+    
+    init {
+        // Carregar localização do usuário ao inicializar
+        loadUserLocation()
+    }
+    
+    private fun loadUserLocation() {
+        viewModelScope.launch {
+            try {
+                // Tentar obter localização GPS primeiro
+                val location = locationManager.getCurrentLocation()
+                if (location != null) {
+                    val address = locationManager.getAddressFromLocation(
+                        location.latitude,
+                        location.longitude
+                    )
+                    _userCity.value = address?.locality
+                    _userState.value = address?.adminArea
+                    android.util.Log.d("ServicesViewModel", "📍 Localização GPS obtida: city=${_userCity.value}, state=${_userState.value}")
+                } else {
+                    // Fallback: usar localização do perfil
+                    loadUserLocationFromProfile()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ServicesViewModel", "Erro ao obter localização GPS: ${e.message}", e)
+                loadUserLocationFromProfile()
+            }
+        }
+    }
+    
+    private fun loadUserLocationFromProfile() {
+        viewModelScope.launch {
+            try {
+                userRepository.observeCurrentUser().collect { user ->
+                    _userCity.value = user?.city
+                    // CRÍTICO: UserProfile não tem state diretamente, obter via FirestoreUserRepository.address.state
+                    val currentUser = firebaseAuth.currentUser
+                    if (currentUser != null) {
+                        try {
+                            val userFirestore = firestoreUserRepository.getUser(currentUser.uid)
+                            _userState.value = userFirestore?.address?.state
+                            android.util.Log.d("ServicesViewModel", "📍 Localização do perfil obtida: city=${_userCity.value}, state=${_userState.value}")
+                        } catch (e: Exception) {
+                            android.util.Log.w("ServicesViewModel", "Erro ao obter state do Firestore: ${e.message}")
+                            _userState.value = null
+                        }
+                    } else {
+                        _userState.value = null
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ServicesViewModel", "Erro ao obter localização do perfil: ${e.message}", e)
+            }
+        }
+    }
     
     val allOrdersFirestore: StateFlow<List<OrderFirestore>> = combine(
         _accountType,
         _selectedCategoryForOrders,
         preferredCategories,
-        _userLocation
-    ) { accountType, category, preferredCategoriesList, userLocation ->
+        _userCity,
+        _userState
+    ) { accountType, category, preferredCategoriesList, userCity, userState ->
         if (accountType == AccountType.PARCEIRO || accountType == AccountType.PRESTADOR) { // Suporta legacy PRESTADOR
+            // CRÍTICO: Usar cidade e estado para observar ordens da região correta
+            
             // Se há categorias preferidas e nenhuma categoria específica foi selecionada,
             // filtrar ordens por preferredCategories
             if (category != null && category.isNotBlank()) {
-                orderRepository.observeOrdersByCategory(category)
+                // CRÍTICO: Usar observeLocalServiceOrders com categoria ao invés de observeOrdersByCategory
+                // observeOrdersByCategory só aceita category, não tem parâmetros de localização
+                orderRepository.observeLocalServiceOrders(city = userCity, state = userState, category = category)
             } else if (preferredCategoriesList.isNotEmpty()) {
                 // Filtrar ordens pelas categorias preferidas do Parceiro
                 // Como observeLocalServiceOrders aceita apenas uma categoria, vamos buscar todas e filtrar depois
-                orderRepository.observeLocalServiceOrders(category = null)
+                orderRepository.observeLocalServiceOrders(city = userCity, state = userState, category = null)
             } else {
                 // Buscar todas as ordens pendentes (sem filtro de categoria)
-                orderRepository.observeLocalServiceOrders(category = null)
+                orderRepository.observeLocalServiceOrders(city = userCity, state = userState, category = null)
             }
         } else {
             kotlinx.coroutines.flow.flowOf(emptyList<OrderFirestore>())
@@ -115,7 +179,9 @@ class ServicesViewModel @Inject constructor(
             val accountTypeValue = _accountType.value
             val preferredCategoriesList = preferredCategories.value
             val selectedCategory = _selectedCategoryForOrders.value
-            val userLocationValue = _userLocation.value
+            // REMOVIDO: _userLocation não existe, usar _userCity e _userState para localização
+            val userCityValue = _userCity.value
+            val userStateValue = _userState.value
             
             var filtered = orders
             
@@ -128,25 +194,9 @@ class ServicesViewModel @Inject constructor(
                 }
             }
             
-            // Filtrar por raio de 100km usando GPS
-            if (userLocationValue != null) {
-                filtered = filtered.filter { order ->
-                    val orderLat = order.latitude
-                    val orderLng = order.longitude
-                    if (orderLat != null && orderLng != null) {
-                        val distance = com.taskgoapp.taskgo.core.location.calculateDistance(
-                            userLocationValue.latitude,
-                            userLocationValue.longitude,
-                            orderLat,
-                            orderLng
-                        )
-                        distance <= 100.0 // Raio de 100km
-                    } else {
-                        // Se a ordem não tem localização GPS, não mostrar (ordens devem ter localização)
-                        false
-                    }
-                }
-            }
+            // REMOVIDO: Filtro por GPS usando _userLocation que não existe
+            // TODO: Implementar filtro por GPS quando necessário usando LocationManager diretamente
+            // Por enquanto, o filtro por localização já é feito via observeLocalServiceOrders com city/state
             
             filtered
         }
@@ -249,18 +299,8 @@ class ServicesViewModel @Inject constructor(
         loadServices()
         loadSavedFilters()
         observeAccountType()
-        loadUserLocation()
-    }
-    
-    private fun loadUserLocation() {
-        viewModelScope.launch {
-            try {
-                val location = locationManager.getCurrentLocation()
-                _userLocation.value = location
-            } catch (e: Exception) {
-                android.util.Log.e("ServicesViewModel", "Erro ao obter localização: ${e.message}", e)
-            }
-        }
+        // REMOVIDO: loadUserLocation() duplicado que usava _userLocation inexistente
+        // A função loadUserLocation() que usa _userCity e _userState já está sendo chamada no primeiro init
     }
 
     private fun loadSavedFilters() {

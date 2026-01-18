@@ -1,8 +1,10 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS, ORDER_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
+import {parseLocation, getLocationCollection, getUserLocation, normalizeLocationId} from './utils/location';
 
 type OrderDocument = {
   clientId: string;
@@ -16,6 +18,9 @@ type OrderDocument = {
   providerId?: string | null;
   serviceId?: string;
   category?: string;
+  city?: string;
+  state?: string;
+  locationCollection?: string;
 };
 
 /**
@@ -32,8 +37,18 @@ export const createOrder = functions.https.onCall(async (data, context) => {
     // Verificar autenticação
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const userId = context.auth!.uid;
+    const db = getFirestore();
     const {serviceId, category, details, location, budget, dueDate} = data;
+    
+    functions.logger.info(`Creating order for user ${userId}`, {
+      serviceId: serviceId || null,
+      category: category || null,
+      hasDetails: !!details,
+      hasLocation: !!location,
+      budget: budget || null,
+      dueDate: dueDate || null,
+    });
 
     // Either serviceId or category must be provided
     if (!serviceId && !category) {
@@ -50,10 +65,33 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       );
     }
 
+    // CRÍTICO: Extrair cidade e estado da localização para organizar por região
+    const {city, state} = parseLocation(location);
+    
+    // Se não conseguir extrair da localização, tentar obter do perfil do usuário
+    let finalCity = city;
+    let finalState = state;
+    
+    if (!finalCity || !finalState) {
+      const userLocation = await getUserLocation(db, userId);
+      finalCity = finalCity || userLocation.city;
+      finalState = finalState || userLocation.state;
+    }
+
+    functions.logger.info(`Order location parsed: city=${finalCity}, state=${finalState}`, {
+      originalLocation: location,
+      parsedCity: city,
+      parsedState: state,
+      finalCity,
+      finalState,
+    });
+
     const orderData: OrderDocument = {
       clientId: context.auth!.uid,
       details,
       location,
+      city: finalCity, // Adicionar cidade explicitamente
+      state: finalState, // Adicionar estado explicitamente
       budget: budget || null,
       dueDate: dueDate || null,
       status: ORDER_STATUS.PENDING,
@@ -81,7 +119,22 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       orderData.serviceId = serviceId;
       orderData.category = service?.category || category;
 
-      const orderRef = await db.collection(COLLECTIONS.ORDERS).add(orderData);
+      // CRÍTICO: Salvar na coleção pública por localização
+      const locationOrdersCollection = getLocationCollection(db, COLLECTIONS.ORDERS, finalCity, finalState);
+      const orderRef = await locationOrdersCollection.add(orderData);
+      
+      // Também salvar na coleção global para compatibilidade (será removido futuramente)
+      await db.collection(COLLECTIONS.ORDERS).doc(orderRef.id).set(orderData);
+      
+      functions.logger.info(`Order document created in Firestore: ${orderRef.id}`, {
+        orderId: orderRef.id,
+        clientId: userId,
+        providerId: orderData.providerId || null,
+        serviceId: serviceId,
+        status: ORDER_STATUS.PENDING,
+        location: `${finalCity}, ${finalState}`,
+        locationCollection: `locations/${normalizeLocationId(finalCity, finalState)}/orders`,
+      });
       
       // Create notification for specific provider
       if (service?.providerId) {
@@ -94,9 +147,10 @@ export const createOrder = functions.https.onCall(async (data, context) => {
           read: false,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        functions.logger.info(`Notification created for provider ${service.providerId}`);
       }
 
-      functions.logger.info(`Order created for specific service: ${orderRef.id}`);
+      functions.logger.info(`✅ Order created successfully for specific service: ${orderRef.id}`);
       return {orderId: orderRef.id};
     }
 
@@ -107,9 +161,21 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       // No providerId - this is an open order
       orderData.providerId = null;
 
-      const orderRef = await db.collection(COLLECTIONS.ORDERS).add(orderData);
+      // CRÍTICO: Salvar na coleção pública por localização
+      const locationOrdersCollection = getLocationCollection(db, COLLECTIONS.ORDERS, finalCity, finalState);
+      const orderRef = await locationOrdersCollection.add(orderData);
+      
+      // Também salvar na coleção global para compatibilidade (será removido futuramente)
+      await db.collection(COLLECTIONS.ORDERS).doc(orderRef.id).set(orderData);
 
-      functions.logger.info(`Open order created for category ${category}: ${orderRef.id}`);
+      functions.logger.info(`✅ Open order created successfully for category ${category}: ${orderRef.id}`, {
+        orderId: orderRef.id,
+        clientId: userId,
+        category: category,
+        status: ORDER_STATUS.PENDING,
+        location: `${finalCity}, ${finalState}`,
+        locationCollection: `locations/${normalizeLocationId(finalCity, finalState)}/orders`,
+      });
       return {orderId: orderRef.id};
     }
 
@@ -118,7 +184,14 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       'Either serviceId or category must be provided'
     );
   } catch (error) {
-    functions.logger.error('Error creating order:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    functions.logger.error('❌ Error creating order:', {
+      error: errorMessage,
+      stack: errorStack,
+      userId: context.auth?.uid || 'unknown',
+      data: data,
+    });
     throw handleError(error);
   }
 });
@@ -134,7 +207,7 @@ export const updateOrderStatus = functions.https.onCall(async (data, context) =>
     // Verificar autenticação
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {orderId, status, proposalDetails} = data;
 
     if (!orderId || !status) {
@@ -240,7 +313,7 @@ export const getMyOrders = functions.https.onCall(async (data, context) => {
     // Verificar autenticação
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {role, status} = data;
 
     const ordersQuery = db.collection(COLLECTIONS.ORDERS);
@@ -294,7 +367,7 @@ export const onServiceOrderCreated = functions.firestore
   .onCreate(async (snapshot, context) => {
     const orderId = context.params.orderId;
     const orderData = snapshot.data();
-    const db = admin.firestore();
+    const db = getFirestore();
 
     try {
       // Skip if order already has a providerId (it's a direct order to a specific provider)

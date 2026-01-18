@@ -150,22 +150,39 @@ class ChatAIViewModel @Inject constructor(
         
         viewModelScope.launch {
             try {
-                // Criar ou obter conversationId
+                // Criar ou obter conversationId - OBRIGATÓRIO antes de enviar mensagem
                 var conversationId = _uiState.value.chatId
                 if (conversationId == null) {
-                    // Criar nova conversa no Firestore
+                    // Criar nova conversa no Firestore - BLOQUEAR se falhar
                     val createResult = functionsService.createConversation()
                     createResult.fold(
                         onSuccess = { data ->
                             conversationId = data["conversationId"] as? String
                             if (conversationId != null) {
                                 _uiState.value = _uiState.value.copy(chatId = conversationId)
+                                android.util.Log.d("ChatAIViewModel", "Conversa criada com sucesso: $conversationId")
+                            } else {
+                                throw IllegalStateException("Conversa criada mas conversationId é null")
                             }
                         },
-                        onFailure = {
-                            android.util.Log.w("ChatAIViewModel", "Erro ao criar conversa no Firestore, continuando sem conversationId")
+                        onFailure = { error ->
+                            android.util.Log.e("ChatAIViewModel", "Erro ao criar conversa no Firestore: ${error.message}", error)
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                error = "Erro ao criar conversa: ${error.message ?: "Erro desconhecido"}"
+                            )
+                            return@launch // Bloquear envio se não conseguir criar conversa
                         }
                     )
+                }
+                
+                // Garantir que conversationId não é null antes de enviar
+                if (conversationId == null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Não foi possível criar a conversa. Tente novamente."
+                    )
+                    return@launch
                 }
                 
                 // Usar Cloud Function aiChatProxy que salva automaticamente no Firestore

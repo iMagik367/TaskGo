@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.Timestamp
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.taskgoapp.taskgo.feature.chatai.data.ChatSession
@@ -49,16 +50,50 @@ class ChatListViewModel @Inject constructor(
             try {
                 // Carregar do storage local primeiro (para exibição rápida)
                 val localChats = getChatsFromStorage()
+                
+                // Tentar carregar do Firestore (conversas salvas via Cloud Functions)
+                val firestoreChats = try {
+                    val result = functionsService.listConversations(limit = 50)
+                    result.fold(
+                        onSuccess = { data ->
+                            val conversations = data["conversations"] as? List<Map<String, Any>> ?: emptyList()
+                            conversations.mapNotNull { conv ->
+                                val id = conv["id"] as? String ?: return@mapNotNull null
+                                val lastMessage = conv["lastMessage"] as? String
+                                val updatedAtValue = conv["updatedAt"]
+                                val updatedAt = when (updatedAtValue) {
+                                    is Timestamp -> updatedAtValue.toDate()?.time
+                                    is Long -> updatedAtValue
+                                    else -> null
+                                } ?: System.currentTimeMillis()
+                                
+                                ChatSession(
+                                    id = id,
+                                    title = lastMessage?.take(30) ?: "Nova conversa",
+                                    lastMessage = lastMessage,
+                                    timestamp = updatedAt
+                                )
+                            }
+                        },
+                        onFailure = {
+                            android.util.Log.w("ChatListViewModel", "Erro ao carregar conversas do Firestore: ${it.message}")
+                            emptyList()
+                        }
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatListViewModel", "Erro ao buscar conversas: ${e.message}", e)
+                    emptyList()
+                }
+                
+                // Combinar chats locais e do Firestore, priorizando Firestore
+                val allChats = (firestoreChats + localChats).distinctBy { it.id }
+                    .sortedByDescending { it.timestamp }
+                
                 _uiState.value = _uiState.value.copy(
-                    chats = localChats,
-                    filteredChats = filterChats(localChats, _uiState.value.searchQuery),
+                    chats = allChats,
+                    filteredChats = filterChats(allChats, _uiState.value.searchQuery),
                     isLoading = false
                 )
-                
-                // Tentar carregar do Firestore (conversas salvas)
-                // Nota: A Cloud Function aiChatProxy já salva conversas automaticamente
-                // Aqui podemos tentar buscar conversas do usuário se houver uma função para isso
-                // Por enquanto, usamos apenas o storage local que é atualizado quando mensagens são enviadas
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

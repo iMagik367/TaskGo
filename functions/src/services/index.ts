@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from '../utils/firestore';
 import * as functions from 'firebase-functions';
 import {AppError, handleError, assertAuthenticated} from '../utils/errors';
 import {validateAppCheck} from '../security/appCheck';
@@ -20,18 +21,27 @@ export const createService = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
 
-      // Verificar role do usuário (através de Custom Claims)
-      const userRole = getUserRole(context);
+      // Verificar role do usuário (primeiro Custom Claims, depois documento)
+      let userRole: string;
+      try {
+        userRole = getUserRole(context);
+      } catch {
+        // Se não tiver em Custom Claims, verificar no documento
+        const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+        if (!userDoc.exists) {
+          throw new AppError('not-found', 'User not found', 404);
+        }
+        userRole = userDoc.data()?.role || 'user';
+      }
 
       // Apenas providers/partners podem criar serviços
-      // Role "provider" ou "partner" no Custom Claims
       const allowedRoles = ['provider', 'partner'];
       if (!allowedRoles.includes(userRole)) {
         throw new AppError(
           'permission-denied',
-          'Only providers and partners can create services',
+          `Only providers and partners can create services. Current role: ${userRole}`,
           403,
         );
       }
@@ -138,7 +148,7 @@ export const updateService = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
       const {serviceId, updates} = data;
 
       if (!serviceId || typeof serviceId !== 'string') {
@@ -237,7 +247,7 @@ export const deleteService = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
       const {serviceId} = data;
 
       if (!serviceId || typeof serviceId !== 'string') {

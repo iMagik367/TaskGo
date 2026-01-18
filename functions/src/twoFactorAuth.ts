@@ -1,9 +1,10 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
 
-const db = admin.firestore();
+const db = getFirestore();
 
 /**
  * Envia código de verificação 2FA por email

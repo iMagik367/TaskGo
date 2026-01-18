@@ -1,7 +1,9 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 import * as crypto from 'crypto';
 
 /**
@@ -9,9 +11,10 @@ import * as crypto from 'crypto';
  */
 export const createPixPayment = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const {orderId} = data;
 
     if (!orderId) {
@@ -177,9 +180,10 @@ function calculateCRC16(data: string): string {
  */
 export const verifyPixPayment = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const {paymentId} = data;
 
     if (!paymentId) {
@@ -256,9 +260,10 @@ export const verifyPixPayment = functions.https.onCall(async (data, context) => 
  */
 export const confirmPixPayment = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const {paymentId} = data;
 
     if (!paymentId) {

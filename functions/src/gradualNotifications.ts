@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS} from './utils/constants';
 
@@ -32,7 +33,7 @@ export const sendGradualNotifications = functions.pubsub
   .schedule('every 6 hours')
   .timeZone('America/Sao_Paulo')
   .onRun(async (_context) => {
-    const db = admin.firestore();
+    const db = getFirestore();
     
     try {
       // Buscar todos os usuários ativos

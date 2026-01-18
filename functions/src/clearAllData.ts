@@ -1,7 +1,8 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 
-const db = admin.firestore();
+const db = getFirestore();
 const auth = admin.auth();
 const storage = admin.storage();
 

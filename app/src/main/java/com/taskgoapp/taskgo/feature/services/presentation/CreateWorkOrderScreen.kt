@@ -74,6 +74,13 @@ class CreateWorkOrderViewModel @Inject constructor(
         dueDate: String?
     ): Result<String> {
         return try {
+            android.util.Log.d("CreateWorkOrderVM", "🔵 Criando ordem de serviço...")
+            android.util.Log.d("CreateWorkOrderVM", "   category: $category")
+            android.util.Log.d("CreateWorkOrderVM", "   description: ${description.take(50)}...")
+            android.util.Log.d("CreateWorkOrderVM", "   location: $location")
+            android.util.Log.d("CreateWorkOrderVM", "   budget: $budget")
+            android.util.Log.d("CreateWorkOrderVM", "   dueDate: $dueDate")
+            
             _uiState.value = _uiState.value.copy(isLoading = true, error = null, success = false)
             
             val result = firebaseFunctionsService.createOrder(
@@ -85,11 +92,15 @@ class CreateWorkOrderViewModel @Inject constructor(
                 dueDate = dueDate
             )
             
+            android.util.Log.d("CreateWorkOrderVM", "   Resultado da CF: isSuccess=${result.isSuccess}")
+            
             when {
                 result.isSuccess -> {
                     val data = result.getOrNull()
+                    android.util.Log.d("CreateWorkOrderVM", "   Dados retornados: $data")
                     val orderId = data?.get("orderId") as? String
                     if (orderId != null) {
+                        android.util.Log.d("CreateWorkOrderVM", "✅ Ordem criada com sucesso: orderId=$orderId")
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             success = true,
@@ -97,6 +108,8 @@ class CreateWorkOrderViewModel @Inject constructor(
                         )
                         Result.success(orderId)
                     } else {
+                        android.util.Log.e("CreateWorkOrderVM", "❌ Resposta inválida: orderId não encontrado")
+                        android.util.Log.e("CreateWorkOrderVM", "   Dados recebidos: $data")
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             error = "Erro ao criar ordem: resposta inválida"
@@ -105,12 +118,15 @@ class CreateWorkOrderViewModel @Inject constructor(
                     }
                 }
                 else -> {
-                    val error = result.exceptionOrNull()?.message ?: "Erro desconhecido"
+                    val exception = result.exceptionOrNull()
+                    val error = exception?.message ?: "Erro desconhecido"
+                    android.util.Log.e("CreateWorkOrderVM", "❌ Erro ao criar ordem: $error", exception)
+                    android.util.Log.e("CreateWorkOrderVM", "   Exception type: ${exception?.javaClass?.simpleName}")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = error
                     )
-                    Result.failure(result.exceptionOrNull() ?: Exception(error))
+                    Result.failure(exception ?: Exception(error))
                 }
             }
         } catch (e: Exception) {

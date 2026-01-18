@@ -1,7 +1,9 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS} from './utils/constants';
 import {handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 /**
  * Trigger: Send notification when product order status changes
@@ -19,7 +21,7 @@ export const onProductOrderStatusChange = functions.firestore
       return null;
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
 
     // Determine notification recipients and messages based on status change
     const notifications: Array<{userId: string; title: string; message: string; type: string}> = [];
@@ -166,7 +168,7 @@ export const onProductOrderCreated = functions.firestore
   .onCreate(async (snapshot, context) => {
     const orderId = context.params.orderId;
     const orderData = snapshot.data();
-    const db = admin.firestore();
+    const db = getFirestore();
 
     try {
       // Generate tracking code
@@ -213,11 +215,13 @@ export const onProductOrderCreated = functions.firestore
  */
 export const updateProductOrderStatus = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
+    
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const {orderId, status} = data;
 
     if (!orderId || !status) {

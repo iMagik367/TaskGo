@@ -88,7 +88,7 @@ class OrderTrackingViewModel @Inject constructor(
     
     private suspend fun loadShipmentInfo(orderId: String): ShipmentInfo? {
         return try {
-            val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            val firestore = com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
             val snapshot = firestore.collection("shipments")
                 .whereEqualTo("purchaseOrderId", orderId)
                 .limit(1)

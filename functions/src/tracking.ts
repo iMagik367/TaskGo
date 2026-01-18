@@ -1,15 +1,18 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import * as https from 'https';
 import {handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
-const db = admin.firestore();
+const db = getFirestore();
 
 /**
  * Track order using Correios API
  */
 export const trackCorreiosOrder = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
@@ -38,6 +41,7 @@ export const trackCorreiosOrder = functions.https.onCall(async (data, context) =
  */
 export const updateShipmentTracking = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }

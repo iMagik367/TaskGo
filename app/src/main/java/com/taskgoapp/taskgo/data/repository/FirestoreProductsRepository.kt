@@ -8,13 +8,15 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Repositório Firebase puro (sem cache local) para produtos.
  * - Sempre lê/escreve diretamente no Firestore.
- * - Usa coleção pública /products e subcoleção users/{uid}/products.
+ * - CRÍTICO: Usa coleção por localização locations/{city}_{state}/products para dados públicos.
+ * - Usa subcoleção users/{uid}/products para dados privados.
  * - Filtra por active=true.
  */
 @Singleton
@@ -23,32 +25,66 @@ class FirestoreProductsRepository @Inject constructor(
     private val authRepository: FirebaseAuthRepository
 ) {
     // Coleção pública para queries (visualização de produtos por outros usuários)
+    // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
     private val publicProductsCollection = firestore.collection("products")
     
     // Helper para obter subcoleção do usuário
     private fun getUserProductsCollection(userId: String) = 
         firestore.collection("users").document(userId).collection("products")
 
-    /** Observa todos os produtos ativos (query pública) */
-    fun observeAllProducts(): Flow<List<ProductFirestore>> = callbackFlow {
-        val listenerRegistration: ListenerRegistration = publicProductsCollection
-            .whereEqualTo("active", true)
-            .orderBy("createdAt")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    android.util.Log.e("FirestoreProductsRepo", "Erro ao observar produtos: ${error.message}", error)
-                    trySend(emptyList())
-                    return@addSnapshotListener
+    /** 
+     * Observa todos os produtos ativos (query pública)
+     * CRÍTICO: Usa coleção por localização locations/{city}_{state}/products
+     * @param city Cidade (opcional, se não fornecido usa coleção global)
+     * @param state Estado (opcional, se não fornecido usa coleção global)
+     */
+    fun observeAllProducts(city: String? = null, state: String? = null): Flow<List<ProductFirestore>> = callbackFlow {
+        // CRÍTICO: Se cidade e estado forem fornecidos, usar coleção por localização
+        if (city != null && state != null && city.isNotBlank() && state.isNotBlank()) {
+            android.util.Log.d("FirestoreProductsRepo", "🔵 Observando produtos por localização: city=$city, state=$state")
+            val locationProductsCollection = LocationHelper.getLocationCollection(firestore, "products", city, state)
+            
+            val listenerRegistration: ListenerRegistration = locationProductsCollection
+                .whereEqualTo("active", true)
+                .orderBy("createdAt")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        android.util.Log.e("FirestoreProductsRepo", "❌ Erro ao observar produtos por localização: ${error.message}", error)
+                        trySend(emptyList())
+                        return@addSnapshotListener
+                    }
+                    
+                    val products = snapshot?.documents?.mapNotNull { doc ->
+                        doc.toObject(ProductFirestore::class.java)?.copy(id = doc.id)
+                    } ?: emptyList()
+                    
+                    android.util.Log.d("FirestoreProductsRepo", "📦 ${products.size} produtos encontrados na localização $city, $state")
+                    trySend(products)
                 }
-                
-                val products = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(ProductFirestore::class.java)?.copy(id = doc.id)
-                } ?: emptyList()
-                
-                trySend(products)
-            }
-        
-        awaitClose { listenerRegistration.remove() }
+            
+            awaitClose { listenerRegistration.remove() }
+        } else {
+            // Fallback: usar coleção global se localização não fornecida
+            android.util.Log.w("FirestoreProductsRepo", "⚠️ Localização não fornecida, usando coleção global (compatibilidade)")
+            val listenerRegistration: ListenerRegistration = publicProductsCollection
+                .whereEqualTo("active", true)
+                .orderBy("createdAt")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        android.util.Log.e("FirestoreProductsRepo", "Erro ao observar produtos: ${error.message}", error)
+                        trySend(emptyList())
+                        return@addSnapshotListener
+                    }
+                    
+                    val products = snapshot?.documents?.mapNotNull { doc ->
+                        doc.toObject(ProductFirestore::class.java)?.copy(id = doc.id)
+                    } ?: emptyList()
+                    
+                    trySend(products)
+                }
+            
+            awaitClose { listenerRegistration.remove() }
+        }
     }
 
     /** Observa produtos de um vendedor específico (subcoleção users/{uid}/products) */

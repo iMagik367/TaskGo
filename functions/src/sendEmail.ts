@@ -4,13 +4,18 @@ import * as nodemailer from 'nodemailer';
 
 // Configurar transporte SMTP usando variáveis de ambiente
 const getTransporter = () => {
-  const smtpHost = functions.config().smtp?.host || 'smtp.gmail.com';
-  const smtpPort = parseInt(functions.config().smtp?.port || '465');
-  const smtpUser = functions.config().smtp?.user;
-  const smtpPassword = functions.config().smtp?.password;
+  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const smtpPort = parseInt(process.env.SMTP_PORT || '465');
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPassword = process.env.SMTP_PASSWORD;
 
   if (!smtpUser || !smtpPassword) {
-    throw new Error('SMTP credentials not configured. Set smtp.user and smtp.password');
+    functions.logger.error('SMTP credentials not configured', {
+      hasUser: !!smtpUser,
+      hasPassword: !!smtpPassword,
+      timestamp: new Date().toISOString(),
+    });
+    throw new Error('SMTP credentials not configured. Set SMTP_USER and SMTP_PASSWORD environment variables');
   }
 
   return nodemailer.createTransport({
@@ -64,8 +69,8 @@ export const sendEmail = functions.firestore
       const transporter = getTransporter();
 
       // Preparar opções do email
-      const defaultFrom = functions.config().email?.default_from;
-      const defaultReplyTo = functions.config().email?.default_reply_to;
+      const defaultFrom = process.env.EMAIL_DEFAULT_FROM;
+      const defaultReplyTo = process.env.EMAIL_DEFAULT_REPLY_TO;
 
       const mailOptions: nodemailer.SendMailOptions = {
         from: mailData.from || defaultFrom || 'noreply@taskgo.com',

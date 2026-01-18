@@ -10,6 +10,7 @@ import com.taskgoapp.taskgo.data.firestore.models.PostFirestore
 import com.taskgoapp.taskgo.data.firestore.models.PostLocation as PostLocationFirestore
 import com.taskgoapp.taskgo.data.mapper.PostMapper
 import com.taskgoapp.taskgo.domain.repository.FeedRepository
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
@@ -28,6 +29,7 @@ class FirestoreFeedRepository @Inject constructor(
     private val authRepository: FirebaseAuthRepository
 ) : FeedRepository {
     
+    // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
     private val postsCollection = firestore.collection("posts")
     private val currentUserId: String?
         get() = authRepository.getCurrentUser()?.uid
@@ -330,6 +332,14 @@ class FirestoreFeedRepository @Inject constructor(
                 location.toFirestore()
             }
             
+            // CRÍTICO: Extrair cidade e estado da localização para salvar na coleção correta
+            val city = locationFirestore.city
+            val state = locationFirestore.state
+            
+            if (city.isBlank() || state.isBlank()) {
+                android.util.Log.w("FirestoreFeedRepository", "⚠️ Post sem localização completa (city=$city, state=$state), será salvo em 'unknown'")
+            }
+            
             val postData = hashMapOf<String, Any>(
                 "userId" to userId,
                 "userName" to userName,
@@ -337,6 +347,8 @@ class FirestoreFeedRepository @Inject constructor(
                 "text" to text,
                 "mediaUrls" to mediaUrls,
                 "mediaTypes" to mediaTypes,
+                "city" to city, // Adicionar cidade explicitamente
+                "state" to state, // Adicionar estado explicitamente
                 "location" to hashMapOf(
                     "city" to locationFirestore.city,
                     "state" to locationFirestore.state,
@@ -350,16 +362,26 @@ class FirestoreFeedRepository @Inject constructor(
                 "likedBy" to emptyList<String>()
             )
             
-            // Criar na subcoleção do usuário (fonte de verdade)
+            // Criar na subcoleção do usuário (fonte de verdade - dados privados)
             val userPostsCollection = getUserPostsCollection(userId)
             val docRef = userPostsCollection.add(postData).await()
             val postId = docRef.id
             
-            // Criar também na coleção pública (para queries eficientes)
+            // CRÍTICO: Salvar na coleção pública por localização
+            try {
+                val locationId = LocationHelper.normalizeLocationId(city.ifBlank { "unknown" }, state.ifBlank { "unknown" })
+                val locationPostsCollection = firestore.collection("locations").document(locationId).collection("posts")
+                locationPostsCollection.document(postId).set(postData).await()
+                android.util.Log.d("FirestoreFeedRepository", "✅ Post salvo na coleção por localização: locations/$locationId/posts")
+            } catch (e: Exception) {
+                android.util.Log.e("FirestoreFeedRepository", "❌ Erro ao salvar post na coleção por localização: ${e.message}", e)
+            }
+            
+            // Também salvar na coleção global para compatibilidade (será removido futuramente)
             try {
                 postsCollection.document(postId).set(postData).await()
             } catch (e: Exception) {
-                android.util.Log.w("FirestoreFeedRepository", "Erro ao salvar post na coleção pública: ${e.message}")
+                android.util.Log.w("FirestoreFeedRepository", "Erro ao salvar post na coleção global: ${e.message}")
                 // Não falhar se pública falhar, mas logar o erro
             }
             

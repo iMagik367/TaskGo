@@ -13,6 +13,7 @@ import com.taskgoapp.taskgo.data.firestore.models.StoryFirestore
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.data.mapper.StoryMapper
 import com.taskgoapp.taskgo.domain.repository.StoriesRepository
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
@@ -29,6 +30,7 @@ class FirestoreStoriesRepository @Inject constructor(
     private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 ) : StoriesRepository {
     
+    // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
     private val storiesCollection = firestore.collection("stories")
     private val storyViewsCollection = firestore.collection("story_views")
     
@@ -45,6 +47,10 @@ class FirestoreStoriesRepository @Inject constructor(
             // Timestamp de 24 horas atrás (stories não expiradas)
             val twentyFourHoursAgo = Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
             val timestamp = com.google.firebase.Timestamp(twentyFourHoursAgo)
+            
+            // CRÍTICO: Tentar obter cidade e estado do usuário para observar stories da região
+            // Por enquanto, vamos usar a coleção global e filtrar por localização em memória
+            // TODO: Implementar observação por localização quando tivermos cidade/estado do usuário
             
             // Query: stories não expiradas, ordenadas por data de criação (mais recentes primeiro)
             // Nota: Firestore requer índice composto para múltiplos orderBy, então usamos apenas createdAt

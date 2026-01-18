@@ -5,25 +5,42 @@ import {GoogleGenerativeAI} from '@google/generative-ai';
 import {RateLimiterMemory} from 'rate-limiter-flexible';
 import Filter from 'bad-words';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
+import {getFirestore} from './utils/firestore';
 
-// Initialize OpenAI
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-}) : null;
+// Helper functions para inicializar os provedores de IA
+// As secrets são carregadas dinamicamente em cada chamada da função
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  try {
+    return new OpenAI({apiKey});
+  } catch (e) {
+    functions.logger.error('Error initializing OpenAI:', e);
+    return null;
+  }
+}
 
-// Initialize Gemini
-const geminiApiKey = process.env.GEMINI_API_KEY;
-const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
-// Usar gemini-1.5-flash que é o modelo mais rápido e estável disponível
-// Modelos disponíveis: gemini-1.5-flash (rápido), gemini-1.5-pro (mais preciso), gemini-pro (padrão)
-// Configurações otimizadas para respostas mais rápidas
-const geminiModel = genAI ? genAI.getGenerativeModel({
-  model: 'gemini-1.5-flash',
-  generationConfig: {
-    maxOutputTokens: 500, // Reduzir tokens para respostas mais rápidas
-    temperature: 0.7,
-  },
-}) : null;
+function getGeminiModel() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    // Usar gemini-1.5-flash que é o modelo mais rápido e estável disponível
+    // Modelos disponíveis: gemini-1.5-flash (rápido), gemini-1.5-pro (mais preciso), gemini-pro (padrão)
+    // Configurações otimizadas para respostas mais rápidas
+    return genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        maxOutputTokens: 500, // Reduzir tokens para respostas mais rápidas
+        temperature: 0.7,
+      },
+    });
+  } catch (e) {
+    functions.logger.error('Error initializing Gemini:', e);
+    return null;
+  }
+}
 
 // Initialize content filter
 const filter = new Filter();
@@ -72,9 +89,10 @@ async function getConversationHistoryFromFirestore(
 async function callOpenAI(
   messages: Array<{role: string; content: string}>,
   systemPrompt: string,
+  openaiInstance: OpenAI,
   maxRetries = 3
 ): Promise<string> {
-  if (!openai) {
+  if (!openaiInstance) {
     throw new Error('OpenAI not configured');
   }
 
@@ -95,7 +113,7 @@ async function callOpenAI(
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       // Configurações otimizadas para respostas mais completas
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiInstance.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: openaiMessages,
         max_tokens: 2048, // Aumentado para respostas mais completas (baseado em chat_manager.py)
@@ -126,9 +144,10 @@ async function callOpenAI(
 async function callGemini(
   messages: Array<{role: string; content: string}>,
   systemPrompt: string,
+  geminiModelInstance: ReturnType<typeof getGeminiModel>,
   maxRetries = 3
 ): Promise<string> {
-  if (!geminiModel) {
+  if (!geminiModelInstance) {
     throw new Error('Gemini not configured');
   }
 
@@ -145,7 +164,7 @@ async function callGemini(
           parts: [{text: msg.content}],
         }));
 
-        const chat = geminiModel.startChat({
+        const chat = geminiModelInstance.startChat({
           systemInstruction: systemPrompt,
           history: history as Array<{role: string; parts: Array<{text: string}>}>,
         });
@@ -162,7 +181,7 @@ async function callGemini(
           ? `[SISTEMA] ${systemPrompt}\n\n[USUÁRIO] ${messages[0].content}\n\n[ASSISTENTE]`
           : messages[0].content;
         
-        const result = await geminiModel.generateContent(prompt);
+        const result = await geminiModelInstance.generateContent(prompt);
         const response = await result.response;
         return response.text();
       }
@@ -184,27 +203,22 @@ async function callGemini(
 /**
  * AI chat proxy function with moderation and rate limiting
  * Uses OpenAI as primary, Gemini as fallback
+ * 
+ * REQUIRED SECRETS:
+ * - GEMINI_API_KEY (recommended) OR OPENAI_API_KEY
+ * Configure with: firebase functions:secrets:set GEMINI_API_KEY
  */
-export const aiChatProxy = functions.https.onCall(async (data, context) => {
+export const aiChatProxy = functions.runWith({
+  secrets: ['GEMINI_API_KEY'], // OPENAI_API_KEY é opcional
+}).https.onCall(async (data, context) => {
   try {
     // Validar App Check
-    if (context.app === undefined && 
-        process.env.FUNCTIONS_EMULATOR !== 'true' && 
-        process.env.NODE_ENV !== 'development') {
-      functions.logger.warn('App Check token missing for aiChatProxy', {
-        uid: context.auth?.uid,
-        timestamp: new Date().toISOString(),
-      });
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'App Check validation failed'
-      );
-    }
+    validateAppCheck(context);
     
     // Verificar autenticação
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {message, conversationId} = data;
 
     if (!message || typeof message !== 'string') {
@@ -259,8 +273,16 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
         // Criar documento da conversa se não existir
         await conversationRef.set({
           userId: context.auth!.uid,
+          type: 'ai',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastMessage: message,
+        });
+      } else {
+        // Atualizar apenas updatedAt se a conversa já existe
+        await conversationRef.update({
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastMessage: message,
         });
       }
 
@@ -269,11 +291,6 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
         role: 'user',
         content: message,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      // Update conversation updatedAt
-      await conversationRef.update({
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     } else {
       // No conversationId - single message
@@ -289,38 +306,77 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
     const tokensUsed = 0; // TODO: Track actual tokens from API response
     let provider = 'openai';
 
+    // Inicializar provedores dinamicamente (secrets são carregadas em runtime)
+    const openai = getOpenAI();
+    const geminiModel = getGeminiModel();
+    
+    // Log de diagnóstico (sem expor as chaves)
+    functions.logger.info('AI Providers Status:', {
+      openaiConfigured: !!process.env.OPENAI_API_KEY,
+      geminiConfigured: !!process.env.GEMINI_API_KEY,
+      openaiKeyLength: process.env.OPENAI_API_KEY?.length || 0,
+      geminiKeyLength: process.env.GEMINI_API_KEY?.length || 0,
+    });
+
+    // Verificar se pelo menos um provedor está configurado
+    if (!openai && !geminiModel) {
+      functions.logger.error(
+        'No AI provider configured. OPENAI_API_KEY and GEMINI_API_KEY are both missing.'
+      );
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Serviço de IA não configurado. Configure OPENAI_API_KEY ou GEMINI_API_KEY ' +
+        'nas secrets do Firebase. Veja CONFIGURAR_CHAT_IA.md para instruções.'
+      );
+    }
+
     try {
+      // Priorizar OpenAI se disponível, senão usar Gemini
       if (openai) {
-        responseMessage = await callOpenAI(conversationHistory, SYSTEM_PROMPT, 3);
+        functions.logger.info('Using OpenAI as primary provider');
+        responseMessage = await callOpenAI(conversationHistory, SYSTEM_PROMPT, openai, 3);
         provider = 'openai';
       } else if (geminiModel) {
-        responseMessage = await callGemini(conversationHistory, SYSTEM_PROMPT, 3);
+        functions.logger.info('Using Gemini as primary provider (OpenAI not available)');
+        responseMessage = await callGemini(conversationHistory, SYSTEM_PROMPT, geminiModel, 3);
         provider = 'gemini';
       } else {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          'No AI provider configured. Please configure OPENAI_API_KEY or GEMINI_API_KEY.'
-        );
+        // Este caso não deveria acontecer devido à verificação acima, mas mantido por segurança
+        throw new Error('No AI provider available');
       }
     } catch (primaryError) {
-      functions.logger.warn('Primary AI provider failed after retries, trying fallback:', primaryError);
+      functions.logger.warn('Primary AI provider failed after retries, trying fallback:', {
+        error: primaryError instanceof Error ? primaryError.message : String(primaryError),
+        openaiAvailable: !!openai,
+        geminiAvailable: !!geminiModel,
+      });
       
       // Try fallback com retry também
       if (openai && geminiModel) {
         try {
-          responseMessage = await callGemini(conversationHistory, SYSTEM_PROMPT, 3);
+          functions.logger.info('Trying Gemini as fallback provider');
+          responseMessage = await callGemini(conversationHistory, SYSTEM_PROMPT, geminiModel, 3);
           provider = 'gemini-fallback';
         } catch (fallbackError) {
-          functions.logger.error('Fallback AI provider also failed after retries:', fallbackError);
+          functions.logger.error('Fallback AI provider also failed after retries:', {
+            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
           throw new functions.https.HttpsError(
             'internal',
-            'AI service unavailable after multiple attempts. Please try again later.'
+            'Serviço de IA indisponível após múltiplas tentativas. Tente novamente mais tarde.'
           );
         }
       } else {
+        // Se não há fallback disponível, retornar erro mais específico
+        const errorMessage = primaryError instanceof Error ? primaryError.message : String(primaryError);
+        functions.logger.error('AI provider failed and no fallback available:', {
+          error: errorMessage,
+          openaiAvailable: !!openai,
+          geminiAvailable: !!geminiModel,
+        });
         throw new functions.https.HttpsError(
           'internal',
-          'AI service unavailable. Please try again later.'
+          `Serviço de IA indisponível: ${errorMessage}. Tente novamente mais tarde.`
         );
       }
     }
@@ -341,22 +397,27 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
       // Garantir que o documento existe antes de atualizar
       const conversationDoc = await conversationRef.get();
       if (!conversationDoc.exists) {
+        // Criar conversa se não existir
         await conversationRef.set({
           userId: context.auth!.uid,
+          type: 'ai',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastMessage: responseMessage,
+        });
+      } else {
+        // Atualizar apenas se existir
+        await conversationRef.update({
+          lastMessage: responseMessage,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       }
       
+      // Salvar mensagem da IA
       await conversationRef.collection('messages').add({
         role: 'assistant',
         content: responseMessage,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      // Update conversation updatedAt
-      await conversationRef.update({
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
 
@@ -388,11 +449,14 @@ export const aiChatProxy = functions.https.onCall(async (data, context) => {
 /**
  * Get conversation history
  */
-export const getConversationHistory = functions.https.onCall(async (data, context) => {
+export const getConversationHistory = functions.runWith({
+  secrets: ['GEMINI_API_KEY'], // OPENAI_API_KEY é opcional
+}).https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {conversationId} = data;
 
     if (!conversationId) {
@@ -438,11 +502,14 @@ export const getConversationHistory = functions.https.onCall(async (data, contex
 /**
  * Create new conversation
  */
-export const createConversation = functions.https.onCall(async (data, context) => {
+export const createConversation = functions.runWith({
+  secrets: ['GEMINI_API_KEY'], // OPENAI_API_KEY é opcional
+}).https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
 
     const conversationRef = await db.collection('conversations').add({
       userId: context.auth!.uid,
@@ -462,11 +529,14 @@ export const createConversation = functions.https.onCall(async (data, context) =
 /**
  * List user conversations
  */
-export const listConversations = functions.https.onCall(async (data, context) => {
+export const listConversations = functions.runWith({
+  secrets: ['GEMINI_API_KEY'], // OPENAI_API_KEY é opcional
+}).https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
 
     const conversationsSnapshot = await db.collection('conversations')
       .where('userId', '==', context.auth!.uid)

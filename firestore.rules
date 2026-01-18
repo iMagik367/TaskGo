@@ -32,54 +32,38 @@ service cloud.firestore {
     }
     
     // ==========================================
-    // USERS COLLECTION
+    // USERS COLLECTION - ISOLAMENTO COMPLETO
     // ==========================================
     
     match /users/{userId} {
-      // Leitura: Próprio usuário, moderadores e admins
-      // Também permite queries de listagem por role para usuários autenticados
-      allow read: if isOwner(userId) || isModeratorOrAdmin() 
-                  || (isAuthenticated() && (resource == null || true));
+      // Leitura: Apenas o próprio usuário, moderadores e admins
+      // BLOQUEIA queries de listagem que retornariam dados de outros usuários
+      allow read: if isOwner(userId) || isModeratorOrAdmin();
       
       // Criação: Apenas o próprio usuário pode criar seu documento inicial
-      // Role é definido por Cloud Functions (setInitialUserRole)
       allow create: if isOwner(userId) 
                     && request.resource.data.uid == userId
                     && request.resource.data.keys().hasAll(['uid', 'email']);
       
       // Atualização: Apenas o próprio usuário pode atualizar (exceto role)
-      // Role só pode ser alterado por admins via Cloud Functions
       allow update: if isOwner(userId)
                     && !('role' in request.resource.data.diff(resource.data).affectedKeys())
                     && !('roleUpdatedAt' in request.resource.data.diff(resource.data).affectedKeys())
                     && !('roleUpdatedBy' in request.resource.data.diff(resource.data).affectedKeys());
       
-      // Admins podem atualizar qualquer campo (incluindo role) - mas usar Cloud Functions preferencialmente
+      // Admins podem atualizar qualquer campo
       allow update: if isAdmin();
       
-      // Exclusão: Apenas admins ou o próprio usuário (através de Cloud Function)
+      // Exclusão: Apenas admins (via Cloud Function)
       allow delete: if isAdmin();
       
-      // Subcoleções de usuário
-      match /services/{serviceId} {
-        // Leitura: Apenas leitura através de Cloud Functions
-        // App não deve ler diretamente - usar Cloud Functions
-        allow read: if isAuthenticated();
-        
-        // Escrita: BLOQUEADA - usar Cloud Functions (createService, updateService, deleteService)
-        allow write: if false;
-      }
+      // ==========================================
+      // SUBCOLEÇÕES PRIVADAS DO USUÁRIO
+      // ==========================================
       
-      match /products/{productId} {
-        // Leitura: Apenas leitura através de Cloud Functions
-        allow read: if isAuthenticated();
-        
-        // Escrita: BLOQUEADA - usar Cloud Functions (createProduct, updateProduct, deleteProduct)
-        allow write: if false;
-      }
-      
+      // ORDERS - Pedidos privados do usuário
       match /orders/{orderId} {
-        // Leitura: Cliente ou prestador relacionado, ou admins
+        // Leitura: Apenas o dono (cliente ou prestador relacionado)
         allow read: if isOwner(userId) 
                     || (isAuthenticated() && (
                         resource.data.clientId == request.auth.uid 
@@ -87,94 +71,295 @@ service cloud.firestore {
                         || isAdmin()
                       ));
         
-        // Escrita: BLOQUEADA - usar Cloud Functions (createOrder, updateOrderStatus)
+        // Escrita: BLOQUEADA - usar Cloud Functions
         allow write: if false;
       }
       
+      // PRODUCTS - Produtos privados do usuário
+      match /products/{productId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+      }
+      
+      // SERVICES - Serviços privados do usuário
+      match /services/{serviceId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+      }
+      
+      // PURCHASE_ORDERS - Pedidos de compra privados
+      match /purchase_orders/{orderId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+      }
+      
+      // CONVERSATIONS - Conversas privadas do usuário
+      match /conversations/{conversationId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+        
+        // Mensagens dentro da conversa
+        match /messages/{messageId} {
+          // Leitura: Apenas o dono da conversa
+          allow read: if isOwner(userId);
+          
+          // Escrita: BLOQUEADA - usar Cloud Functions
+          allow write: if false;
+        }
+      }
+      
+      // NOTIFICATIONS - Notificações privadas
+      match /notifications/{notificationId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+      }
+      
+      // REVIEWS - Avaliações privadas do usuário
+      match /reviews/{reviewId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+      }
+      
+      // PREFERENCES - Preferências privadas
+      match /preferences/{preferenceId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+      }
+      
+      // SETTINGS - Configurações privadas
+      match /settings/{settingId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: BLOQUEADA - usar Cloud Functions
+        allow write: if false;
+      }
+      
+      // POSTS - Posts do usuário
       match /posts/{postId} {
+        // Leitura: Qualquer usuário autenticado (feed público)
         allow read: if isAuthenticated();
+        
+        // Criação: Apenas o dono
         allow create: if isOwner(userId) 
                       && request.resource.data.userId == userId;
+        
+        // Atualização/Exclusão: Apenas o dono
         allow update, delete: if isOwner(userId) 
                               && resource.data.userId == userId;
+        
+        // Subcoleções do post
+        match /comments/{commentId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() 
+                        && request.resource.data.userId == request.auth.uid
+                        && request.resource.data.postId == postId;
+          allow update, delete: if isAuthenticated() 
+                                && resource.data.userId == request.auth.uid;
+        }
+        
+        match /ratings/{ratingId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() 
+                        && request.resource.data.userId == request.auth.uid
+                        && request.resource.data.postId == postId
+                        && request.resource.data.rating is int
+                        && request.resource.data.rating >= 1
+                        && request.resource.data.rating <= 5;
+          allow update, delete: if isAuthenticated() 
+                                && resource.data.userId == request.auth.uid;
+        }
       }
       
-      match /postInterests/{interestId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      match /blockedUsers/{blockId} {
-        allow read, write: if isOwner(userId);
-      }
-      
+      // STORIES - Stories do usuário
       match /stories/{storyId} {
+        // Leitura: Qualquer usuário autenticado (feed de stories)
         allow read: if isAuthenticated();
-        allow create: if isOwner(userId) 
-                      && request.resource.data.userId == userId;
-        allow update, delete: if isOwner(userId) 
-                              && resource.data.userId == userId;
+        
+        // Escrita: BLOQUEADA - usar Cloud Function (createStory)
+        allow write: if false;
+      }
+      
+      // BLOCKED_USERS - Usuários bloqueados (privado)
+      match /blockedUsers/{blockId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: Apenas o dono
+        allow write: if isOwner(userId);
+      }
+      
+      // POST_INTERESTS - Interesses em posts (privado)
+      match /postInterests/{interestId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: Apenas o dono
+        allow write: if isOwner(userId);
       }
     }
     
     // ==========================================
-    // SERVICES COLLECTION (pública)
+    // CONVERSATIONS COLLECTION (raiz) - ISOLAMENTO POR USUÁRIO
+    // ==========================================
+    
+    match /conversations/{conversationId} {
+      // Leitura: Apenas o dono da conversa
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
+      
+      // Criação: Apenas Cloud Functions
+      allow create: if false;
+      
+      // Atualização: Apenas o dono
+      allow update: if isAuthenticated() 
+                    && resource.data.userId == request.auth.uid;
+      
+      // Exclusão: Apenas o dono
+      allow delete: if isAuthenticated() 
+                    && resource.data.userId == request.auth.uid;
+      
+      // Mensagens dentro da conversa
+      match /messages/{messageId} {
+        // Leitura: Apenas o dono da conversa
+        allow read: if isAuthenticated() 
+                    && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
+        
+        // Escrita: Apenas Cloud Functions
+        allow write: if false;
+      }
+    }
+    
+    // ==========================================
+    // NOTIFICATIONS COLLECTION (raiz) - ISOLAMENTO POR USUÁRIO
+    // ==========================================
+    
+    match /notifications/{notificationId} {
+      // Leitura: Apenas o dono
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
+      
+      // Escrita: Apenas Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // PRODUCTS COLLECTION (pública) - Apenas produtos ativos
+    // ==========================================
+    
+    match /products/{productId} {
+      // Leitura: Qualquer usuário autenticado pode ler produtos ativos
+      allow read: if isAuthenticated() 
+                  && (resource == null || resource.data.active == true);
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // SERVICES COLLECTION (pública) - Apenas serviços ativos
     // ==========================================
     
     match /services/{serviceId} {
       // Leitura: Qualquer usuário autenticado pode ler serviços ativos
-      // Permite queries de listagem e leitura de documentos individuais
       allow read: if isAuthenticated() 
                   && (resource == null || resource.data.active == true);
       
-      // Escrita: BLOQUEADA - usar Cloud Functions (createService, updateService, deleteService)
-      // App não pode criar/editar serviços diretamente
+      // Escrita: BLOQUEADA - usar Cloud Functions
       allow write: if false;
     }
     
     // ==========================================
-    // PRODUCTS COLLECTION (pública)
-    // ==========================================
-    
-    match /products/{productId} {
-      // Leitura: Apenas produtos ativos são públicos
-      // Permite queries de listagem e leitura de documentos individuais
-      allow read: if isAuthenticated() 
-                  && (resource == null || resource.data.active == true);
-      
-      // Escrita: BLOQUEADA - usar Cloud Functions (createProduct, updateProduct, deleteProduct)
-      // App não pode criar/editar produtos diretamente
-      allow write: if false;
-    }
-    
-    // ==========================================
-    // ORDERS COLLECTION (pública)
+    // ORDERS COLLECTION (pública) - ISOLAMENTO POR USUÁRIO
     // ==========================================
     
     match /orders/{orderId} {
-      // Leitura: Cliente ou prestador relacionado, ou admins
+      // Leitura: Apenas cliente, prestador relacionado ou admins
       allow read: if isAuthenticated() 
                   && (resource.data.clientId == request.auth.uid 
                       || resource.data.providerId == request.auth.uid
                       || isAdmin());
       
-      // Escrita: BLOQUEADA - usar Cloud Functions (createOrder, updateOrderStatus)
-      // App não pode criar/editar ordens diretamente
-      // Transições de status são validadas pela Cloud Function
+      // Escrita: BLOQUEADA - usar Cloud Functions
       allow write: if false;
     }
     
     // ==========================================
-    // POSTS COLLECTION
+    // PURCHASE_ORDERS COLLECTION - ISOLAMENTO POR USUÁRIO
+    // ==========================================
+    
+    match /purchase_orders/{orderId} {
+      // Leitura: Apenas o comprador ou vendedor relacionado
+      allow read: if isAuthenticated() 
+                  && (resource.data.buyerId == request.auth.uid 
+                      || resource.data.sellerId == request.auth.uid
+                      || isAdmin());
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // SHIPMENTS COLLECTION - ISOLAMENTO POR USUÁRIO
+    // ==========================================
+    
+    match /shipments/{shipmentId} {
+      // Leitura: Apenas o dono do pedido relacionado
+      allow read: if isAuthenticated() 
+                  && (resource.data.userId == request.auth.uid
+                      || resource.data.orderUserId == request.auth.uid
+                      || isAdmin());
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // POSTS COLLECTION (raiz) - Feed público
     // ==========================================
     
     match /posts/{postId} {
+      // Leitura: Qualquer usuário autenticado
       allow read: if isAuthenticated();
       
+      // Criação: Apenas o próprio usuário
       allow create: if isAuthenticated() 
                     && request.resource.data.userId == request.auth.uid;
       
+      // Atualização/Exclusão: Apenas o dono
       allow update, delete: if isAuthenticated() 
                             && resource.data.userId == request.auth.uid;
+      
+      // Subcoleções
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() 
+                      && request.resource.data.userId == request.auth.uid
+                      && request.resource.data.postId == postId;
+        allow update, delete: if isAuthenticated() 
+                              && resource.data.userId == request.auth.uid;
+      }
       
       match /ratings/{ratingId} {
         allow read: if isAuthenticated();
@@ -187,87 +372,20 @@ service cloud.firestore {
         allow update, delete: if isAuthenticated() 
                               && resource.data.userId == request.auth.uid;
       }
-      
-      match /comments/{commentId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() 
-                      && request.resource.data.userId == request.auth.uid
-                      && request.resource.data.postId == postId;
-        allow update, delete: if isAuthenticated() 
-                              && resource.data.userId == request.auth.uid;
-      }
     }
     
     // ==========================================
-    // CONVERSATIONS COLLECTION
-    // ==========================================
-    
-    match /conversations/{conversationId} {
-      // Apenas participantes podem ler
-      allow read: if isAuthenticated() 
-                  && resource.data.userId == request.auth.uid;
-      
-      allow create: if isAuthenticated() 
-                    && request.resource.data.userId == request.auth.uid;
-      
-      allow update: if isAuthenticated() 
-                    && resource.data.userId == request.auth.uid;
-      
-      allow delete: if isAuthenticated() 
-                    && resource.data.userId == request.auth.uid;
-      
-      match /messages/{messageId} {
-        // Apenas participantes podem ler
-        allow read: if isAuthenticated() 
-                    && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
-        
-        // Mensagens podem ser criadas por participantes (ou via Cloud Function)
-        allow create: if isAuthenticated() 
-                      && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
-        
-        // Mensagens são imutáveis
-        allow update, delete: if false;
-      }
-    }
-    
-    // ==========================================
-    // NOTIFICATIONS COLLECTION
-    // ==========================================
-    
-    match /notifications/{notificationId} {
-      // Apenas o dono pode ler suas notificações
-      allow read: if isAuthenticated() 
-                  && resource.data.userId == request.auth.uid;
-      
-      // Escrita: Apenas Cloud Functions podem criar notificações
-      allow write: if false;
-    }
-    
-    // ==========================================
-    // REVIEWS COLLECTION
-    // ==========================================
-    
-    match /reviews/{reviewId} {
-      allow read: if isAuthenticated();
-      
-      // Escrita: Apenas Cloud Functions podem criar reviews
-      // Validações de estado devem ser feitas na Cloud Function
-      allow write: if false;
-    }
-    
-    // ==========================================
-    // STORIES COLLECTION
+    // STORIES COLLECTION (raiz) - Feed público
     // ==========================================
     
     match /stories/{storyId} {
-      // Leitura: Qualquer usuário autenticado pode ler stories (permite queries de listagem)
+      // Leitura: Qualquer usuário autenticado
       allow read: if isAuthenticated();
       
       // Escrita: BLOQUEADA - usar Cloud Function (createStory)
-      // App não pode criar/editar stories diretamente
       allow write: if false;
       
-      // Subcoleção story_views dentro de stories
+      // Visualizações
       match /views/{userId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() 
@@ -277,7 +395,19 @@ service cloud.firestore {
     }
     
     // ==========================================
-    // BANK ACCOUNTS COLLECTION
+    // REVIEWS COLLECTION - ISOLAMENTO POR USUÁRIO
+    // ==========================================
+    
+    match /reviews/{reviewId} {
+      // Leitura: Qualquer usuário autenticado (reviews são públicas)
+      allow read: if isAuthenticated();
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // BANK_ACCOUNTS COLLECTION - ISOLAMENTO COMPLETO
     // ==========================================
     
     match /bank_accounts/{accountId} {
@@ -285,7 +415,7 @@ service cloud.firestore {
       allow read: if isAuthenticated() 
                   && resource.data.userId == request.auth.uid;
       
-      // Criação: Apenas o próprio usuário
+      // Criação: Apenas o próprio usuário (com validações)
       allow create: if isAuthenticated() 
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', 'agency', 'account', 'accountType', 'accountHolderName', 'accountHolderDocument', 'accountHolderDocumentType', 'isDefault'])
@@ -323,12 +453,13 @@ service cloud.firestore {
                       )
                     );
       
+      // Exclusão: Apenas o dono
       allow delete: if isAuthenticated() 
                     && resource.data.userId == request.auth.uid;
     }
     
     // ==========================================
-    // AI CONVERSATIONS COLLECTION
+    // AI_USAGE COLLECTION - ISOLAMENTO POR USUÁRIO
     // ==========================================
     
     match /ai_usage/{usageId} {
@@ -341,22 +472,55 @@ service cloud.firestore {
     }
     
     // ==========================================
+    // ACCOUNT_CHANGE_REQUESTS - ISOLAMENTO POR USUÁRIO
+    // ==========================================
+    
+    match /account_change_requests/{requestId} {
+      // Leitura: Apenas o dono
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // IDENTITY_VERIFICATIONS - ISOLAMENTO POR USUÁRIO
+    // ==========================================
+    
+    match /identity_verifications/{verificationId} {
+      // Leitura: Apenas o dono ou admins
+      allow read: if isAuthenticated() 
+                  && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
+    // TWO_FACTOR_CODES - ISOLAMENTO COMPLETO
+    // ==========================================
+    
+    match /two_factor_codes/{codeId} {
+      // Leitura: Apenas o dono
+      allow read: if isAuthenticated() 
+                  && resource.data.userId == request.auth.uid;
+      
+      // Escrita: BLOQUEADA - usar Cloud Functions
+      allow write: if false;
+    }
+    
+    // ==========================================
     // CATEGORIES COLLECTIONS (públicas)
     // ==========================================
     
     match /product_categories/{categoryId} {
-      // Leitura: Qualquer usuário autenticado pode ler categorias de produtos
       allow read: if isAuthenticated();
-      
-      // Escrita: Apenas Cloud Functions ou admins
       allow write: if isAdmin();
     }
     
     match /service_categories/{categoryId} {
-      // Leitura: Qualquer usuário autenticado pode ler categorias de serviços
       allow read: if isAuthenticated();
-      
-      // Escrita: Apenas Cloud Functions ou admins
       allow write: if isAdmin();
     }
     
@@ -365,26 +529,19 @@ service cloud.firestore {
     // ==========================================
     
     match /homeBanners/{bannerId} {
-      // Leitura: Qualquer usuário autenticado pode ler banners ativos
       allow read: if isAuthenticated() 
                   && (resource == null || resource.data.active == true);
-      
-      // Escrita: Apenas Cloud Functions ou admins
       allow write: if isAdmin();
     }
     
     // ==========================================
-    // STORY VIEWS COLLECTION (raiz)
+    // STORY_VIEWS COLLECTION (raiz)
     // ==========================================
     
     match /story_views/{storyId} {
-      // Leitura: Qualquer usuário autenticado pode ler visualizações
       allow read: if isAuthenticated();
-      
-      // Escrita: Apenas Cloud Functions
       allow write: if false;
       
-      // Subcoleção views dentro de story_views
       match /views/{userId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated();
@@ -393,19 +550,16 @@ service cloud.firestore {
     }
     
     // ==========================================
-    // MODERATION LOGS COLLECTION
+    // MODERATION_LOGS COLLECTION - Apenas admins
     // ==========================================
     
     match /moderation_logs/{logId} {
-      // Apenas admins podem ler
       allow read: if isAdmin();
-      
-      // Escrita: Apenas Cloud Functions
       allow write: if false;
     }
     
     // ==========================================
-    // DEFAULT DENY ALL
+    // DEFAULT DENY ALL - Segurança máxima
     // ==========================================
     
     match /{document=**} {

@@ -1,16 +1,19 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 /**
  * Send push notification
  */
 export const sendPushNotification = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {userId, title, message, data: notificationData} = data;
 
     if (!userId || !title || !message) {
@@ -80,9 +83,10 @@ export const sendPushNotification = functions.https.onCall(async (data, context)
  */
 export const getMyNotifications = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {limit = 50, unreadOnly = false} = data;
 
     let query: admin.firestore.Query = db.collection(COLLECTIONS.NOTIFICATIONS)
@@ -114,9 +118,10 @@ export const getMyNotifications = functions.https.onCall(async (data, context) =
  */
 export const markNotificationRead = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {notificationId} = data;
 
     if (!notificationId) {
@@ -156,9 +161,10 @@ export const markNotificationRead = functions.https.onCall(async (data, context)
  */
 export const markAllNotificationsRead = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
 
     const snapshot = await db.collection(COLLECTIONS.NOTIFICATIONS)
       .where('userId', '==', context.auth!.uid)
@@ -201,7 +207,7 @@ export const onOrderStatusChange = functions.firestore
       return null;
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
 
     // Determine notification recipients based on status change
     const notifications: Array<{userId: string; title: string; message: string}> = [];

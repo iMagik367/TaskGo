@@ -79,21 +79,40 @@ class UserRepositoryImpl @Inject constructor(
                             
                             // Observar mudanças do Firestore
                             firestoreUserRepository.observeUser(userId)
-                                .distinctUntilChanged { old, new ->
-                                    // Comparar apenas campos importantes para evitar logs repetidos
-                                    old?.uid == new?.uid && old?.role == new?.role
-                                }
                                 .collect { firestoreUser ->
                                     firestoreUser?.let { user ->
                                         // CRÍTICO: Verificar se o usuário do Firestore pertence ao usuário atual
                                         if (user.uid == userId) {
+                                            android.util.Log.d("UserRepositoryImpl", "🔄 Usuário atualizado no Firestore: role=${user.role}, pendingAccountType=${user.pendingAccountType}")
+                                            
                                             // Converter UserFirestore para UserProfile usando o método de extensão
                                             val userProfile = with(com.taskgoapp.taskgo.data.mapper.UserMapper) { user.toModel() }
+                                            
+                                            // CRÍTICO: Verificar se o role mudou antes de atualizar
+                                            val existingProfile = userProfileDao.getCurrent(userId)
+                                            // Converter accountType do Entity (String) para AccountType (enum) para comparação
+                                            val existingAccountType = existingProfile?.let {
+                                                // Mapear String para AccountType de forma segura (suporta valores legacy)
+                                                when (it.accountType.uppercase()) {
+                                                    "PRESTADOR" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO // Legacy
+                                                    "VENDEDOR" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO // Legacy
+                                                    "PARCEIRO" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO
+                                                    "CLIENTE" -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
+                                                    else -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE // Default seguro
+                                                }
+                                            }
+                                            val roleChanged = existingAccountType != userProfile.accountType
+                                            
+                                            if (roleChanged) {
+                                                android.util.Log.d("UserRepositoryImpl", "🔵 Role mudou: ${existingProfile?.accountType} -> ${userProfile.accountType}")
+                                            }
+                                            
                                             // Salvar no Room apenas se pertencer ao usuário atual
                                             if (userProfile.id == userId) {
                                                 userProfileDao.upsert(userProfile.toEntity())
                                                 // Limpar dados de outros usuários
                                                 userProfileDao.clearOtherUsers(userId)
+                                                android.util.Log.d("UserRepositoryImpl", "✅ Perfil atualizado no banco local: role=${userProfile.accountType}")
                                             }
                                         } else {
                                             android.util.Log.w("UserRepositoryImpl", "Usuário do Firestore não pertence ao usuário atual: ${user.uid} != $userId")

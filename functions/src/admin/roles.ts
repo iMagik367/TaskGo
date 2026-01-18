@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from '../utils/firestore';
 import * as functions from 'firebase-functions';
 import {AppError, handleError} from '../utils/errors';
 import {assertAdmin, isValidRole, UserRole} from '../security/roles';
@@ -65,7 +66,7 @@ export const setUserRole = functions.https.onCall(
       // Sincronizar role no documento do Firestore (apenas para compatibilidade/referência)
       // IMPORTANTE: Firestore Rules devem usar request.auth.token.role (Custom Claims)
       // e NÃO confiar neste campo do documento
-      const db = admin.firestore();
+      const db = getFirestore();
       await db.collection('users').doc(userId).update({
         role: role,
         roleUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),

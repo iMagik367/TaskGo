@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.Date
 
 data class SignupUiState(
@@ -29,7 +30,9 @@ class SignupViewModel @Inject constructor(
     private val authRepository: FirebaseAuthRepository,
     private val firestoreUserRepository: FirestoreUserRepository,
     private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager,
-    private val categoriesRepository: com.taskgoapp.taskgo.domain.repository.CategoriesRepository
+    private val categoriesRepository: com.taskgoapp.taskgo.domain.repository.CategoriesRepository,
+    private val firebaseFunctionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
+    private val initialDataSyncManager: com.taskgoapp.taskgo.core.sync.InitialDataSyncManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SignupUiState())
@@ -161,62 +164,161 @@ class SignupViewModel @Inject constructor(
                                     null
                                 }
 
-                                // CRÍTICO: Sempre salvar/atualizar com o role correto baseado no accountType
-                                // A Cloud Function agora não sobrescreve o role se já existir
-                                Log.d("SignupViewModel", "Salvando usuário no Firestore com role: $role (accountType: $accountType)")
+                                // CRÍTICO: Primeiro chamar setInitialUserRole Cloud Function para definir Custom Claims
+                                Log.d("SignupViewModel", "Chamando setInitialUserRole Cloud Function com role: $role")
+                                val setRoleResult = firebaseFunctionsService.setInitialUserRole(
+                                    role, 
+                                    accountType?.name
+                                )
                                 
-                                if (existingUser != null) {
-                                    Log.d("SignupViewModel", "Usuário existente encontrado, atualizando com role: $role")
-                                    Log.d("SignupViewModel", "Role anterior: '${existingUser.role}', novo role: '$role'")
-                                    
-                                    // Atualizar documento existente - CRÍTICO: sempre atualizar o role com o accountType selecionado
-                                    val updatedUser = existingUser.copy(
-                                        displayName = name,
-                                        phone = phone,
-                                        role = role, // CRÍTICO: Sempre usar o role baseado no accountType selecionado
-                                        cpf = cpf,
-                                        rg = rg,
-                                        cnpj = cnpj,
-                                        birthDate = birthDate,
-                                        address = address,
-                                        biometricEnabled = biometricEnabled,
-                                        twoFactorEnabled = twoFactorEnabled,
-                                        twoFactorMethod = twoFactorMethod,
-                                        preferredCategories = if (accountType == AccountType.PARCEIRO && preferredCategories != null && preferredCategories.isNotEmpty()) {
-                                            preferredCategories
-                                        } else existingUser.preferredCategories, // Preservar existente se não fornecido
-                                        updatedAt = Date()
-                                    )
-                                    firestoreUserRepository.updateUser(updatedUser).fold(
-                                        onSuccess = {
-                                            Log.d("SignupViewModel", "✅ Perfil atualizado com sucesso com role: $role")
-                                            _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
-                                        },
-                                        onFailure = { exception ->
-                                            Log.e("SignupViewModel", "Erro ao atualizar perfil: ${exception.message}", exception)
-                                            _uiState.value = SignupUiState(
-                                                isLoading = false,
-                                                errorMessage = "Erro ao atualizar perfil: ${exception.message}"
+                                setRoleResult.fold(
+                                    onSuccess = { result ->
+                                        Log.d("SignupViewModel", "setInitialUserRole bem-sucedido: $result")
+                                        
+                                        // CRÍTICO: Recarregar token para obter novos Custom Claims
+                                        Log.d("SignupViewModel", "Recarregando token para obter novos Custom Claims...")
+                                        try {
+                                            firebaseUser.getIdToken(true).await()
+                                            Log.d("SignupViewModel", "Token recarregado com sucesso")
+                                        } catch (e: Exception) {
+                                            Log.e("SignupViewModel", "Erro ao recarregar token: ${e.message}", e)
+                                        }
+                                        
+                                        // Agora salvar/atualizar no Firestore
+                                        Log.d("SignupViewModel", "Salvando usuário no Firestore com role: $role (accountType: $accountType)")
+                                        
+                                        if (existingUser != null) {
+                                            Log.d("SignupViewModel", "Usuário existente encontrado, atualizando com role: $role")
+                                            Log.d("SignupViewModel", "Role anterior: '${existingUser.role}', novo role: '$role'")
+                                            
+                                            // Atualizar documento existente - CRÍTICO: sempre atualizar o role com o accountType selecionado
+                                            val updatedUser = existingUser.copy(
+                                                displayName = name,
+                                                phone = phone,
+                                                role = role, // CRÍTICO: Sempre usar o role baseado no accountType selecionado
+                                                cpf = cpf,
+                                                rg = rg,
+                                                cnpj = cnpj,
+                                                birthDate = birthDate,
+                                                address = address,
+                                                biometricEnabled = biometricEnabled,
+                                                twoFactorEnabled = twoFactorEnabled,
+                                                twoFactorMethod = twoFactorMethod,
+                                                preferredCategories = if (accountType == AccountType.PARCEIRO && preferredCategories != null && preferredCategories.isNotEmpty()) {
+                                                    preferredCategories
+                                                } else existingUser.preferredCategories, // Preservar existente se não fornecido
+                                                pendingAccountType = false, // Remover flag de pendência
+                                                updatedAt = Date()
+                                            )
+                                            firestoreUserRepository.updateUser(updatedUser).fold(
+                                                onSuccess = {
+                                                    Log.d("SignupViewModel", "✅ Perfil atualizado com sucesso com role: $role")
+                                                    
+                                                    // CRÍTICO: Forçar sincronização dos dados do usuário após atualizar role
+                                                    Log.d("SignupViewModel", "🔄 Forçando sincronização dos dados do usuário após atualização de role...")
+                                                    viewModelScope.launch {
+                                                        try {
+                                                            initialDataSyncManager.syncAllUserData()
+                                                            Log.d("SignupViewModel", "✅ Sincronização de dados concluída")
+                                                        } catch (e: Exception) {
+                                                            Log.e("SignupViewModel", "Erro ao sincronizar dados após atualização de role: ${e.message}", e)
+                                                        }
+                                                    }
+                                                    
+                                                    _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
+                                                },
+                                                onFailure = { exception ->
+                                                    Log.e("SignupViewModel", "Erro ao atualizar perfil: ${exception.message}", exception)
+                                                    // Mesmo com erro no Firestore, o Custom Claim já foi definido, então permitir cadastro
+                                                    _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
+                                                }
+                                            )
+                                        } else {
+                                            Log.d("SignupViewModel", "Usuário não existe, criando novo documento com role: $role")
+                                            // Criar novo documento com o role correto desde o início
+                                            val newUser = userFirestore.copy(
+                                                pendingAccountType = false // Remover flag de pendência
+                                            )
+                                            firestoreUserRepository.updateUser(newUser).fold(
+                                                onSuccess = {
+                                                    Log.d("SignupViewModel", "✅ Perfil criado com sucesso com role: $role")
+                                                    
+                                                    // CRÍTICO: Forçar sincronização dos dados do usuário após criar perfil
+                                                    Log.d("SignupViewModel", "🔄 Forçando sincronização dos dados do usuário após criação de perfil...")
+                                                    viewModelScope.launch {
+                                                        try {
+                                                            initialDataSyncManager.syncAllUserData()
+                                                            Log.d("SignupViewModel", "✅ Sincronização de dados concluída")
+                                                        } catch (e: Exception) {
+                                                            Log.e("SignupViewModel", "Erro ao sincronizar dados após criação de perfil: ${e.message}", e)
+                                                        }
+                                                    }
+                                                    
+                                                    _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
+                                                },
+                                                onFailure = { exception ->
+                                                    Log.e("SignupViewModel", "Erro ao criar perfil: ${exception.message}", exception)
+                                                    // Mesmo com erro no Firestore, o Custom Claim já foi definido, então permitir cadastro
+                                                    _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
+                                                }
                                             )
                                         }
-                                    )
-                                } else {
-                                    Log.d("SignupViewModel", "Usuário não existe, criando novo documento com role: $role")
-                                    // Criar novo documento com o role correto desde o início
-                                    firestoreUserRepository.updateUser(userFirestore).fold(
-                                        onSuccess = {
-                                            Log.d("SignupViewModel", "✅ Perfil criado com sucesso com role: $role")
-                                            _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
-                                        },
-                                        onFailure = { exception ->
-                                            Log.e("SignupViewModel", "Erro ao criar perfil: ${exception.message}", exception)
-                                            _uiState.value = SignupUiState(
-                                                isLoading = false,
-                                                errorMessage = "Erro ao criar perfil: ${exception.message}"
+                                    },
+                                    onFailure = { exception ->
+                                        Log.e("SignupViewModel", "Erro ao chamar setInitialUserRole: ${exception.message}", exception)
+                                        // Se falhar, tentar salvar diretamente no Firestore (fallback)
+                                        Log.d("SignupViewModel", "Tentando salvar diretamente no Firestore (fallback)...")
+                                        
+                                        if (existingUser != null) {
+                                            val updatedUser = existingUser.copy(
+                                                displayName = name,
+                                                phone = phone,
+                                                role = role,
+                                                cpf = cpf,
+                                                rg = rg,
+                                                cnpj = cnpj,
+                                                birthDate = birthDate,
+                                                address = address,
+                                                biometricEnabled = biometricEnabled,
+                                                twoFactorEnabled = twoFactorEnabled,
+                                                twoFactorMethod = twoFactorMethod,
+                                                preferredCategories = if (accountType == AccountType.PARCEIRO && preferredCategories != null && preferredCategories.isNotEmpty()) {
+                                                    preferredCategories
+                                                } else existingUser.preferredCategories,
+                                                pendingAccountType = false,
+                                                updatedAt = Date()
+                                            )
+                                            firestoreUserRepository.updateUser(updatedUser).fold(
+                                                onSuccess = {
+                                                    Log.d("SignupViewModel", "✅ Perfil atualizado (fallback)")
+                                                    _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
+                                                },
+                                                onFailure = { e ->
+                                                    Log.e("SignupViewModel", "Erro ao atualizar perfil (fallback): ${e.message}", e)
+                                                    _uiState.value = SignupUiState(
+                                                        isLoading = false,
+                                                        errorMessage = "Erro ao criar perfil: ${e.message}"
+                                                    )
+                                                }
+                                            )
+                                        } else {
+                                            val newUser = userFirestore.copy(pendingAccountType = false)
+                                            firestoreUserRepository.updateUser(newUser).fold(
+                                                onSuccess = {
+                                                    Log.d("SignupViewModel", "✅ Perfil criado (fallback)")
+                                                    _uiState.value = SignupUiState(isLoading = false, isSuccess = true)
+                                                },
+                                                onFailure = { e ->
+                                                    Log.e("SignupViewModel", "Erro ao criar perfil (fallback): ${e.message}", e)
+                                                    _uiState.value = SignupUiState(
+                                                        isLoading = false,
+                                                        errorMessage = "Erro ao criar perfil: ${e.message}"
+                                                    )
+                                                }
                                             )
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             },
                             onFailure = { exception ->
                                 Log.e("SignupViewModel", "Erro ao atualizar perfil Firebase Auth: ${exception.message}", exception)

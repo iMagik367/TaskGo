@@ -420,7 +420,8 @@ class ShipmentViewModel @Inject constructor(
             shipmentData["createdAt"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
             shipmentData["updatedAt"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
             
-            val shipmentRef = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            // CRÍTICO: Usar FirestoreHelper para garantir que está usando database 'taskgo'
+            val shipmentRef = com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
                 .collection("shipments")
                 .add(shipmentData)
                 .await()
@@ -461,7 +462,7 @@ class ShipmentViewModel @Inject constructor(
             shipmentData["createdAt"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
             shipmentData["updatedAt"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
             
-            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
                 .collection("shipments")
                 .add(shipmentData)
                 .await()

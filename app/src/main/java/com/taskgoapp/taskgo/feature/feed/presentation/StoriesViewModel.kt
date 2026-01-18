@@ -138,7 +138,23 @@ class StoriesViewModel @Inject constructor(
                     )
                     
                     val result = storiesRepository.createStory(story)
-                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    
+                    // Adicionar story localmente à lista para aparecer imediatamente
+                    // O observeStories vai sincronizar com o Firestore depois
+                    if (result is Result.Success) {
+                        val currentStories = _uiState.value.stories
+                        val updatedStories = currentStories + story
+                        val grouped = updatedStories.groupBy { it.userId }
+                        _uiState.value = _uiState.value.copy(
+                            stories = updatedStories,
+                            userStories = grouped,
+                            isLoading = false
+                        )
+                        android.util.Log.d("StoriesViewModel", "Story adicionado localmente: ${story.id}, Total stories: ${updatedStories.size}")
+                    } else {
+                        _uiState.value = _uiState.value.copy(isLoading = false)
+                    }
+                    
                     result
                 }
                 is Result.Error -> {

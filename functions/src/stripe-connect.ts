@@ -1,7 +1,9 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import Stripe from 'stripe';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -13,9 +15,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
  */
 export const createOnboardingLink = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     
     // Check if user is a provider
     const userDoc = await db.collection('users').doc(context.auth!.uid).get();
@@ -89,9 +92,10 @@ export const createOnboardingLink = functions.https.onCall(async (data, context)
  */
 export const getAccountStatus = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     
     const userDoc = await db.collection('users').doc(context.auth!.uid).get();
     if (!userDoc.exists) {
@@ -136,9 +140,10 @@ export const getAccountStatus = functions.https.onCall(async (data, context) => 
  */
 export const createDashboardLink = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     
     const userDoc = await db.collection('users').doc(context.auth!.uid).get();
     if (!userDoc.exists) {

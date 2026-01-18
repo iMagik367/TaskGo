@@ -55,7 +55,7 @@ fun AccountScreen(
     val state by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val accountChangeRepository = remember { FirestoreAccountChangeRepository(com.google.firebase.firestore.FirebaseFirestore.getInstance()) }
+    val accountChangeRepository = remember { FirestoreAccountChangeRepository(com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()) }
     val firebaseAuth = remember { FirebaseAuth.getInstance() }
     
     // Estados para diálogo de solicitação de mudança

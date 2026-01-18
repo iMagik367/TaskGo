@@ -177,13 +177,14 @@ class ProductFormViewModel @Inject constructor(
             // Preço: aceitar formato com separadores (mínimo 3 dígitos) ou validação padrão
             val cleanPrice = s.price.replace(Regex("[^0-9]"), "")
             val priceOk = Validators.isValidPrice(s.price) || cleanPrice.length >= 3
-            // Imagem obrigatória
-            val imagesOk = s.imageUris.isNotEmpty()
-            // Desconto: válido somente se > 0
-            val discountValue = s.discountPercentage.replace(Regex("[^0-9]"), "").toDoubleOrNull()?.let { it / 100 }
+            // Imagem não é obrigatória na Cloud Function, mas recomendada
+            // A validação será feita no backend se necessário
+            val imagesOk = true // Removido bloqueio de imagens - Cloud Function aceita array vazio
+            // Desconto: válido somente se featured está ativo E desconto > 0
+            val discountValue = s.discountPercentage.replace(Regex("[^0-9]"), "").toDoubleOrNull()
             val discountOk = !s.featured || (discountValue != null && discountValue > 0.0)
 
-            Log.d("ProductFormViewModel", "Validation - Title: $titleOk, Price: $priceOk, ImagesOk=$imagesOk")
+            Log.d("ProductFormViewModel", "Validation - Title: $titleOk, Price: $priceOk, ImagesOk=$imagesOk, Featured: ${s.featured}, DiscountOk: $discountOk, DiscountValue: $discountValue")
             _uiState.value = s.copy(
                 canSave = titleOk && priceOk && imagesOk && discountOk,
                 error = null

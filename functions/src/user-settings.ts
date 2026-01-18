@@ -1,7 +1,9 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 const booleanFields = (payload: Record<string, unknown>, requiredKeys: string[]): Record<string, boolean> => {
   const result: Record<string, boolean> = {};
@@ -20,6 +22,7 @@ const booleanFields = (payload: Record<string, unknown>, requiredKeys: string[])
 
 export const updateNotificationSettings = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
 
     const settings = booleanFields(data ?? {}, [
@@ -32,7 +35,8 @@ export const updateNotificationSettings = functions.https.onCall(async (data, co
     ]);
 
     const userId = context.auth!.uid;
-    await admin.firestore()
+    const db = getFirestore();
+    await db
         .collection(COLLECTIONS.USERS)
         .doc(userId)
         .set({
@@ -50,6 +54,7 @@ export const updateNotificationSettings = functions.https.onCall(async (data, co
 
 export const updatePrivacySettings = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
 
     const settings = booleanFields(data ?? {}, [
@@ -63,7 +68,8 @@ export const updatePrivacySettings = functions.https.onCall(async (data, context
     ]);
 
     const userId = context.auth!.uid;
-    await admin.firestore()
+    const db = getFirestore();
+    await db
         .collection(COLLECTIONS.USERS)
         .doc(userId)
         .set({
@@ -81,6 +87,7 @@ export const updatePrivacySettings = functions.https.onCall(async (data, context
 
 export const updateLanguagePreference = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
 
     const {language} = data ?? {};
@@ -93,7 +100,8 @@ export const updateLanguagePreference = functions.https.onCall(async (data, cont
     }
 
     const userId = context.auth!.uid;
-    await admin.firestore()
+    const db = getFirestore();
+    await db
         .collection(COLLECTIONS.USERS)
         .doc(userId)
         .set({
@@ -111,10 +119,12 @@ export const updateLanguagePreference = functions.https.onCall(async (data, cont
 
 export const getUserSettings = functions.https.onCall(async (_data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
 
     const userId = context.auth!.uid;
-    const snapshot = await admin.firestore()
+    const db = getFirestore();
+    const snapshot = await db
         .collection(COLLECTIONS.USERS)
         .doc(userId)
         .get();

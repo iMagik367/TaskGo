@@ -1,5 +1,7 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from '../utils/firestore';
 import * as functions from 'firebase-functions';
+import {validateAppCheck} from '../security/appCheck';
 
 /**
  * Script de migração: Atualiza Custom Claims de todos os usuários existentes
@@ -22,6 +24,8 @@ import * as functions from 'firebase-functions';
 export const migrateExistingUsersToCustomClaims = functions.https.onCall(
   async (data, context) => {
     try {
+      validateAppCheck(context);
+      
       // Verificar se é admin (através de Custom Claims ou documento)
       if (!context.auth) {
         throw new functions.https.HttpsError(
@@ -30,7 +34,7 @@ export const migrateExistingUsersToCustomClaims = functions.https.onCall(
         );
       }
 
-      const db = admin.firestore();
+      const db = getFirestore();
       const adminDoc = await db.collection('users').doc(context.auth.uid).get();
       const adminData = adminDoc.data();
 
@@ -189,7 +193,7 @@ export async function migrateLocal() {
       admin.initializeApp();
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
 
     const batchSize = 100;
     let nextPageToken: string | undefined;

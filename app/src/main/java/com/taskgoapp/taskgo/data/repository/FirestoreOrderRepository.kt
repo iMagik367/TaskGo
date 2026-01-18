@@ -10,6 +10,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,6 +20,7 @@ class FirestoreOrderRepository @Inject constructor(
     private val authRepository: FirebaseAuthRepository
 ) {
     // Coleção pública para queries (prestadores precisam ver ordens pendentes)
+    // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
     private val publicOrdersCollection = firestore.collection("orders")
     
     // Helper para obter subcoleção do usuário
@@ -32,14 +34,16 @@ class FirestoreOrderRepository @Inject constructor(
      */
     fun observeOrders(userId: String, role: String = "client"): Flow<List<OrderFirestore>> = callbackFlow {
         try {
-            if (role == "client") {
-                // Cliente: busca na subcoleção própria
-                val userOrdersCollection = getUserOrdersCollection(userId)
-                val listenerRegistration = userOrdersCollection
+            if (role == "client" || role == "user") {
+                // CRÍTICO: Cliente deve observar a coleção pública 'orders' onde clientId == userId
+                // A Cloud Function createOrder salva na coleção pública, não na subcoleção
+                android.util.Log.d("FirestoreOrderRepo", "🔵 Observando ordens do cliente na coleção pública: userId=$userId, role=$role")
+                val listenerRegistration = publicOrdersCollection
+                    .whereEqualTo("clientId", userId)
                     .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                     .addSnapshotListener { snapshot, error ->
                         if (error != null) {
-                            android.util.Log.e("FirestoreOrderRepo", "Erro ao observar ordens do cliente: ${error.message}", error)
+                            android.util.Log.e("FirestoreOrderRepo", "❌ Erro ao observar ordens do cliente: ${error.message}", error)
                             trySend(emptyList())
                             return@addSnapshotListener
                         }
@@ -53,6 +57,7 @@ class FirestoreOrderRepository @Inject constructor(
                             }
                         } ?: emptyList()
                         
+                        android.util.Log.d("FirestoreOrderRepo", "📦 ${orders.size} ordens encontradas para cliente $userId")
                         trySend(orders)
                     }
                 
@@ -97,15 +102,17 @@ class FirestoreOrderRepository @Inject constructor(
      */
     fun observeOrdersByStatus(userId: String, role: String, status: String): Flow<List<OrderFirestore>> = callbackFlow {
         try {
-            if (role == "client") {
-                // Cliente: busca na subcoleção própria
-                val userOrdersCollection = getUserOrdersCollection(userId)
-                val listenerRegistration = userOrdersCollection
+            if (role == "client" || role == "user") {
+                // CRÍTICO: Cliente deve observar a coleção pública 'orders' onde clientId == userId
+                // A Cloud Function createOrder salva na coleção pública, não na subcoleção
+                android.util.Log.d("FirestoreOrderRepo", "🔵 Observando ordens do cliente por status na coleção pública: userId=$userId, status=$status")
+                val listenerRegistration = publicOrdersCollection
+                    .whereEqualTo("clientId", userId)
                     .whereEqualTo("status", status)
                     .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                     .addSnapshotListener { snapshot, error ->
                         if (error != null) {
-                            android.util.Log.e("FirestoreOrderRepo", "Erro ao observar ordens por status: ${error.message}", error)
+                            android.util.Log.e("FirestoreOrderRepo", "❌ Erro ao observar ordens por status: ${error.message}", error)
                             trySend(emptyList())
                             return@addSnapshotListener
                         }
@@ -119,6 +126,7 @@ class FirestoreOrderRepository @Inject constructor(
                             }
                         } ?: emptyList()
                         
+                        android.util.Log.d("FirestoreOrderRepo", "📦 ${orders.size} ordens encontradas para cliente $userId com status $status")
                         trySend(orders)
                     }
                 
@@ -257,7 +265,7 @@ class FirestoreOrderRepository @Inject constructor(
     
     /**
      * Observa ordens de serviço disponíveis na região do usuário
-     * Usa coleção pública para prestadores verem ordens pendentes
+     * CRÍTICO: Usa coleção por localização locations/{city}_{state}/orders
      */
     fun observeLocalServiceOrders(
         city: String? = null,
@@ -266,18 +274,68 @@ class FirestoreOrderRepository @Inject constructor(
     ): Flow<List<OrderFirestore>> = callbackFlow {
         var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
-            var query = publicOrdersCollection
-                .whereEqualTo("status", "pending")
-                .whereEqualTo("deleted", false)
-            
-            // Filtrar por categoria se fornecida
-            if (category != null && category.isNotBlank()) {
-                query = query.whereEqualTo("category", category)
-            }
-            
-            listenerRegistration = query
-                .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                .addSnapshotListener { snapshot, error ->
+            // CRÍTICO: Se cidade e estado forem fornecidos, usar coleção por localização
+            if (city != null && state != null && city.isNotBlank() && state.isNotBlank()) {
+                android.util.Log.d("FirestoreOrderRepo", "🔵 Observando ordens por localização: city=$city, state=$state")
+                val locationOrdersCollection = LocationHelper.getLocationCollection(firestore, "orders", city, state)
+                
+                var query = locationOrdersCollection
+                    .whereEqualTo("status", "pending")
+                    .whereEqualTo("deleted", false)
+                
+                // Filtrar por categoria se fornecida
+                if (category != null && category.isNotBlank()) {
+                    query = query.whereEqualTo("category", category)
+                }
+                
+                listenerRegistration = query
+                    .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .addSnapshotListener { snapshot, error ->
+                        if (error != null) {
+                            android.util.Log.e("FirestoreOrderRepo", "❌ Erro ao observar ordens locais por localização: ${error.message}", error)
+                            try {
+                                trySend(emptyList())
+                            } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                                // Canal já foi fechado, ignorar
+                            } catch (e: Exception) {
+                                android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                            }
+                            return@addSnapshotListener
+                        }
+                        
+                        try {
+                            val orders = snapshot?.documents?.mapNotNull { doc ->
+                                try {
+                                    doc.toObject(OrderFirestore::class.java)?.copy(id = doc.id)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("FirestoreOrderRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
+                                    null
+                                }
+                            } ?: emptyList()
+                            
+                            android.util.Log.d("FirestoreOrderRepo", "📦 ${orders.size} ordens encontradas na localização $city, $state")
+                            trySend(orders)
+                        } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                            // Canal já foi fechado, ignorar
+                        } catch (e: Exception) {
+                            android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                        }
+                    }
+            } else {
+                // Fallback: usar coleção global se localização não fornecida
+                android.util.Log.w("FirestoreOrderRepo", "⚠️ Localização não fornecida, usando coleção global (compatibilidade)")
+                var query = publicOrdersCollection
+                    .whereEqualTo("status", "pending")
+                    .whereEqualTo("deleted", false)
+                
+                // Filtrar por categoria se fornecida
+                if (category != null && category.isNotBlank()) {
+                    query = query.whereEqualTo("category", category)
+                }
+                
+                listenerRegistration = query
+                    .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         android.util.Log.e("FirestoreOrderRepo", "Erro ao observar ordens locais: ${error.message}", error)
                         try {
@@ -317,6 +375,7 @@ class FirestoreOrderRepository @Inject constructor(
                         android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
                     }
                 }
+            }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreOrderRepo", "Erro ao configurar listener de ordens locais: ${e.message}", e)
             try {

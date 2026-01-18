@@ -379,12 +379,14 @@ object AppModule {
     fun provideServicesRepository(
         firestore: FirebaseFirestore,
         realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository,
-        authRepository: FirebaseAuthRepository
+        authRepository: FirebaseAuthRepository,
+        functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
     ): com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository {
         return com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository(
             firestore = firestore,
             realtimeRepository = realtimeRepository,
-            authRepository = authRepository
+            authRepository = authRepository,
+            functionsService = functionsService
         )
     }
     

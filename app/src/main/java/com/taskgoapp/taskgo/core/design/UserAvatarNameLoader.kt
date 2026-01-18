@@ -33,7 +33,7 @@ fun UserAvatarNameLoader(
     showName: Boolean = true
 ) {
     val userRepository = remember {
-        FirestoreUserRepository(FirebaseFirestore.getInstance())
+        FirestoreUserRepository(com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance())
     }
     
     var userName by remember { mutableStateOf<String?>(null) }

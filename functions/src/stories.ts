@@ -2,6 +2,8 @@ import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import {AppError, handleError, assertAuthenticated} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
+import {getFirestore} from './utils/firestore';
+import {getLocationCollection, getUserLocation, normalizeLocationId} from './utils/location';
 
 /**
  * Cloud Function para criar uma nova story
@@ -14,7 +16,7 @@ export const createStory = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
 
       // Validar dados de entrada
       const {
@@ -43,6 +45,30 @@ export const createStory = functions.https.onCall(
       const userData = userDoc.data();
       const userName = userData?.name || userData?.displayName || 'Usuário';
       const userAvatarUrl = userData?.avatarUrl || userData?.photoURL || null;
+
+      // CRÍTICO: Obter localização do usuário para organizar por região
+      let storyCity = '';
+      let storyState = '';
+      
+      // Tentar obter da localização fornecida primeiro
+      if (location && typeof location === 'object') {
+        storyCity = location.city || '';
+        storyState = location.state || '';
+      }
+      
+      // Se não tiver na localização, obter do perfil do usuário
+      if (!storyCity || !storyState) {
+        const userLocation = await getUserLocation(db, userId);
+        storyCity = storyCity || userLocation.city;
+        storyState = storyState || userLocation.state;
+      }
+
+      if (!storyCity || !storyState) {
+        functions.logger.warn(
+          `User ${userId} does not have location information. ` +
+          'Story will be saved in \'unknown\' location.'
+        );
+      }
 
       // Calcular expiresAt se não fornecido (24 horas a partir de agora)
       let expiresAtTimestamp: admin.firestore.Timestamp;
@@ -85,19 +111,32 @@ export const createStory = functions.https.onCall(
         caption: caption && typeof caption === 'string' ? caption.trim() : '',
         thumbnailUrl: thumbnailUrl && typeof thumbnailUrl === 'string' ? thumbnailUrl.trim() : null,
         location: locationData,
+        city: storyCity || '', // Adicionar cidade explicitamente
+        state: storyState || '', // Adicionar estado explicitamente
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         expiresAt: expiresAtTimestamp,
         viewsCount: 0,
       };
 
-      // Criar story no Firestore
-      const storyRef = await db.collection('stories').add(storyData);
+      // CRÍTICO: Salvar na coleção pública por localização
+      const locationStoriesCollection = getLocationCollection(
+        db,
+        'stories',
+        storyCity || 'unknown',
+        storyState || 'unknown'
+      );
+      const storyRef = await locationStoriesCollection.add(storyData);
       const storyId = storyRef.id;
+
+      // Também salvar na coleção global para compatibilidade (será removido futuramente)
+      await db.collection('stories').doc(storyId).set(storyData);
 
       functions.logger.info(`Story created: ${storyId}`, {
         storyId,
         userId,
         mediaType,
+        location: `${storyCity || 'unknown'}, ${storyState || 'unknown'}`,
+        locationCollection: `locations/${normalizeLocationId(storyCity || 'unknown', storyState || 'unknown')}/stories`,
         timestamp: new Date().toISOString(),
       });
 
@@ -121,7 +160,7 @@ export const cleanupExpiredStories = functions.pubsub
   .schedule('every 24 hours')
   .timeZone('America/Sao_Paulo')
   .onRun(async (_context) => {
-    const db = admin.firestore();
+    const db = getFirestore();
     const now = admin.firestore.Timestamp.now();
     const twentyFourHoursAgo = admin.firestore.Timestamp.fromMillis(
       now.toMillis() - 24 * 60 * 60 * 1000
@@ -130,30 +169,60 @@ export const cleanupExpiredStories = functions.pubsub
     try {
       functions.logger.info('Iniciando limpeza de stories expiradas...');
       
-      // Buscar stories expiradas
-      const expiredStoriesQuery = db.collection('stories')
-        .where('expiresAt', '<=', twentyFourHoursAgo)
-        .limit(500); // Processar em lotes de 500
+      // CRÍTICO: Limpar stories de todas as localizações
+      // Buscar todas as localizações primeiro
+      const locationsSnapshot = await db.collection('locations').get();
+      let totalDeletedCount = 0;
 
-      const snapshot = await expiredStoriesQuery.get();
-      
-      if (snapshot.empty) {
-        functions.logger.info('Nenhuma story expirada encontrada.');
-        return null;
+      if (locationsSnapshot.empty) {
+        functions.logger.info('Nenhuma localização encontrada.');
+        return { deletedCount: 0 };
       }
 
-      const batch = db.batch();
-      let deletedCount = 0;
+      // Processar cada localização
+      for (const locationDoc of locationsSnapshot.docs) {
+        const locationId = locationDoc.id;
+        const storiesCollection = locationDoc.ref.collection('stories');
+        
+        // Buscar stories expiradas nesta localização
+        const expiredStoriesQuery = storiesCollection
+          .where('expiresAt', '<=', twentyFourHoursAgo)
+          .limit(500); // Processar em lotes de 500
 
-      snapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-        deletedCount++;
-      });
+        const snapshot = await expiredStoriesQuery.get();
+        
+        if (!snapshot.empty) {
+          const batch = db.batch();
+          snapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+            totalDeletedCount++;
+          });
+          await batch.commit();
+          functions.logger.info(
+            `Limpeza concluída para ${locationId}: ` +
+            `${snapshot.docs.length} stories expiradas removidas.`
+          );
+        }
+      }
 
-      await batch.commit();
-      functions.logger.info(`Limpeza concluída: ${deletedCount} stories expiradas removidas.`);
+      // Também limpar da coleção global (compatibilidade)
+      const globalExpiredStoriesQuery = db.collection('stories')
+        .where('expiresAt', '<=', twentyFourHoursAgo)
+        .limit(500);
 
-      return { deletedCount };
+      const globalSnapshot = await globalExpiredStoriesQuery.get();
+      if (!globalSnapshot.empty) {
+        const batch = db.batch();
+        globalSnapshot.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+          totalDeletedCount++;
+        });
+        await batch.commit();
+      }
+
+      functions.logger.info(`Limpeza geral concluída: ${totalDeletedCount} stories expiradas removidas.`);
+
+      return { deletedCount: totalDeletedCount };
     } catch (error) {
       functions.logger.error('Erro ao limpar stories expiradas:', error);
       throw error;

@@ -25,7 +25,7 @@ fun OrderChatNavigationScreen(
     LaunchedEffect(orderId) {
         try {
             // Instanciar repositories diretamente
-            val firestore = FirebaseFirestore.getInstance()
+            val firestore = com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
             val authRepository = FirebaseAuthRepository(com.google.firebase.auth.FirebaseAuth.getInstance())
             val orderRepository = FirestoreOrderRepository(firestore, authRepository)
             val userRepository = FirestoreUserRepository(firestore)

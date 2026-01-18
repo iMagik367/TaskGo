@@ -39,6 +39,13 @@ fun MyServiceOrdersScreen(
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(ServiceOrderTab.ACTIVE) }
     
+    // CRÍTICO: Forçar recarregamento quando a tela é aberta
+    // Isso garante que ordens recém-criadas apareçam imediatamente
+    LaunchedEffect(Unit) {
+        android.util.Log.d("MyServiceOrdersScreen", "🔄 Tela aberta, forçando recarregamento de ordens...")
+        viewModel.refreshOrders()
+    }
+    
     // Filtrar ordens baseado na aba selecionada
     val filteredOrders = when (selectedTab) {
         ServiceOrderTab.ACTIVE -> uiState.orders.filter { 

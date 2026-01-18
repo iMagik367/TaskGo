@@ -1,5 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
+import {validateAppCheck} from './security/appCheck';
 
 /**
  * Migra usuários existentes de provider/seller para partner (Parceiro)
@@ -12,21 +14,22 @@ import * as admin from 'firebase-admin';
  * - Atualiza accountType no Firestore (se existir campo separado)
  */
 export const migrateToPartner = functions.https.onCall(async (data, context) => {
-  // Verificar se é admin ou autenticado (ajustar conforme necessário)
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'Usuário não autenticado'
-    );
-  }
-
-  const batchSize = data.batchSize || 100; // Processar em lotes
-  const dryRun = data.dryRun !== false; // Por padrão, apenas simular (dry run)
-
-  const db = admin.firestore();
-  const usersCollection = db.collection('users');
-
   try {
+    validateAppCheck(context);
+    
+    // Verificar se é admin ou autenticado (ajustar conforme necessário)
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Usuário não autenticado'
+      );
+    }
+
+    const batchSize = data.batchSize || 100; // Processar em lotes
+    const dryRun = data.dryRun !== false; // Por padrão, apenas simular (dry run)
+
+    const db = getFirestore();
+    const usersCollection = db.collection('users');
     let migratedCount = 0;
     const errorCount = 0; // Nunca incrementado, mantido para compatibilidade
     const errors: string[] = [];
@@ -157,7 +160,7 @@ export const migrateToPartnerHttp = functions.https.onRequest(async (req, res) =
     const dryRun = req.query.dryRun !== 'false'; // Por padrão, dry run
     const batchSize = parseInt(req.query.batchSize as string) || 100;
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const usersCollection = db.collection('users');
 
     let migratedCount = 0;

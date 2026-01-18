@@ -1,5 +1,7 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import {validateAppCheck} from './security/appCheck';
+import {getFirestore} from './utils/firestore';
 
 /**
  * Triggered when a new user is created in Firebase Auth
@@ -7,7 +9,7 @@ import * as functions from 'firebase-functions';
  * IMPORTANTE: Usa merge para não sobrescrever campos já definidos pelo app (como role)
  */
 export const onUserCreate = functions.auth.user().onCreate(async (user) => {
-  const db = admin.firestore();
+  const db = getFirestore();
   
   try {
     const userRef = db.collection('users').doc(user.uid);
@@ -110,7 +112,7 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
  * Removes user data from Firestore
  */
 export const onUserDelete = functions.auth.user().onDelete(async (user) => {
-  const db = admin.firestore();
+  const db = getFirestore();
   const batch = db.batch();
   
   try {
@@ -144,16 +146,18 @@ export const onUserDelete = functions.auth.user().onDelete(async (user) => {
  * Function to promote user to provider
  */
 export const promoteToProvider = functions.https.onCall(async (data, context) => {
-  const db = admin.firestore();
+  const db = getFirestore();
   
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'User must be authenticated'
-    );
-  }
-
   try {
+    validateAppCheck(context);
+    
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'User must be authenticated'
+      );
+    }
+
     await db.collection('users').doc(context.auth.uid).update({
       role: 'provider',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -163,6 +167,9 @@ export const promoteToProvider = functions.https.onCall(async (data, context) =>
     return {success: true};
   } catch (error) {
     functions.logger.error('Error promoting user to provider:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
     throw new functions.https.HttpsError(
       'internal',
       'Failed to promote user'
@@ -174,28 +181,29 @@ export const promoteToProvider = functions.https.onCall(async (data, context) =>
  * Function to approve provider documents
  */
 export const approveProviderDocuments = functions.https.onCall(async (data, context) => {
-  const db = admin.firestore();
+  const db = getFirestore();
   
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-  }
-
-  // Check if user is admin
-  const adminDoc = await db.collection('users').doc(context.auth.uid).get();
-  if (!adminDoc.exists || adminDoc.data()?.role !== 'admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
-  }
-
-  const {providerId, documents} = data;
-
-  if (!providerId || !documents) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Provider ID and documents are required'
-    );
-  }
-
   try {
+    validateAppCheck(context);
+    
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    // Check if user is admin
+    const adminDoc = await db.collection('users').doc(context.auth.uid).get();
+    if (!adminDoc.exists || adminDoc.data()?.role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    }
+
+    const {providerId, documents} = data;
+
+    if (!providerId || !documents) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Provider ID and documents are required'
+      );
+    }
     await db.collection('users').doc(providerId).update({
       documents: documents,
       documentsApproved: true,
@@ -218,6 +226,9 @@ export const approveProviderDocuments = functions.https.onCall(async (data, cont
     return {success: true};
   } catch (error) {
     functions.logger.error('Error approving documents:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
     throw new functions.https.HttpsError('internal', 'Failed to approve documents');
   }
 });

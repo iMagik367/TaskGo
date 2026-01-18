@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
+import {getFirestore} from './utils/firestore';
 /**
  * Webhook para receber notificações do Google Play Billing
  * Este endpoint deve ser configurado no Google Play Console
@@ -14,7 +15,7 @@ export const googlePlayBillingWebhook = functions.https.onRequest(async (req, re
       return;
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
 
     switch (notificationType) {
       case 1: // SUBSCRIPTION_RECOVERED

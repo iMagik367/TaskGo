@@ -1,7 +1,7 @@
 @echo off
 echo ========================================
 echo Building AAB Release Bundle
-echo Versao: 1.0.79 (Code: 80)
+echo Versao: 1.0.86 (Code: 86)
 echo ========================================
 echo.
 

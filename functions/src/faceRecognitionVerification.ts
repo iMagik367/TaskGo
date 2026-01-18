@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import {ImageAnnotatorClient} from '@google-cloud/vision';
 import * as https from 'https';
 import * as http from 'http';
@@ -96,7 +97,7 @@ export const processIdentityVerification = functions.database
       });
 
       // Atualizar Firestore
-      const userRef = admin.firestore().collection('users').doc(userId);
+      const userRef = getFirestore().collection('users').doc(userId);
       await userRef.update({
         identityVerified: isApproved,
         identityVerificationStatus: finalStatus,
@@ -441,18 +442,8 @@ async function downloadImageFromUrl(url: string): Promise<Buffer> {
 export const startIdentityVerification = functions.https.onCall(async (data, context) => {
   try {
     // Validar App Check
-    if (context.app === undefined && 
-        process.env.FUNCTIONS_EMULATOR !== 'true' && 
-        process.env.NODE_ENV !== 'development') {
-      functions.logger.warn('App Check token missing for startIdentityVerification', {
-        uid: context.auth?.uid,
-        timestamp: new Date().toISOString(),
-      });
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'App Check validation failed'
-      );
-    }
+    const {validateAppCheck} = await import('./security/appCheck');
+    validateAppCheck(context);
     
     // Verificar autenticação
     if (!context.auth) {
@@ -488,7 +479,7 @@ export const startIdentityVerification = functions.https.onCall(async (data, con
     });
 
     // Atualizar Firestore
-    const userRef = admin.firestore().collection('users').doc(userId);
+    const userRef = getFirestore().collection('users').doc(userId);
     await userRef.update({
       documentFront: documentFrontUrl,
       documentBack: documentBackUrl || null,

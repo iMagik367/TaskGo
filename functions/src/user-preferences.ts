@@ -1,7 +1,9 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
+import {validateAppCheck} from './security/appCheck';
 
 /**
  * Update user preferences (categories)
@@ -9,9 +11,10 @@ import {assertAuthenticated, handleError} from './utils/errors';
  */
 export const updateUserPreferences = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const {categories} = data; // Array of category names: ["Montagem", "Reforma", ...]
 
     if (!Array.isArray(categories)) {
@@ -43,9 +46,10 @@ export const updateUserPreferences = functions.https.onCall(async (data, context
  */
 export const getUserPreferences = functions.https.onCall(async (data, context) => {
   try {
+    validateAppCheck(context);
     assertAuthenticated(context);
     
-    const db = admin.firestore();
+    const db = getFirestore();
     const userId = context.auth!.uid;
     
     const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();

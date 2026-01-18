@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import Stripe from 'stripe';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
@@ -22,7 +23,7 @@ function getStripe(): Stripe {
 export const checkAndRefundUnshippedOrders = functions.pubsub
   .schedule('every 5 minutes')
   .onRun(async (_context) => {
-    const db = admin.firestore();
+    const db = getFirestore();
     const now = Date.now();
     const thirtyMinutesAgo = now - (30 * 60 * 1000); // 30 minutes in milliseconds
 

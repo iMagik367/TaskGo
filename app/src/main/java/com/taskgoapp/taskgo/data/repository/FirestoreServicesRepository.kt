@@ -15,7 +15,8 @@ import javax.inject.Singleton
 class FirestoreServicesRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository,
-    private val authRepository: FirebaseAuthRepository
+    private val authRepository: FirebaseAuthRepository,
+    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 ) {
     // Coleção pública para queries (visualização de serviços por outros usuários)
     private val publicServicesCollection = firestore.collection("services")
@@ -194,45 +195,30 @@ class FirestoreServicesRepository @Inject constructor(
                 return Result.failure(Exception("providerId não corresponde ao usuário atual"))
             }
             
-            val serviceData = service.copy(
-                createdAt = java.util.Date(),
-                updatedAt = java.util.Date()
+            // Usar Cloud Function createService (backend como autoridade)
+            val result = functionsService.createService(
+                title = service.title,
+                description = service.description,
+                category = service.category,
+                price = service.price,
+                latitude = service.latitude,
+                longitude = service.longitude,
+                active = service.active
             )
             
-            // Criar na subcoleção do usuário (dados privados)
-            val userServicesCollection = getUserServicesCollection(service.providerId)
-            val docRef = userServicesCollection.add(serviceData).await()
-            val serviceId = docRef.id
-            
-            // Criar também na coleção pública (para queries eficientes)
-            try {
-                publicServicesCollection.document(serviceId).set(serviceData).await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreServicesRepo", "Erro ao salvar na coleção pública: ${e.message}")
-                // Não falhar se pública falhar, mas logar o erro
-            }
-            
-            // Salvar também no Realtime Database para sincronização em tempo real
-            try {
-                val realtimeData = mapOf(
-                    "id" to serviceId,
-                    "providerId" to service.providerId,
-                    "title" to service.title,
-                    "description" to service.description,
-                    "category" to service.category,
-                    "price" to service.price,
-                    "active" to service.active,
-                    "latitude" to (service.latitude ?: ""),
-                    "longitude" to (service.longitude ?: ""),
-                    "createdAt" to (service.createdAt?.time ?: System.currentTimeMillis()),
-                    "updatedAt" to (service.updatedAt?.time ?: System.currentTimeMillis())
-                )
-                realtimeRepository.saveService(serviceId, realtimeData)
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreServicesRepo", "Erro ao salvar no Realtime DB: ${e.message}")
-            }
-            
-            Result.success(serviceId)
+            result.fold(
+                onSuccess = { data ->
+                    val serviceId = data["serviceId"] as? String
+                        ?: return Result.failure(Exception("Service ID não retornado pela Cloud Function"))
+                    
+                    android.util.Log.d("FirestoreServicesRepo", "Serviço criado com sucesso via Cloud Function: $serviceId")
+                    Result.success(serviceId)
+                },
+                onFailure = { error ->
+                    android.util.Log.e("FirestoreServicesRepo", "Erro ao criar serviço via Cloud Function: ${error.message}", error)
+                    Result.failure(error)
+                }
+            )
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao criar serviço: ${e.message}", e)
             Result.failure(e)
@@ -253,42 +239,29 @@ class FirestoreServicesRepository @Inject constructor(
                 return Result.failure(Exception("Não é possível atualizar serviço de outro usuário"))
             }
             
-            val serviceData = service.copy(
-                id = serviceId,
-                updatedAt = java.util.Date()
+            // Usar Cloud Function updateService (backend como autoridade)
+            val updates = mutableMapOf<String, Any>().apply {
+                put("title", service.title)
+                put("description", service.description)
+                put("category", service.category)
+                put("price", service.price)
+                service.latitude?.let { put("latitude", it) }
+                service.longitude?.let { put("longitude", it) }
+                put("active", service.active)
+            }
+            
+            val result = functionsService.updateService(serviceId, updates)
+            
+            result.fold(
+                onSuccess = {
+                    android.util.Log.d("FirestoreServicesRepo", "Serviço atualizado com sucesso via Cloud Function: $serviceId")
+                    Result.success(Unit)
+                },
+                onFailure = { error ->
+                    android.util.Log.e("FirestoreServicesRepo", "Erro ao atualizar serviço via Cloud Function: ${error.message}", error)
+                    Result.failure(error)
+                }
             )
-            
-            // Atualizar na subcoleção do usuário
-            val userServicesCollection = getUserServicesCollection(service.providerId)
-            userServicesCollection.document(serviceId).set(serviceData).await()
-            
-            // Atualizar também na coleção pública
-            try {
-                publicServicesCollection.document(serviceId).set(serviceData).await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreServicesRepo", "Erro ao atualizar na coleção pública: ${e.message}")
-            }
-            
-            // Atualizar também no Realtime Database
-            try {
-                val realtimeData = mapOf(
-                    "id" to serviceId,
-                    "providerId" to service.providerId,
-                    "title" to service.title,
-                    "description" to service.description,
-                    "category" to service.category,
-                    "price" to service.price,
-                    "active" to service.active,
-                    "latitude" to (service.latitude ?: ""),
-                    "longitude" to (service.longitude ?: ""),
-                    "updatedAt" to (service.updatedAt?.time ?: System.currentTimeMillis())
-                )
-                realtimeRepository.saveService(serviceId, realtimeData)
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreServicesRepo", "Erro ao atualizar no Realtime DB: ${e.message}")
-            }
-            
-            Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao atualizar serviço: ${e.message}", e)
             Result.failure(e)
@@ -300,6 +273,28 @@ class FirestoreServicesRepository @Inject constructor(
      * Atualiza tanto na subcoleção do usuário quanto na coleção pública
      */
     suspend fun deleteService(serviceId: String): Result<Unit> {
+        return try {
+            // Usar Cloud Function deleteService (backend como autoridade)
+            val result = functionsService.deleteService(serviceId)
+            
+            result.fold(
+                onSuccess = {
+                    android.util.Log.d("FirestoreServicesRepo", "Serviço deletado com sucesso via Cloud Function: $serviceId")
+                    Result.success(Unit)
+                },
+                onFailure = { error ->
+                    android.util.Log.e("FirestoreServicesRepo", "Erro ao deletar serviço via Cloud Function: ${error.message}", error)
+                    Result.failure(error)
+                }
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("FirestoreServicesRepo", "Erro ao deletar serviço: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    @Deprecated("Usar deleteService que usa Cloud Function")
+    suspend fun deleteServiceOld(serviceId: String): Result<Unit> {
         return try {
             val currentUserId = authRepository.getCurrentUser()?.uid
                 ?: return Result.failure(Exception("Usuário não autenticado"))

@@ -1,9 +1,11 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from '../utils/firestore';
 import * as functions from 'firebase-functions';
 import {AppError, handleError, assertAuthenticated} from '../utils/errors';
 import {validateAppCheck} from '../security/appCheck';
 import {getUserRole} from '../security/roles';
 import {COLLECTIONS} from '../utils/constants';
+import {getLocationCollection, getUserLocation, normalizeLocationId} from '../utils/location';
 
 /**
  * Cria um novo produto
@@ -17,7 +19,7 @@ export const createProduct = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
 
       // Verificar role do usuário (primeiro Custom Claims, depois documento)
       let userRole: string;
@@ -95,6 +97,17 @@ export const createProduct = functions.https.onCall(
         );
       }
 
+      // CRÍTICO: Obter localização do usuário para organizar por região
+      const userLocation = await getUserLocation(db, userId);
+      const {city, state} = userLocation;
+
+      if (!city || !state) {
+        functions.logger.warn(
+          `User ${userId} does not have location information. ` +
+          'Product will be saved in \'unknown\' location.'
+        );
+      }
+
       // Criar dados do produto
       const productData = {
         sellerId: userId,
@@ -106,15 +119,26 @@ export const createProduct = functions.https.onCall(
         stock: stock !== undefined ? stock : null,
         active: active === true,
         status: 'active', // Apenas produtos com status "active" são públicos
+        city: city || '', // Adicionar cidade explicitamente
+        state: state || '', // Adicionar estado explicitamente
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
-      // Criar produto na coleção pública (para queries eficientes)
-      const productRef = await db.collection(COLLECTIONS.PRODUCTS || 'products').add(productData);
+      // CRÍTICO: Salvar na coleção pública por localização
+      const locationProductsCollection = getLocationCollection(
+        db,
+        COLLECTIONS.PRODUCTS || 'products',
+        city || 'unknown',
+        state || 'unknown'
+      );
+      const productRef = await locationProductsCollection.add(productData);
       const productId = productRef.id;
 
-      // Criar também na subcoleção do usuário (para organização)
+      // Também salvar na coleção global para compatibilidade (será removido futuramente)
+      await db.collection(COLLECTIONS.PRODUCTS || 'products').doc(productId).set(productData);
+
+      // Criar também na subcoleção do usuário (para organização - dados privados)
       await db
         .collection(COLLECTIONS.USERS)
         .doc(userId)
@@ -127,6 +151,8 @@ export const createProduct = functions.https.onCall(
         sellerId: userId,
         category,
         price,
+        location: `${city || 'unknown'}, ${state || 'unknown'}`,
+        locationCollection: `locations/${normalizeLocationId(city || 'unknown', state || 'unknown')}/products`,
         timestamp: new Date().toISOString(),
       });
 
@@ -153,7 +179,7 @@ export const updateProduct = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
       const {productId, updates} = data;
 
       if (!productId || typeof productId !== 'string') {
@@ -261,7 +287,7 @@ export const deleteProduct = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
       const {productId} = data;
 
       if (!productId || typeof productId !== 'string') {

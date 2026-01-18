@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import Stripe from 'stripe';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
@@ -31,7 +32,7 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     return;
   }
 
-  const db = admin.firestore();
+  const db = getFirestore();
 
   try {
     switch (event.type) {

@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import {getFirestore} from '../utils/firestore';
 import * as functions from 'firebase-functions';
 import {AppError, handleError, assertAuthenticated} from '../utils/errors';
 import {validateAppCheck} from '../security/appCheck';
@@ -19,7 +20,7 @@ export const setInitialUserRole = functions.https.onCall(
       assertAuthenticated(context);
 
       const userId = context.auth!.uid;
-      const db = admin.firestore();
+      const db = getFirestore();
       const {role, accountType} = data;
 
       // Validar parâmetros
@@ -59,9 +60,18 @@ export const setInitialUserRole = functions.https.onCall(
       const userData = userDoc.data();
       const existingRole = userData?.role;
 
-      // Se já tem role definido e não é "client" (padrão), não permitir mudança
-      // Apenas admins podem mudar roles após definição inicial
-      if (existingRole && existingRole !== 'client' && existingRole !== 'user') {
+      // CRÍTICO: Permitir mudança de 'user'/'client' para 'partner'/'provider'/'seller'
+      // Bloquear apenas se já tiver um role definitivo diferente de 'user'/'client'
+      const defaultRoles = ['user', 'client'];
+      const isDefaultRole = existingRole && defaultRoles.includes(existingRole);
+      
+      if (existingRole && !isDefaultRole) {
+        // Se já tem role definitivo (partner, provider, seller, admin, etc), não permitir mudança
+        // Apenas admins podem mudar roles após definição inicial
+        functions.logger.warn(
+          `User ${userId} already has definitive role: ${existingRole}. ` +
+          `Attempted to set: ${finalRole}. Only admins can change roles.`
+        );
         throw new AppError(
           'failed-precondition',
           `User already has role: ${existingRole}. Only admins can change roles.`,
@@ -74,16 +84,28 @@ export const setInitialUserRole = functions.https.onCall(
       const existingCustomClaims = userRecord.customClaims || {};
       const existingCustomClaimsRole = existingCustomClaims.role;
 
-      // Se já tem Custom Claims com role diferente de "user"/"client", não permitir
-      if (existingCustomClaimsRole && 
-          existingCustomClaimsRole !== 'user' && 
-          existingCustomClaimsRole !== 'client') {
+      // CRÍTICO: Permitir mudança de 'user'/'client' para outros roles
+      // Bloquear apenas se já tiver um role definitivo diferente de 'user'/'client'
+      const isDefaultCustomClaim = existingCustomClaimsRole && 
+                                   defaultRoles.includes(existingCustomClaimsRole);
+      
+      if (existingCustomClaimsRole && !isDefaultCustomClaim) {
+        // Se já tem Custom Claim definitivo, não permitir mudança
+        functions.logger.warn(
+          `User ${userId} already has definitive Custom Claim role: ${existingCustomClaimsRole}. ` +
+          `Attempted to set: ${finalRole}. Only admins can change roles.`
+        );
         throw new AppError(
           'failed-precondition',
           `User already has Custom Claim role: ${existingCustomClaimsRole}. Only admins can change roles.`,
           400,
         );
       }
+      
+      functions.logger.info(
+        `Setting role for user ${userId}: existingRole=${existingRole}, ` +
+        `existingCustomClaim=${existingCustomClaimsRole}, finalRole=${finalRole}`
+      );
 
       // Definir Custom Claims no Firebase Auth (autoridade única)
       await admin.auth().setCustomUserClaims(userId, {

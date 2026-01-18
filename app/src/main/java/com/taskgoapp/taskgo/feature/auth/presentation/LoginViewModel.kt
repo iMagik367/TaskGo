@@ -13,6 +13,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.Date
 
 data class LoginUiState(
@@ -28,7 +29,8 @@ class LoginViewModel @Inject constructor(
     private val authRepository: FirebaseAuthRepository,
     private val firestoreUserRepository: FirestoreUserRepository,
     private val initialDataSyncManager: com.taskgoapp.taskgo.core.sync.InitialDataSyncManager,
-    private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager
+    private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager,
+    private val firebaseFunctionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -449,73 +451,135 @@ class LoginViewModel @Inject constructor(
                 
                 Log.d("LoginViewModel", "Criando/atualizando perfil no Firestore com AccountType: $accountType, role: $role")
                 
-                // Verificar se o documento já existe antes de atualizar
-                val existingUser = try {
-                    firestoreUserRepository.getUser(firebaseUser.uid)
-                } catch (e: Exception) {
-                    Log.w("LoginViewModel", "Erro ao verificar usuário existente: ${e.message}")
-                    null
-                }
+                // CRÍTICO: Primeiro chamar setInitialUserRole Cloud Function para definir Custom Claims
+                Log.d("LoginViewModel", "🔵 Chamando setInitialUserRole Cloud Function...")
+                Log.d("LoginViewModel", "   Parâmetros: role=$role, accountType=${accountType.name}, userId=${firebaseUser.uid}")
+                val setRoleResult = firebaseFunctionsService.setInitialUserRole(role, accountType.name)
                 
-                // Preservar createdAt se o usuário já existir
-                val createdAt = existingUser?.createdAt ?: Date()
-                
-                val userFirestore = UserFirestore(
-                    uid = firebaseUser.uid,
-                    email = firebaseUser.email ?: "",
-                    displayName = firebaseUser.displayName,
-                    photoURL = firebaseUser.photoUrl?.toString(),
-                    role = role, // CRÍTICO: Definir role corretamente
-                    pendingAccountType = false, // CRÍTICO: Remover flag para que dialog não apareça mais
-                    profileComplete = existingUser?.profileComplete ?: false,
-                    verified = firebaseUser.isEmailVerified,
-                    createdAt = createdAt, // Preservar data de criação original
-                    updatedAt = Date()
-                )
-                
-                Log.d("LoginViewModel", "Usuário antes de atualizar: ${existingUser?.uid}, role: ${existingUser?.role}, pendingAccountType: ${existingUser?.pendingAccountType}")
-                Log.d("LoginViewModel", "Dados a serem salvos: role=$role, pendingAccountType=false")
-                
-                firestoreUserRepository.updateUser(userFirestore).fold(
-                    onSuccess = {
-                        Log.d("LoginViewModel", "Perfil atualizado com sucesso no Firestore. AccountType: $accountType, role: $role, pendingAccountType: false")
-                        preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                setRoleResult.fold(
+                    onSuccess = { result ->
+                        Log.d("LoginViewModel", "✅ setInitialUserRole bem-sucedido: $result")
+                        val resultRole = result["role"] as? String ?: "não encontrado"
+                        Log.d("LoginViewModel", "   Role retornado pela CF: $resultRole")
                         
-                        // Verificar se o role foi salvo corretamente após atualização
-                        kotlinx.coroutines.delay(1000) // Aguardar mais tempo para garantir que a atualização foi processada
-                        val verifyUser = try {
+                        // CRÍTICO: Recarregar token para obter novos Custom Claims
+                        Log.d("LoginViewModel", "Recarregando token para obter novos Custom Claims...")
+                        try {
+                            firebaseUser.getIdToken(true).await()
+                            Log.d("LoginViewModel", "Token recarregado com sucesso")
+                        } catch (e: Exception) {
+                            Log.e("LoginViewModel", "Erro ao recarregar token: ${e.message}", e)
+                        }
+                        
+                        // Verificar se o documento já existe antes de atualizar
+                        val existingUser = try {
                             firestoreUserRepository.getUser(firebaseUser.uid)
                         } catch (e: Exception) {
-                            Log.w("LoginViewModel", "Erro ao verificar usuário após atualização: ${e.message}")
+                            Log.w("LoginViewModel", "Erro ao verificar usuário existente: ${e.message}")
                             null
                         }
-                        val savedRole = verifyUser?.role?.lowercase() ?: "não encontrado"
-                        val savedPending = verifyUser?.pendingAccountType ?: false
-                        Log.d("LoginViewModel", "VERIFICAÇÃO CRÍTICA - role salvo: $savedRole (esperado: $role), pendingAccountType: $savedPending (esperado: false)")
                         
-                        if (savedRole != role.lowercase() || savedPending == true) {
-                            Log.e("LoginViewModel", "ERRO: Dados não foram persistidos corretamente! Tentando atualizar novamente...")
-                            // Tentar atualizar novamente
-                            firestoreUserRepository.updateUser(userFirestore).fold(
-                                onSuccess = {
-                                    Log.d("LoginViewModel", "Segunda tentativa de atualização bem-sucedida")
-                                    checkTwoFactorAndNavigate(verifyUser ?: userFirestore, firebaseUser)
-                                },
-                                onFailure = { e ->
-                                    Log.e("LoginViewModel", "Erro na segunda tentativa de atualização: ${e.message}")
-                                    checkTwoFactorAndNavigate(verifyUser ?: userFirestore, firebaseUser)
+                        // Preservar createdAt se o usuário já existir
+                        val createdAt = existingUser?.createdAt ?: Date()
+                        
+                        val userFirestore = UserFirestore(
+                            uid = firebaseUser.uid,
+                            email = firebaseUser.email ?: "",
+                            displayName = firebaseUser.displayName,
+                            photoURL = firebaseUser.photoUrl?.toString(),
+                            role = role, // CRÍTICO: Definir role corretamente
+                            pendingAccountType = false, // CRÍTICO: Remover flag para que dialog não apareça mais
+                            profileComplete = existingUser?.profileComplete ?: false,
+                            verified = firebaseUser.isEmailVerified,
+                            createdAt = createdAt, // Preservar data de criação original
+                            updatedAt = Date()
+                        )
+                        
+                        Log.d("LoginViewModel", "Usuário antes de atualizar: ${existingUser?.uid}, role: ${existingUser?.role}, pendingAccountType: ${existingUser?.pendingAccountType}")
+                        Log.d("LoginViewModel", "Dados a serem salvos: role=$role, pendingAccountType=false")
+                        
+                        firestoreUserRepository.updateUser(userFirestore).fold(
+                            onSuccess = {
+                                Log.d("LoginViewModel", "✅ Perfil atualizado com sucesso no Firestore. AccountType: $accountType, role: $role, pendingAccountType: false")
+                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                
+                                // CRÍTICO: Forçar sincronização dos dados do usuário após atualizar role
+                                Log.d("LoginViewModel", "🔄 Forçando sincronização dos dados do usuário após atualização de role...")
+                                viewModelScope.launch {
+                                    try {
+                                        initialDataSyncManager.syncAllUserData()
+                                        Log.d("LoginViewModel", "✅ Sincronização de dados concluída")
+                                    } catch (e: Exception) {
+                                        Log.e("LoginViewModel", "Erro ao sincronizar dados após atualização de role: ${e.message}", e)
+                                    }
                                 }
-                            )
-                        } else {
-                            // Verificar 2FA e navegar para todos os tipos de conta
-                            checkTwoFactorAndNavigate(verifyUser ?: userFirestore, firebaseUser)
-                        }
+                                
+                                // Verificar se o role foi salvo corretamente após atualização
+                                kotlinx.coroutines.delay(500) // Aguardar para garantir que a atualização foi processada
+                                val verifyUser = try {
+                                    firestoreUserRepository.getUser(firebaseUser.uid)
+                                } catch (e: Exception) {
+                                    Log.w("LoginViewModel", "Erro ao verificar usuário após atualização: ${e.message}")
+                                    null
+                                }
+                                val savedRole = verifyUser?.role?.lowercase() ?: "não encontrado"
+                                val savedPending = verifyUser?.pendingAccountType ?: false
+                                Log.d("LoginViewModel", "🔍 VERIFICAÇÃO CRÍTICA - role salvo: $savedRole (esperado: $role), pendingAccountType: $savedPending (esperado: false)")
+                                
+                                // Verificar 2FA e navegar
+                                checkTwoFactorAndNavigate(verifyUser ?: userFirestore, firebaseUser)
+                            },
+                            onFailure = { exception ->
+                                Log.e("LoginViewModel", "Erro ao atualizar perfil no Firestore: ${exception.message}", exception)
+                                // Mesmo com erro no Firestore, o Custom Claim já foi definido, então permitir login
+                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                checkTwoFactorAndNavigate(existingUser ?: userFirestore, firebaseUser)
+                            }
+                        )
                     },
                     onFailure = { exception ->
-                        Log.e("LoginViewModel", "Erro ao criar perfil: ${exception.message}", exception)
-                        // Mesmo com erro, permitir login (usuário pode ser criado pela Cloud Function)
-                        preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
-                        _uiState.value = LoginUiState(isLoading = false, isSuccess = true, requiresTwoFactor = false, showAccountTypeDialog = false)
+                        Log.e("LoginViewModel", "❌ ERRO ao chamar setInitialUserRole: ${exception.message}", exception)
+                        Log.e("LoginViewModel", "   Exception type: ${exception.javaClass.simpleName}")
+                        Log.e("LoginViewModel", "   Stack trace:", exception)
+                        // Se falhar, tentar salvar diretamente no Firestore (fallback)
+                        val existingUser = try {
+                            firestoreUserRepository.getUser(firebaseUser.uid)
+                        } catch (e: Exception) {
+                            Log.w("LoginViewModel", "Erro ao verificar usuário existente: ${e.message}")
+                            null
+                        }
+                        
+                        val createdAt = existingUser?.createdAt ?: Date()
+                        val userFirestore = UserFirestore(
+                            uid = firebaseUser.uid,
+                            email = firebaseUser.email ?: "",
+                            displayName = firebaseUser.displayName,
+                            photoURL = firebaseUser.photoUrl?.toString(),
+                            role = role,
+                            pendingAccountType = false,
+                            profileComplete = existingUser?.profileComplete ?: false,
+                            verified = firebaseUser.isEmailVerified,
+                            createdAt = createdAt,
+                            updatedAt = Date()
+                        )
+                        
+                        firestoreUserRepository.updateUser(userFirestore).fold(
+                            onSuccess = {
+                                Log.d("LoginViewModel", "Perfil atualizado no Firestore (fallback)")
+                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                checkTwoFactorAndNavigate(userFirestore, firebaseUser)
+                            },
+                            onFailure = { e ->
+                                Log.e("LoginViewModel", "Erro ao criar perfil (fallback): ${e.message}", e)
+                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                _uiState.value = LoginUiState(
+                                    isLoading = false,
+                                    errorMessage = "Erro ao criar perfil: ${e.message}",
+                                    showAccountTypeDialog = false,
+                                    requiresTwoFactor = false
+                                )
+                            }
+                        )
                     }
                 )
             } catch (e: Exception) {

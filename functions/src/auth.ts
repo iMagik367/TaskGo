@@ -178,6 +178,109 @@ export const promoteToProvider = functions.https.onCall(async (data, context) =>
 });
 
 /**
+ * Busca email do usuário por CPF ou CNPJ para login de parceiros
+ * Permite busca sem autenticação (para login), mas valida App Check
+ */
+export const getUserEmailByDocument = functions.https.onCall(async (data, context) => {
+  try {
+    // Validar App Check (sem autenticação - necessário para login)
+    validateAppCheck(context);
+    
+    const {document} = data;
+    
+    if (!document || typeof document !== 'string') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Document (CPF/CNPJ) is required'
+      );
+    }
+    
+    // Remover formatação do documento
+    const cleanDocument = document.replace(/[^0-9]/g, '');
+    
+    if (cleanDocument.length !== 11 && cleanDocument.length !== 14) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Invalid document format. Must be CPF (11 digits) or CNPJ (14 digits)'
+      );
+    }
+    
+    const db = getFirestore();
+    
+    // Buscar por CPF
+    if (cleanDocument.length === 11) {
+      const cpfQuery = await db.collection('users')
+        .where('cpf', '==', cleanDocument)
+        .limit(1)
+        .get();
+      
+      if (!cpfQuery.empty) {
+        const userData = cpfQuery.docs[0].data();
+        const role = userData?.role?.toLowerCase() || '';
+        
+        // Verificar se é parceiro
+        if (role !== 'partner' && role !== 'provider') {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Este CPF/CNPJ não está cadastrado como parceiro'
+          );
+        }
+        
+        functions.logger.info(`Email found for CPF: ${cleanDocument}`);
+        return {
+          email: userData.email,
+          role: userData.role,
+          uid: cpfQuery.docs[0].id
+        };
+      }
+    }
+    
+    // Buscar por CNPJ
+    if (cleanDocument.length === 14) {
+      const cnpjQuery = await db.collection('users')
+        .where('cnpj', '==', cleanDocument)
+        .limit(1)
+        .get();
+      
+      if (!cnpjQuery.empty) {
+        const userData = cnpjQuery.docs[0].data();
+        const role = userData?.role?.toLowerCase() || '';
+        
+        // Verificar se é parceiro
+        if (role !== 'partner' && role !== 'provider') {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Este CPF/CNPJ não está cadastrado como parceiro'
+          );
+        }
+        
+        functions.logger.info(`Email found for CNPJ: ${cleanDocument}`);
+        return {
+          email: userData.email,
+          role: userData.role,
+          uid: cnpjQuery.docs[0].id
+        };
+      }
+    }
+    
+    // Não encontrado
+    throw new functions.https.HttpsError(
+      'not-found',
+      'CPF/CNPJ não encontrado. Verifique se você já possui cadastro.'
+    );
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    functions.logger.error('Error getting user email by document:', error);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Erro ao buscar usuário. Tente novamente.'
+    );
+  }
+});
+
+/**
  * Function to approve provider documents
  */
 export const approveProviderDocuments = functions.https.onCall(async (data, context) => {

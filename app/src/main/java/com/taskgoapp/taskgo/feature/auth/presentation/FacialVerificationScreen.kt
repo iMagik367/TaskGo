@@ -395,6 +395,16 @@ fun FacialVerificationScreen(
                                         scope.launch {
                                             viewModel.setSelfie(uri)
                                             
+                                            // CRÍTICO: Fazer upload dos documentos antes da verificação facial
+                                            val uploadResult = viewModel.uploadDocumentsForVerification()
+                                            if (uploadResult.isFailure) {
+                                                verificationMessage = "Erro ao fazer upload dos documentos. Tente novamente."
+                                                kotlinx.coroutines.delay(2000)
+                                                isCapturing = false
+                                                isVerifying = false
+                                                return@launch
+                                            }
+                                            
                                             // Aguardar um pouco para o usuário ver a tela de loading
                                             kotlinx.coroutines.delay(500)
                                             

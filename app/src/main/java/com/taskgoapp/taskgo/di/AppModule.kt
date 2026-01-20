@@ -96,13 +96,17 @@ object AppModule {
         productDao: ProductDao,
         cartDao: CartDao,
         syncManager: SyncManager,
-        realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository
+        realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository,
+        userRepository: UserRepository,
+        locationStateManager: com.taskgoapp.taskgo.core.location.LocationStateManager
     ): ProductsRepository {
         return if (BuildConfig.USE_FIREBASE) {
             FirestoreProductsRepositoryImpl(
                 firestore = firestore,
                 firebaseAuth = firebaseAuth,
-                cartDao = cartDao
+                cartDao = cartDao,
+                userRepository = userRepository,
+                locationStateManager = locationStateManager
             )
         } else {
             ProductsRepositoryImpl(productDao, cartDao)
@@ -149,9 +153,10 @@ object AppModule {
     @Singleton
     fun provideFirestoreOrderRepository(
         firestore: FirebaseFirestore,
-        authRepository: FirebaseAuthRepository
+        authRepository: FirebaseAuthRepository,
+        locationStateManager: com.taskgoapp.taskgo.core.location.LocationStateManager
     ): com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository {
-        return com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository(firestore, authRepository)
+        return com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository(firestore, authRepository, locationStateManager)
     }
     
     @Provides
@@ -380,13 +385,15 @@ object AppModule {
         firestore: FirebaseFirestore,
         realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository,
         authRepository: FirebaseAuthRepository,
-        functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+        functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
+        locationStateManager: com.taskgoapp.taskgo.core.location.LocationStateManager
     ): com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository {
         return com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository(
             firestore = firestore,
             realtimeRepository = realtimeRepository,
             authRepository = authRepository,
-            functionsService = functionsService
+            functionsService = functionsService,
+            locationStateManager = locationStateManager
         )
     }
     
@@ -406,9 +413,10 @@ object AppModule {
     @Singleton
     fun provideFeedRepository(
         firestore: FirebaseFirestore,
-        authRepository: FirebaseAuthRepository
+        authRepository: FirebaseAuthRepository,
+        locationStateManager: com.taskgoapp.taskgo.core.location.LocationStateManager
     ): com.taskgoapp.taskgo.domain.repository.FeedRepository {
-        return com.taskgoapp.taskgo.data.repository.FirestoreFeedRepository(firestore, authRepository)
+        return com.taskgoapp.taskgo.data.repository.FirestoreFeedRepository(firestore, authRepository, locationStateManager)
     }
     
     @Provides
@@ -416,9 +424,11 @@ object AppModule {
     fun provideStoriesRepository(
         firestore: FirebaseFirestore,
         authRepository: FirebaseAuthRepository,
-        functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+        functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
+        userRepository: UserRepository,
+        locationStateManager: com.taskgoapp.taskgo.core.location.LocationStateManager
     ): com.taskgoapp.taskgo.domain.repository.StoriesRepository {
-        return com.taskgoapp.taskgo.data.repository.FirestoreStoriesRepository(firestore, authRepository, functionsService)
+        return com.taskgoapp.taskgo.data.repository.FirestoreStoriesRepository(firestore, authRepository, functionsService, userRepository, locationStateManager)
     }
     
     @Provides

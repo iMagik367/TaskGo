@@ -64,16 +64,13 @@ class LocalServiceOrdersViewModel @Inject constructor(
     ) { location, filters, selectedCategory ->
         Triple(location, filters, selectedCategory)
     }.flatMapLatest { (location, filters, selectedCategory) ->
-        val (city, state) = location
+        // ✅ observeLocalServiceOrders agora usa LocationStateManager automaticamente
         // Usar categoria selecionada se houver, senão usar do filtro
         val categoryToFilter = selectedCategory ?: filters.selectedCategories.firstOrNull()
-        orderRepository.observeLocalServiceOrders(
-            city = city,
-            state = state,
-            category = categoryToFilter
-        ).map { allOrders ->
-            applyFilters(allOrders, filters)
-        }
+        orderRepository.observeLocalServiceOrders(category = categoryToFilter)
+            .map { allOrders ->
+                applyFilters(allOrders, filters)
+            }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     
     init {
@@ -117,7 +114,8 @@ class LocalServiceOrdersViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 userRepository.observeCurrentUser().collect { user ->
-                    _userLocation.value = user?.city to null
+                    // UserProfile agora tem state diretamente (adicionado na versão 88)
+                    _userLocation.value = user?.city to user?.state
                 }
             } catch (e: Exception) {
                 // Se não conseguir obter localização, usar null

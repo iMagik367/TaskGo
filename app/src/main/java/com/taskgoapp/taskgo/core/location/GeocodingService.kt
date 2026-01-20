@@ -20,7 +20,7 @@ class GeocodingService @Inject constructor() {
     companion object {
         private const val TAG = "GeocodingService"
         private const val GEOCODING_API = "https://maps.googleapis.com/maps/api/geocode/json"
-        private const val API_KEY = "AIzaSyD9JIxB5lzJUou1hUHBxNMGC4DVjEtIY_k"
+        private const val API_KEY = "AIzaSyB4QiV69mSkvXuy8SdN71MAIygKIFOtmXo"
     }
     
     /**

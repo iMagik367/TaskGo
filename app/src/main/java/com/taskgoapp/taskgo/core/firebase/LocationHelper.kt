@@ -29,19 +29,29 @@ object LocationHelper {
         val normalizedCity = normalize(city)
         val normalizedState = normalize(state)
         
-        if (normalizedCity.isEmpty() && normalizedState.isEmpty()) {
-            return "unknown"
+        val locationId = if (normalizedCity.isEmpty() && normalizedState.isEmpty()) {
+            "unknown"
+        } else if (normalizedCity.isEmpty()) {
+            normalizedState
+        } else if (normalizedState.isEmpty()) {
+            normalizedCity
+        } else {
+            "${normalizedCity}_${normalizedState}"
         }
         
-        if (normalizedCity.isEmpty()) {
-            return normalizedState
-        }
+        // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de normalização (Frontend)
+        Log.d("LocationTrace", """
+            📍 FRONTEND LOCATION TRACE
+            Function: normalizeLocationId
+            RawCity: $city
+            RawState: $state
+            NormalizedCity: $normalizedCity
+            NormalizedState: $normalizedState
+            LocationId: $locationId
+            Timestamp: ${java.util.Date()}
+        """.trimIndent())
         
-        if (normalizedState.isEmpty()) {
-            return normalizedCity
-        }
-        
-        return "${normalizedCity}_${normalizedState}"
+        return locationId
     }
     
     /**
@@ -88,27 +98,60 @@ object LocationHelper {
         state: String
     ): com.google.firebase.firestore.CollectionReference {
         val locationId = normalizeLocationId(city, state)
-        Log.d(TAG, "🔵 Acessando coleção por localização: locations/$locationId/$collection (city=$city, state=$state)")
+        val firestorePath = "locations/$locationId/$collection"
+        
+        // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de coleção (Frontend)
+        Log.d("LocationTrace", """
+            📍 FRONTEND LOCATION TRACE
+            Function: getLocationCollection
+            City: $city
+            State: $state
+            LocationId: $locationId
+            Firestore Path: $firestorePath
+            Collection: $collection
+            Timestamp: ${java.util.Date()}
+        """.trimIndent())
+        
         return firestore.collection("locations").document(locationId).collection(collection)
     }
     
     /**
      * Obtém cidade e estado do usuário a partir do UserRepository
      * Retorna Pair(city, state)
-     * CRÍTICO: UserProfile não tem state diretamente, precisa acessar via UserFirestore.address.state
+     * CRÍTICO: UserProfile agora tem state diretamente (adicionado na versão 88)
      */
     suspend fun getUserLocation(
         userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository
     ): Pair<String, String> {
         return try {
             val user = userRepository.observeCurrentUser().first()
-            val city = user?.city ?: ""
-            // CRÍTICO: UserProfile não tem state, retornar vazio (será obtido via FirestoreUserRepository quando necessário)
-            val state = ""
-            Log.d(TAG, "📍 Localização do usuário obtida: city=$city, state=$state (state obtido separadamente via FirestoreUserRepository)")
+            val city = user?.city?.takeIf { it.isNotBlank() } ?: ""
+            val state = user?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            val locationId = normalizeLocationId(city, state)
+            
+            // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização do usuário (Frontend)
+            Log.d("LocationTrace", """
+                📍 FRONTEND LOCATION TRACE
+                Function: getUserLocation
+                RawCity: ${user?.city ?: "null"}
+                RawState: ${user?.state ?: "null"}
+                City: $city
+                State: $state
+                LocationId: $locationId
+                Timestamp: ${java.util.Date()}
+            """.trimIndent())
+            
             city to state
         } catch (e: Exception) {
-            Log.e(TAG, "Erro ao obter localização do usuário: ${e.message}", e)
+            Log.e(TAG, "Erro ao obter localizacao do usuario: ${e.message}", e)
+            // 📍 LOCATION TRACE: Erro ao obter localização
+            Log.w("LocationTrace", """
+                📍 FRONTEND LOCATION TRACE
+                Function: getUserLocation
+                Error: ${e.message}
+                Timestamp: ${java.util.Date()}
+            """.trimIndent())
             "" to ""
         }
     }

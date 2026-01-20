@@ -63,6 +63,22 @@ export const createStory = functions.https.onCall(
         storyState = storyState || userLocation.state;
       }
 
+      // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
+      const locationId = normalizeLocationId(storyCity || 'unknown', storyState || 'unknown');
+      const firestorePath = `locations/${locationId}/stories`;
+      
+      functions.logger.info('📍 LOCATION TRACE', {
+        function: 'createStory',
+        userId,
+        city: storyCity || 'unknown',
+        state: storyState || 'unknown',
+        locationId,
+        firestorePath,
+        rawCity: storyCity || '',
+        rawState: storyState || '',
+        timestamp: new Date().toISOString(),
+      });
+
       if (!storyCity || !storyState) {
         functions.logger.warn(
           `User ${userId} does not have location information. ` +
@@ -127,6 +143,16 @@ export const createStory = functions.https.onCall(
       );
       const storyRef = await locationStoriesCollection.add(storyData);
       const storyId = storyRef.id;
+
+      // 📍 PROOF: Logar path REAL onde o dado foi gravado
+      functions.logger.info('📍 BACKEND WRITE PROOF', {
+        function: 'createStory',
+        storyId,
+        actualFirestorePath: `locations/${locationId}/stories/${storyId}`,
+        collectionId: locationStoriesCollection.id,
+        documentId: storyId,
+        timestamp: new Date().toISOString(),
+      });
 
       // Também salvar na coleção global para compatibilidade (será removido futuramente)
       await db.collection('stories').doc(storyId).set(storyData);

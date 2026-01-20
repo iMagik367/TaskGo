@@ -14,11 +14,25 @@ import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.data.mapper.StoryMapper
 import com.taskgoapp.taskgo.domain.repository.StoriesRepository
 import com.taskgoapp.taskgo.core.firebase.LocationHelper
+import com.taskgoapp.taskgo.core.location.LocationStateManager
+import com.taskgoapp.taskgo.core.location.LocationState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flatMapLatest
+import android.util.Log
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.runBlocking as runBlockingKt
 import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,11 +41,14 @@ import javax.inject.Singleton
 class FirestoreStoriesRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val authRepository: FirebaseAuthRepository,
-    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
+    private val userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository,
+    private val locationStateManager: LocationStateManager
 ) : StoriesRepository {
     
-    // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
-    private val storiesCollection = firestore.collection("stories")
+    // DEBUG ONLY - Coleção global mantida apenas para compatibilidade durante migração
+    // REMOVER APÓS VALIDAÇÃO COMPLETA
+    private val storiesCollectionGlobal = firestore.collection("stories")
     private val storyViewsCollection = firestore.collection("story_views")
     
     // Helper para obter subcoleção de stories do usuário
@@ -42,29 +59,102 @@ class FirestoreStoriesRepository @Inject constructor(
         currentUserId: String,
         radiusKm: Double,
         userLocation: Pair<Double, Double>?
+    ): Flow<List<Story>> = locationStateManager.locationState
+        .flatMapLatest { locationState ->
+            when (locationState) {
+                is LocationState.Loading -> {
+                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeStories")
+                    flowOf(emptyList())
+                }
+                is LocationState.Error -> {
+                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeStories")
+                    flowOf(emptyList())
+                }
+                is LocationState.Ready -> {
+                    // ✅ Localização pronta - fazer query Firestore
+                    val locationId = locationState.locationId
+                    
+                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
+                    if (locationId == "unknown" || locationId.isBlank()) {
+                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeStories")
+                        flowOf(emptyList())
+                    } else {
+                        observeStoriesFromFirestore(locationState, currentUserId, radiusKm, userLocation)
+                    }
+                }
+            }
+        }
+    
+    private fun observeStoriesFromFirestore(
+        locationState: LocationState.Ready,
+        currentUserId: String,
+        radiusKm: Double,
+        userLocation: Pair<Double, Double>?
     ): Flow<List<Story>> = callbackFlow {
         try {
             // Timestamp de 24 horas atrás (stories não expiradas)
             val twentyFourHoursAgo = Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
             val timestamp = com.google.firebase.Timestamp(twentyFourHoursAgo)
             
-            // CRÍTICO: Tentar obter cidade e estado do usuário para observar stories da região
-            // Por enquanto, vamos usar a coleção global e filtrar por localização em memória
-            // TODO: Implementar observação por localização quando tivermos cidade/estado do usuário
+            val collectionToUse = LocationHelper.getLocationCollection(
+                firestore,
+                "stories",
+                locationState.city,
+                locationState.state
+            )
+            
+            Log.d("FirestoreStoriesRepository", """
+                📍 Querying Firestore with location:
+                City: ${locationState.city}
+                State: ${locationState.state}
+                LocationId: ${locationState.locationId}
+                Firestore Path: locations/${locationState.locationId}/stories
+            """.trimIndent())
             
             // Query: stories não expiradas, ordenadas por data de criação (mais recentes primeiro)
             // Nota: Firestore requer índice composto para múltiplos orderBy, então usamos apenas createdAt
-            val query = storiesCollection
+            val query = collectionToUse
                 .whereGreaterThan("expiresAt", timestamp)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(100) // Limitar para performance
             
             val listenerRegistration = query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    android.util.Log.e("FirestoreStoriesRepository", "Erro ao observar stories: ${error.message}", error)
+                    Log.e("FirestoreStoriesRepository", 
+                        "❌ Erro ao observar stories: ${error.message}", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
+                
+                if (snapshot == null) {
+                    Log.w("FirestoreStoriesRepository", 
+                        "⚠️ Snapshot vazio (sem stories encontradas)")
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                
+                Log.d("FirestoreStoriesRepository", 
+                    "Snapshot recebido: size=${snapshot.size()}, collection=locations/${locationState.locationId}/stories")
+                
+                // 📍 SNAPSHOT PROOF - Logar TUDO que vem do Firestore
+                Log.d("FirestoreSnapshot", """
+                    📍 FRONTEND SNAPSHOT PROOF
+                    Collection path: ${collectionToUse.path}
+                    Snapshot empty: ${snapshot.isEmpty}
+                    Snapshot size: ${snapshot.size()}
+                    Documents count: ${snapshot.documents.size}
+                """.trimIndent())
+                
+                snapshot.documents.forEachIndexed { index, doc ->
+                    Log.d("FirestoreSnapshot", """
+                        📍 FRONTEND SNAPSHOT PROOF - Document $index
+                        Doc ID: ${doc.id}
+                        Doc data keys: ${doc.data?.keys?.joinToString(", ") ?: "null"}
+                        Doc has expiresAt: ${doc.data?.containsKey("expiresAt")}
+                        Doc has createdAt: ${doc.data?.containsKey("createdAt")}
+                    """.trimIndent())
+                }
+                
                 
                 val storiesList = mutableListOf<Story>()
                 snapshot?.documents?.forEach { doc ->
@@ -165,7 +255,33 @@ class FirestoreStoriesRepository @Inject constructor(
             val twentyFourHoursAgo = Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
             val timestamp = com.google.firebase.Timestamp(twentyFourHoursAgo)
             
-            val listenerRegistration = storiesCollection
+            // CRÍTICO: Obter localização do usuário para buscar da coleção correta
+            var currentCity: String? = null
+            var currentState: String = ""
+            var collectionToUse: com.google.firebase.firestore.CollectionReference = storiesCollectionGlobal
+            
+            try {
+                val user = withTimeoutOrNull(2000) {
+                    userRepository.observeCurrentUser().firstOrNull()
+                }
+                currentCity = user?.city?.takeIf { it.isNotBlank() }
+                currentState = user?.state?.takeIf { it.isNotBlank() } ?: ""
+                
+                if (currentCity != null && currentState.isNotBlank()) {
+                    // Usar coleção por localização
+                    collectionToUse = LocationHelper.getLocationCollection(firestore, "stories", currentCity!!, currentState)
+                    android.util.Log.d("FirestoreStoriesRepository", "🔵 Usando coleção por localização para stories do usuário: locations/${LocationHelper.normalizeLocationId(currentCity!!, currentState)}/stories")
+                } else {
+                    // Fallback: usar coleção global
+                    collectionToUse = storiesCollectionGlobal
+                    android.util.Log.w("FirestoreStoriesRepository", "⚠️ Localização não disponível para stories do usuário, usando coleção global")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("FirestoreStoriesRepository", "Erro ao obter usuário para localização de stories: ${e.message}")
+                collectionToUse = storiesCollectionGlobal
+            }
+            
+            val listenerRegistration = collectionToUse
                 .whereEqualTo("userId", userId)
                 .whereGreaterThan("expiresAt", timestamp)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -323,7 +439,7 @@ class FirestoreStoriesRepository @Inject constructor(
                     .await()
                 
                 // Incrementar contador de visualizações na story
-                storiesCollection.document(storyId).update(
+                storiesCollectionGlobal.document(storyId).update(
                     "viewsCount", FieldValue.increment(1)
                 ).await()
             }
@@ -346,7 +462,7 @@ class FirestoreStoriesRepository @Inject constructor(
             
             // Se não existe na subcoleção, verificar na coleção pública
             if (!userStoryDoc.exists()) {
-                val storyDoc = storiesCollection.document(storyId).get().await()
+                val storyDoc = storiesCollectionGlobal.document(storyId).get().await()
                 val story = storyDoc.toObject(StoryFirestore::class.java)
                 
                 // Verificar se o usuário é o dono da story
@@ -357,7 +473,7 @@ class FirestoreStoriesRepository @Inject constructor(
                 }
                 
                 // Se existe apenas na coleção pública, deletar apenas dela
-                storiesCollection.document(storyId).delete().await()
+                storiesCollectionGlobal.document(storyId).delete().await()
             } else {
                 // Se existe na subcoleção do usuário, deletar de ambas
                 // Deletar da subcoleção primeiro (fonte de verdade)
@@ -365,7 +481,7 @@ class FirestoreStoriesRepository @Inject constructor(
                 
                 // Também deletar da coleção pública para garantir sincronização imediata
                 try {
-                    storiesCollection.document(storyId).delete().await()
+                    storiesCollectionGlobal.document(storyId).delete().await()
                 } catch (e: Exception) {
                     android.util.Log.w("FirestoreStoriesRepository", "Erro ao deletar story da coleção pública: ${e.message}")
                     // Não falhar se pública falhar, a Cloud Function vai fazer a limpeza
@@ -392,7 +508,7 @@ class FirestoreStoriesRepository @Inject constructor(
             val twentyFourHoursAgo = Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
             val timestamp = com.google.firebase.Timestamp(twentyFourHoursAgo)
             
-            val snapshot = storiesCollection
+            val snapshot = storiesCollectionGlobal
                 .whereGreaterThan("expiresAt", timestamp)
                 .whereNotEqualTo("userId", currentUserId)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -416,7 +532,7 @@ class FirestoreStoriesRepository @Inject constructor(
                     
                     // Converter createdAt e expiresAt corretamente (pode vir como Long ou Timestamp)
                     val createdAtValue = data["createdAt"]
-                    val createdAt = when (createdAtValue) {
+                    val createdAt: com.google.firebase.Timestamp? = when (createdAtValue) {
                         is com.google.firebase.Timestamp -> createdAtValue
                         is Long -> com.google.firebase.Timestamp(createdAtValue / 1000, ((createdAtValue % 1000) * 1_000_000).toInt())
                         is java.util.Date -> com.google.firebase.Timestamp(createdAtValue)
@@ -424,7 +540,7 @@ class FirestoreStoriesRepository @Inject constructor(
                     }
                     
                     val expiresAtValue = data["expiresAt"]
-                    val expiresAt = when (expiresAtValue) {
+                    val expiresAt: com.google.firebase.Timestamp? = when (expiresAtValue) {
                         is com.google.firebase.Timestamp -> expiresAtValue
                         is Long -> com.google.firebase.Timestamp(expiresAtValue / 1000, ((expiresAtValue % 1000) * 1_000_000).toInt())
                         is java.util.Date -> com.google.firebase.Timestamp(expiresAtValue)
@@ -446,7 +562,9 @@ class FirestoreStoriesRepository @Inject constructor(
                         location = locationFirestore
                     )
                     
-                    val isViewed = checkIfStoryViewed(doc.id, currentUserId)
+                    val isViewed = kotlinx.coroutines.runBlocking {
+                        checkIfStoryViewed(doc.id, currentUserId)
+                    }
                     with(StoryMapper) {
                         storyFirestore.toModel(isViewed)
                     }
@@ -483,7 +601,7 @@ class FirestoreStoriesRepository @Inject constructor(
     override fun observeStoryAnalytics(storyId: String, ownerUserId: String): Flow<StoryAnalytics> = callbackFlow {
         try {
             // Verificar se a story pertence ao usuário
-            val storyDoc = storiesCollection.document(storyId).get().await()
+            val storyDoc = storiesCollectionGlobal.document(storyId).get().await()
             val storyData = storyDoc.data
             if (storyData == null || storyData["userId"] != ownerUserId) {
                 android.util.Log.w("FirestoreStoriesRepository", "Story não encontrada ou usuário não é o dono")

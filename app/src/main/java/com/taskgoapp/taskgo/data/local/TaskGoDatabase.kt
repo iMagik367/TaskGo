@@ -4,6 +4,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import android.content.Context
 import com.taskgoapp.taskgo.data.local.dao.*
 import com.taskgoapp.taskgo.data.local.entity.*
@@ -27,7 +29,7 @@ import com.taskgoapp.taskgo.data.local.converter.Converters
         CardEntity::class,
         SyncQueueEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -50,6 +52,13 @@ abstract class TaskGoDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: TaskGoDatabase? = null
 
+        // Migration de versão 7 para 8: adiciona coluna 'state' à tabela user_profile
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE user_profile ADD COLUMN state TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): TaskGoDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -57,6 +66,7 @@ abstract class TaskGoDatabase : RoomDatabase() {
                     TaskGoDatabase::class.java,
                     "taskgo_database"
                 )
+                .addMigrations(MIGRATION_7_8)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

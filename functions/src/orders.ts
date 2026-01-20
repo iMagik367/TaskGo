@@ -78,12 +78,23 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       finalState = finalState || userLocation.state;
     }
 
-    functions.logger.info(`Order location parsed: city=${finalCity}, state=${finalState}`, {
+    // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
+    const locationId = normalizeLocationId(finalCity || 'unknown', finalState || 'unknown');
+    const firestorePath = `locations/${locationId}/orders`;
+    
+    functions.logger.info('📍 LOCATION TRACE', {
+      function: 'onServiceOrderCreated',
+      userId,
+      city: finalCity || 'unknown',
+      state: finalState || 'unknown',
+      locationId,
+      firestorePath,
+      rawCity: finalCity || '',
+      rawState: finalState || '',
       originalLocation: location,
       parsedCity: city,
       parsedState: state,
-      finalCity,
-      finalState,
+      timestamp: new Date().toISOString(),
     });
 
     const orderData: OrderDocument = {
@@ -122,6 +133,16 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       // CRÍTICO: Salvar na coleção pública por localização
       const locationOrdersCollection = getLocationCollection(db, COLLECTIONS.ORDERS, finalCity, finalState);
       const orderRef = await locationOrdersCollection.add(orderData);
+      
+      // 📍 PROOF: Logar path REAL onde o dado foi gravado
+      functions.logger.info('📍 BACKEND WRITE PROOF', {
+        function: 'onServiceOrderCreated (specific service)',
+        orderId: orderRef.id,
+        actualFirestorePath: `locations/${locationId}/orders/${orderRef.id}`,
+        collectionId: locationOrdersCollection.id,
+        documentId: orderRef.id,
+        timestamp: new Date().toISOString(),
+      });
       
       // Também salvar na coleção global para compatibilidade (será removido futuramente)
       await db.collection(COLLECTIONS.ORDERS).doc(orderRef.id).set(orderData);
@@ -164,6 +185,16 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       // CRÍTICO: Salvar na coleção pública por localização
       const locationOrdersCollection = getLocationCollection(db, COLLECTIONS.ORDERS, finalCity, finalState);
       const orderRef = await locationOrdersCollection.add(orderData);
+      
+      // 📍 PROOF: Logar path REAL onde o dado foi gravado
+      functions.logger.info('📍 BACKEND WRITE PROOF', {
+        function: 'onServiceOrderCreated (open order)',
+        orderId: orderRef.id,
+        actualFirestorePath: `locations/${locationId}/orders/${orderRef.id}`,
+        collectionId: locationOrdersCollection.id,
+        documentId: orderRef.id,
+        timestamp: new Date().toISOString(),
+      });
       
       // Também salvar na coleção global para compatibilidade (será removido futuramente)
       await db.collection(COLLECTIONS.ORDERS).doc(orderRef.id).set(orderData);

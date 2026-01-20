@@ -1095,9 +1095,7 @@ fun SignUpScreen(
             
             Spacer(modifier = Modifier.height(32.dp))
             
-            // Botão Cadastrar
-            val signupViewModel: SignupViewModel = hiltViewModel()
-            val signupUiState = signupViewModel.uiState.collectAsState()
+            // Botão Cadastrar (usar o viewModel já criado acima)
             
             // Variáveis para validação e submissão
             val phoneText = phone.text
@@ -1158,7 +1156,7 @@ fun SignUpScreen(
                         selectedServiceCategories.toList()
                     } else null
                     
-                    signupViewModel.signup(
+                    viewModel.signup(
                         name = name,
                         email = email,
                         phone = phoneText,
@@ -1183,7 +1181,7 @@ fun SignUpScreen(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = TaskGoGreen
                 ),
-                enabled = !signupUiState.value.isLoading && 
+                enabled = !uiState.isLoading && 
                          name.isNotEmpty() && 
                          email.isNotEmpty() && 
                          phoneText.isNotEmpty() && 
@@ -1200,7 +1198,7 @@ fun SignUpScreen(
                          // Validação adicional: RG formatado deve ser válido (XX.XXX.XXX-X = 9 dígitos ou mais)
                          (rgText.isEmpty() || (rgText.length >= 6 && rgText.length <= 12))
             ) {
-                if (signupUiState.value.isLoading) {
+                if (uiState.isLoading) {
                     CircularProgressIndicator(
                         color = Color.White,
                         modifier = Modifier.size(20.dp)
@@ -1216,7 +1214,7 @@ fun SignUpScreen(
             }
             
             // Mensagem de erro
-            signupUiState.value.errorMessage?.let { errorMsg ->
+            uiState.errorMessage?.let { errorMsg ->
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = errorMsg,
@@ -1227,11 +1225,12 @@ fun SignUpScreen(
                 )
             }
             
-            // Navegação após sucesso - ir para verificação de documentos
-            LaunchedEffect(signupUiState.value.isSuccess) {
-                if (signupUiState.value.isSuccess) {
+            // Navegação após sucesso - ir para tela de verificação de documentos
+            LaunchedEffect(uiState.isSuccess) {
+                if (uiState.isSuccess) {
                     android.util.Log.d("SignUpScreen", "Cadastro bem-sucedido, navegando para verificação de documentos...")
-                    onNavigateToDocumentVerification()
+                    kotlinx.coroutines.delay(500) // Pequeno delay para garantir que tudo foi salvo
+                    onNavigateToDocumentVerification() // Navega para identity_verification
                 }
             }
             

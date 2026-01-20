@@ -101,6 +101,22 @@ export const createProduct = functions.https.onCall(
       const userLocation = await getUserLocation(db, userId);
       const {city, state} = userLocation;
 
+      // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
+      const locationId = normalizeLocationId(city || 'unknown', state || 'unknown');
+      const firestorePath = `locations/${locationId}/products`;
+      
+      functions.logger.info('📍 LOCATION TRACE', {
+        function: 'createProduct',
+        userId,
+        city: city || 'unknown',
+        state: state || 'unknown',
+        locationId,
+        firestorePath,
+        rawCity: city || '',
+        rawState: state || '',
+        timestamp: new Date().toISOString(),
+      });
+
       if (!city || !state) {
         functions.logger.warn(
           `User ${userId} does not have location information. ` +
@@ -134,6 +150,16 @@ export const createProduct = functions.https.onCall(
       );
       const productRef = await locationProductsCollection.add(productData);
       const productId = productRef.id;
+
+      // 📍 PROOF: Logar path REAL onde o dado foi gravado
+      functions.logger.info('📍 BACKEND WRITE PROOF', {
+        function: 'createProduct',
+        productId,
+        actualFirestorePath: `locations/${locationId}/products/${productId}`,
+        collectionId: locationProductsCollection.id,
+        documentId: productId,
+        timestamp: new Date().toISOString(),
+      });
 
       // Também salvar na coleção global para compatibilidade (será removido futuramente)
       await db.collection(COLLECTIONS.PRODUCTS || 'products').doc(productId).set(productData);

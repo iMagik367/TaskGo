@@ -67,6 +67,50 @@ class IdentityVerificationViewModel @Inject constructor(
     }
     
     /**
+     * Faz upload dos documentos antes da verificação facial
+     * CRÍTICO: Deve ser chamado antes de verifyFaceMatch() para garantir que os documentos estejam no servidor
+     */
+    suspend fun uploadDocumentsForVerification(): Result<Unit> {
+        val currentUser = auth.currentUser ?: return Result.failure(Exception("Usuário não autenticado"))
+        val state = _uiState.value
+        
+        return try {
+            // Fazer upload de todos os documentos necessários
+            val documentFrontResult = if (state.documentFrontUri != null) {
+                storageRepository.uploadDocument(currentUser.uid, "front", state.documentFrontUri!!)
+            } else null
+            
+            val documentBackResult = if (state.documentBackUri != null) {
+                storageRepository.uploadDocument(currentUser.uid, "back", state.documentBackUri!!)
+            } else null
+            
+            val selfieResult = if (state.selfieUri != null) {
+                storageRepository.uploadSelfie(currentUser.uid, state.selfieUri!!)
+            } else null
+            
+            // Atualizar URLs no estado
+            val documentFrontUrl = documentFrontResult?.getOrNull()
+            val documentBackUrl = documentBackResult?.getOrNull()
+            val selfieUrl = selfieResult?.getOrNull()
+            
+            _uiState.value = _uiState.value.copy(
+                documentFrontUrl = documentFrontUrl,
+                documentBackUrl = documentBackUrl,
+                selfieUrl = selfieUrl
+            )
+            
+            if (documentFrontUrl == null || selfieUrl == null) {
+                Result.failure(Exception("Erro ao fazer upload dos documentos necessários"))
+            } else {
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Log.e("IdentityVerificationViewModel", "Erro ao fazer upload dos documentos: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
      * Verifica se a selfie corresponde ao documento usando validação facial
      */
     suspend fun verifyFaceMatch(): Boolean {

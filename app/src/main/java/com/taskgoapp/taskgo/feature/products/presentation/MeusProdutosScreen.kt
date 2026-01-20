@@ -166,25 +166,6 @@ fun MeusProdutosScreen(
                         )
                     }
                     
-                    Button(
-                        onClick = { 
-                            // Editar produtos selecionados
-                            selectedProducts.firstOrNull()?.let { productId ->
-                                onEditarProduto(productId)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = TaskGoSuccessGreen
-                        ),
-                        enabled = selectedProducts.isNotEmpty()
-                    ) {
-                        Text(
-                            text = "Editar",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
             }
         }
@@ -221,31 +202,32 @@ private fun ProductCardWithCheckbox(
             
             Spacer(modifier = Modifier.width(12.dp))
             
-            // Product image
-            if (product.imageUris.isNotEmpty()) {
-                AsyncImage(
-                    model = product.imageUris.first(),
-                    contentDescription = "Imagem do produto ${product.title}",
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(8.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
+            // Product image - melhorado para exibir corretamente
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (product.imageUris.isNotEmpty() && product.imageUris.first().isNotBlank()) {
+                    AsyncImage(
+                        model = product.imageUris.first(),
+                        contentDescription = "Imagem do produto ${product.title}",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
                     Icon(
                         painter = painterResource(TGIcons.Package),
                         contentDescription = "Produto sem imagem",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(40.dp)
                     )
                 }
             }

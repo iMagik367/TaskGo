@@ -9,6 +9,7 @@ import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.database.FirebaseDatabase
 import com.taskgoapp.taskgo.core.firebase.FirestoreHelper
+import com.taskgoapp.taskgo.core.location.LocationStateManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -41,7 +42,7 @@ object FirebaseModule {
                 useEmulator("10.0.2.2", 8080)
             }
         } else {
-            // Production Firestore - CRÍTICO: Usar database 'taskgo' ao invés de 'default'
+            // Production Firestore - usar database padrao '(default)'
             FirestoreHelper.getInstance()
         }
         
@@ -112,6 +113,14 @@ object FirebaseModule {
         database.setPersistenceEnabled(true)
         
         return database
+    }
+    
+    @Provides
+    @Singleton
+    fun provideLocationStateManager(
+        userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository
+    ): LocationStateManager {
+        return LocationStateManager(userRepository)
     }
 }
 

@@ -6,6 +6,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -13,6 +15,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.firebase.auth.FirebaseAuth
+import com.taskgoapp.taskgo.core.theme.TaskGoError
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.design.TGIcons
@@ -20,6 +24,8 @@ import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -81,6 +87,7 @@ fun MyDataScreen(
     var showChangePhotoDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showSaveSuccess by remember { mutableStateOf(false) }
+    var showDeleteAccountConfirmation by remember { mutableStateOf(false) }
     
     LaunchedEffect(uiState) {
         if (!isEditing) {
@@ -167,7 +174,8 @@ fun MyDataScreen(
                     editedEmail = uiState.email
                     editedPhone = uiState.phone
                 },
-                onChangePassword = { showChangePasswordDialog = true }
+                onChangePassword = { showChangePasswordDialog = true },
+                onDeleteAccount = { showDeleteAccountConfirmation = true }
             )
         }
     }
@@ -192,6 +200,18 @@ fun MyDataScreen(
     if (showChangePasswordDialog) {
         ChangePasswordDialog(
             onDismiss = { showChangePasswordDialog = false }
+        )
+    }
+    
+    // Delete Account Confirmation Dialog
+    if (showDeleteAccountConfirmation) {
+        DeleteAccountDialog(
+            onDismiss = { showDeleteAccountConfirmation = false },
+            onConfirm = {
+                showDeleteAccountConfirmation = false
+                // Navegar para tela de configurações de segurança onde está o botão de excluir
+                // Ou implementar a exclusão diretamente aqui
+            }
         )
     }
     
@@ -420,7 +440,8 @@ private fun ActionButtonsSection(
     onEditClick: () -> Unit,
     onSaveClick: () -> Unit,
     onCancelClick: () -> Unit,
-    onChangePassword: () -> Unit
+    onChangePassword: () -> Unit,
+    onDeleteAccount: () -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -481,6 +502,27 @@ private fun ActionButtonsSection(
             Spacer(modifier = Modifier.width(8.dp))
             Text(stringResource(R.string.profile_change_password))
         }
+        
+        // Delete Account button
+        OutlinedButton(
+            onClick = onDeleteAccount,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Icon(
+                imageVector = androidx.compose.material.icons.Icons.Default.DeleteForever,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "Excluir Minha Conta",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
     }
 }
 
@@ -506,6 +548,97 @@ private fun InfoRow(
             fontWeight = FontWeight.Medium
         )
     }
+}
+
+@Composable
+private fun DeleteAccountDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val auth = FirebaseAuth.getInstance()
+    val currentUser = auth.currentUser
+    val functionsService = remember {
+        com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService(
+            com.google.firebase.functions.FirebaseFunctions.getInstance()
+        )
+    }
+    var isDeleting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = { if (!isDeleting) onDismiss() },
+        title = { 
+            Text(
+                "Confirmar Exclusão",
+                color = TaskGoError
+            ) 
+        },
+        text = {
+            Column {
+                Text(
+                    "Tem certeza que deseja excluir permanentemente sua conta? Esta ação não pode ser desfeita e todos os seus dados serão removidos.",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (errorMessage != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        errorMessage!!,
+                        color = TaskGoError,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (currentUser != null && !isDeleting) {
+                        isDeleting = true
+                        errorMessage = null
+                        scope.launch {
+                            try {
+                                val deleteResult = functionsService.deleteUserAccount()
+                                deleteResult.fold(
+                                    onSuccess = {
+                                        // Fazer logout após exclusão bem-sucedida
+                                        auth.signOut()
+                                        onConfirm()
+                                    },
+                                    onFailure = { error ->
+                                        errorMessage = "Erro ao excluir conta: ${error.message}"
+                                        isDeleting = false
+                                    }
+                                )
+                            } catch (e: Exception) {
+                                errorMessage = "Erro: ${e.message}"
+                                isDeleting = false
+                            }
+                        }
+                    }
+                },
+                enabled = !isDeleting && currentUser != null,
+                colors = ButtonDefaults.textButtonColors(contentColor = TaskGoError)
+            ) {
+                if (isDeleting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = TaskGoError
+                    )
+                } else {
+                    Text("Excluir", color = TaskGoError)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isDeleting
+            ) {
+                Text("Cancelar")
+            }
+        }
+    )
 }
 
 @Composable

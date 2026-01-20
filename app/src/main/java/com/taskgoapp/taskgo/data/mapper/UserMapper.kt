@@ -24,6 +24,7 @@ object UserMapper {
             email = this.email,
             phone = this.phone,
             city = this.city,
+            state = this.state,
             profession = this.profession,
             accountType = when (this.accountType) {
                 "PRESTADOR" -> AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
@@ -49,6 +50,7 @@ object UserMapper {
             email = this.email,
             phone = this.phone,
             city = this.city,
+            state = this.state,
             profession = this.profession,
             accountType = this.accountType.name,
             rating = this.rating,
@@ -74,6 +76,7 @@ object UserMapper {
             email = this.email,
             phone = this.phone,
             city = this.address?.city,
+            state = this.address?.state, // Extrair state do address
             profession = null, // UserFirestore não tem profession diretamente
             accountType = accountType,
             rating = this.rating,

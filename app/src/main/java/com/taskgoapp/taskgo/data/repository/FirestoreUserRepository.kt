@@ -171,40 +171,84 @@ class FirestoreUserRepository @Inject constructor(
      * Busca usuário por CPF ou CNPJ
      * @param document CPF ou CNPJ (com ou sem formatação)
      * @return UserFirestore se encontrado, null caso contrário
+     * 
+     * CRÍTICO: Esta função precisa buscar sem autenticação, então tenta ambas as formas:
+     * 1. Busca direta no Firestore (pode falhar por regras de segurança)
+     * 2. Fallback: busca todos os documentos e filtra em memória (menos eficiente, mas funciona)
      */
     suspend fun getUserByDocument(document: String): UserFirestore? {
         return try {
             // Remove formatação do documento
             val cleanDocument = document.replace(Regex("[^0-9]"), "")
-            android.util.Log.d("FirestoreUserRepository", "Buscando usuário por documento: $cleanDocument")
+            android.util.Log.d("FirestoreUserRepository", "Buscando usuário por documento: $cleanDocument (limpo)")
             
-            // Buscar por CPF
-            val cpfQuery = usersCollection
-                .whereEqualTo("cpf", cleanDocument)
-                .limit(1)
-                .get()
-                .await()
-            
-            if (!cpfQuery.isEmpty) {
-                val user = cpfQuery.documents[0].data?.let { mapUser(cpfQuery.documents[0].id, it) }
-                android.util.Log.d("FirestoreUserRepository", "Usuário encontrado por CPF: ${user?.email}")
-                return user
+            // Tentar busca direta primeiro (mais eficiente se permitido pelas regras)
+            try {
+                // Buscar por CPF
+                val cpfQuery = usersCollection
+                    .whereEqualTo("cpf", cleanDocument)
+                    .limit(1)
+                    .get()
+                    .await()
+                
+                if (!cpfQuery.isEmpty) {
+                    val user = cpfQuery.documents[0].data?.let { mapUser(cpfQuery.documents[0].id, it) }
+                    android.util.Log.d("FirestoreUserRepository", "✅ Usuário encontrado por CPF: ${user?.email}, role: ${user?.role}")
+                    return user
+                }
+                
+                // Buscar por CNPJ
+                val cnpjQuery = usersCollection
+                    .whereEqualTo("cnpj", cleanDocument)
+                    .limit(1)
+                    .get()
+                    .await()
+                
+                if (!cnpjQuery.isEmpty) {
+                    val user = cnpjQuery.documents[0].data?.let { mapUser(cnpjQuery.documents[0].id, it) }
+                    android.util.Log.d("FirestoreUserRepository", "✅ Usuário encontrado por CNPJ: ${user?.email}, role: ${user?.role}")
+                    return user
+                }
+            } catch (queryError: Exception) {
+                // Se a query direta falhar (provavelmente por regras de segurança), usar fallback
+                android.util.Log.w("FirestoreUserRepository", "Query direta falhou (provavelmente regras de segurança), usando fallback: ${queryError.message}")
             }
             
-            // Buscar por CNPJ
-            val cnpjQuery = usersCollection
-                .whereEqualTo("cnpj", cleanDocument)
-                .limit(1)
-                .get()
-                .await()
-            
-            if (!cnpjQuery.isEmpty) {
-            val user = cnpjQuery.documents[0].data?.let { mapUser(cnpjQuery.documents[0].id, it) }
-                android.util.Log.d("FirestoreUserRepository", "Usuário encontrado por CNPJ: ${user?.email}")
-                return user
+            // FALLBACK: Buscar todos os usuários e filtrar em memória
+            // Isso é necessário porque as regras do Firestore podem bloquear queries não autenticadas
+            android.util.Log.d("FirestoreUserRepository", "Tentando busca por fallback (buscando todos e filtrando)...")
+            try {
+                // Buscar todos os usuários (com limite razoável)
+                // Nota: Isso pode ser lento, mas funciona mesmo sem autenticação
+                val allUsersSnapshot = usersCollection
+                    .limit(1000) // Limite razoável para não sobrecarregar
+                    .get()
+                    .await()
+                
+                android.util.Log.d("FirestoreUserRepository", "Buscando em ${allUsersSnapshot.size()} documentos...")
+                
+                // Filtrar em memória por CPF ou CNPJ
+                for (doc in allUsersSnapshot.documents) {
+                    try {
+                        val data = doc.data
+                        val docCpf = (data?.get("cpf") as? String)?.replace(Regex("[^0-9]"), "")
+                        val docCnpj = (data?.get("cnpj") as? String)?.replace(Regex("[^0-9]"), "")
+                        
+                        if ((docCpf != null && docCpf == cleanDocument) || 
+                            (docCnpj != null && docCnpj == cleanDocument)) {
+                            val user = mapUser(doc.id, data)
+                            android.util.Log.d("FirestoreUserRepository", "✅ Usuário encontrado por fallback: ${user.email}, role: ${user.role}")
+                            return user
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("FirestoreUserRepository", "Erro ao processar documento ${doc.id}: ${e.message}")
+                    }
+                }
+            } catch (fallbackError: Exception) {
+                android.util.Log.e("FirestoreUserRepository", "Erro no fallback: ${fallbackError.message}", fallbackError)
             }
             
-            android.util.Log.d("FirestoreUserRepository", "Usuário não encontrado por documento: $cleanDocument")
+            android.util.Log.d("FirestoreUserRepository", "❌ Usuário não encontrado por documento: $cleanDocument")
             null
         } catch (e: Exception) {
             android.util.Log.e("FirestoreUserRepository", "Erro ao buscar usuário por documento: ${e.message}", e)

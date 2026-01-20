@@ -10,6 +10,7 @@ data class UserProfileEntity(
     val email: String,
     val phone: String?,
     val city: String?,
+    val state: String? = null, // Estado (UF) - adicionado para suporte a arquitetura regional
     val profession: String?,
     val accountType: String,
     val rating: Double?,

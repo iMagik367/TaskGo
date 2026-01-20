@@ -26,8 +26,8 @@ function getGeminiModel() {
   if (!apiKey) return null;
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Usar gemini-1.5-flash que é o modelo mais rápido e estável disponível
-    // Modelos disponíveis: gemini-1.5-flash (rápido), gemini-1.5-pro (mais preciso), gemini-pro (padrão)
+    // Usar gemini-1.5-flash que é compatível com a API v1beta
+    // Modelos disponíveis: gemini-1.5-flash (rápido), gemini-1.5-pro (mais preciso)
     // Configurações otimizadas para respostas mais rápidas
     return genAI.getGenerativeModel({
       model: 'gemini-1.5-flash',

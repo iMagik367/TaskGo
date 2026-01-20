@@ -5,6 +5,7 @@
  */
 
 import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions';
 
 /**
  * Normaliza cidade e estado para criar ID válido para coleção
@@ -25,6 +26,20 @@ export function normalizeLocationId(city: string, state: string): string {
 
   const normalizedCity = normalize(city || '');
   const normalizedState = normalize(state || '');
+
+  // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de normalização
+  functions.logger.info('📍 LOCATION TRACE', {
+    function: 'normalizeLocationId',
+    rawCity: city || '',
+    rawState: state || '',
+    normalizedCity,
+    normalizedState,
+    locationId: !normalizedCity && !normalizedState ? 'unknown' : 
+                !normalizedCity ? normalizedState :
+                !normalizedState ? normalizedCity :
+                `${normalizedCity}_${normalizedState}`,
+    timestamp: new Date().toISOString(),
+  });
 
   if (!normalizedCity && !normalizedState) {
     return 'unknown';
@@ -98,25 +113,70 @@ export async function getUserLocation(
   try {
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
+      functions.logger.warn('📍 getUserLocation: User document not found', {userId});
       return {city: '', state: ''};
     }
 
     const userData = userDoc.data();
+    
+    // CRÍTICO: Buscar state diretamente do perfil do usuário (campo adicionado na versão 88)
+    // Primeiro tentar campos diretos do usuário (prioridade)
+    const city = userData?.city || '';
+    const state = userData?.state || '';
+    
+    // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização do usuário
+    functions.logger.info('📍 LOCATION TRACE', {
+      function: 'getUserLocation',
+      userId,
+      rawCity: city,
+      rawState: state,
+      hasAddress: !!userData?.address,
+      addressCity: userData?.address?.city || userData?.address?.cityName || '',
+      addressState: userData?.address?.state || userData?.address?.stateName || '',
+      timestamp: new Date().toISOString(),
+    });
+    
+    if (city && state) {
+      const locationId = normalizeLocationId(city, state);
+      functions.logger.info('📍 getUserLocation: Using direct fields', {
+        userId,
+        city,
+        state,
+        locationId,
+      });
+      return {city, state};
+    }
+    
+    // Fallback: tentar obter de address se campos diretos não estiverem disponíveis
     const address = userData?.address;
-
     if (address) {
+      const fallbackCity = address.city || address.cityName || city || '';
+      const fallbackState = address.state || address.stateName || state || '';
+      const locationId = normalizeLocationId(fallbackCity, fallbackState);
+      functions.logger.info('📍 getUserLocation: Using address fallback', {
+        userId,
+        city: fallbackCity,
+        state: fallbackState,
+        locationId,
+      });
       return {
-        city: address.city || address.cityName || '',
-        state: address.state || address.stateName || '',
+        city: fallbackCity,
+        state: fallbackState,
       };
     }
 
-    // Fallback: tentar obter de campos diretos do usuário
+    // Retornar o que tiver (mesmo que vazio)
+    functions.logger.warn('📍 getUserLocation: No location data found', {
+      userId,
+      city: city || '',
+      state: state || '',
+    });
     return {
-      city: userData?.city || '',
-      state: userData?.state || '',
+      city: city || '',
+      state: state || '',
     };
   } catch (error) {
+    functions.logger.error('📍 getUserLocation: Error', {userId, error});
     return {city: '', state: ''};
   }
 }

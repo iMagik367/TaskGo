@@ -101,6 +101,7 @@ class InitialDataSyncManager @Inject constructor(
                     email = userFirestore.email,
                     phone = userFirestore.phone,
                     city = userFirestore.address?.city,
+                    state = userFirestore.address?.state,
                     profession = null,
                     accountType = accountType,
                     rating = userFirestore.rating,

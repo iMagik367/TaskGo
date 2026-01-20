@@ -13,6 +13,7 @@ data class ProductFirestore(
     val category: String? = null,
     val tags: List<String> = emptyList(),
     val active: Boolean = true,
+    val status: String = "active", // Status do produto: "active" ou "inactive"
     val featured: Boolean = false, // Produto em destaque/promocional
     val discountPercentage: Double? = null, // Percentual de desconto para destaque/promoções
     val createdAt: Date? = null,

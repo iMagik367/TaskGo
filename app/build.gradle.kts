@@ -86,8 +86,8 @@ android {
         applicationId = "com.taskgoapp.taskgo"
         minSdk = 24
         targetSdk = 35
-        versionCode = 86
-        versionName = "1.0.86"
+        versionCode = 97
+        versionName = "1.0.97"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -244,6 +244,26 @@ android {
                 "META-INF/AL2.0",
                 "META-INF/LGPL2.1"
             )
+        }
+    }
+    
+    // Configuração de Bundle para garantir compatibilidade com Play Store
+    // CRÍTICO: enableSplit = false garante que todos os recursos estejam no base APK
+    // Isso permite que usuários de versões anteriores possam atualizar
+    bundle {
+        language {
+            // Desabilitar splits de idioma - incluir tudo no base APK
+            // Necessário para permitir atualização de usuários existentes
+            enableSplit = false
+        }
+        density {
+            // Desabilitar splits de densidade - incluir tudo no base APK
+            // Necessário para permitir atualização de usuários existentes
+            enableSplit = false
+        }
+        abi {
+            // Habilitar splits de ABI (normal para otimização)
+            enableSplit = true
         }
     }
 

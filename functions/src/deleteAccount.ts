@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import {validateAppCheck} from './security/appCheck';
 import {getFirestore} from './utils/firestore';
+import {getUserLocation, normalizeLocationId, getLocationCollection} from './utils/location';
 
 const db = getFirestore();
 const rtdb = admin.database();
@@ -26,8 +27,17 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
     const userId = context.auth.uid;
     functions.logger.info(`Iniciando exclusão de conta para usuário: ${userId}`);
 
-    // 1. Deletar dados do Firestore
+    // 0. Obter localização do usuário ANTES de deletar o documento (necessário para deletar dados por localização)
     const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+    let userLocation: {city: string; state: string} | null = null;
+    
+    if (userDoc.exists) {
+      userLocation = await getUserLocation(db, userId);
+      functions.logger.info(`Localização do usuário obtida: ${userLocation.city}, ${userLocation.state}`);
+    }
+
+    // 1. Deletar dados do Firestore
     
     // 1.1. Deletar TODAS as subcoleções do usuário (isolamento total de dados)
     const subcollections = [
@@ -39,7 +49,8 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
       'notifications',
       'conversations',
       'preferences',
-      'settings'
+      'settings',
+      'stories' // Adicionar stories nas subcoleções
     ];
     
     functions.logger.info(`Deletando subcoleções do usuário ${userId}`);
@@ -49,6 +60,22 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
         const snapshot = await subcollectionRef.get();
         
         if (!snapshot.empty) {
+          // Para conversas, também deletar mensagens (subcoleção)
+          if (subcollection === 'conversations') {
+            for (const doc of snapshot.docs) {
+              const messagesRef = doc.ref.collection('messages');
+              const messagesSnapshot = await messagesRef.get();
+              if (!messagesSnapshot.empty) {
+                const messagesBatch = db.batch();
+                messagesSnapshot.forEach((msgDoc: admin.firestore.QueryDocumentSnapshot) => {
+                  messagesBatch.delete(msgDoc.ref);
+                });
+                await messagesBatch.commit();
+                functions.logger.info(`Mensagens da conversa ${doc.id} deletadas: ${messagesSnapshot.size} mensagens`);
+              }
+            }
+          }
+          
           const batch = db.batch();
           snapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
             batch.delete(doc.ref);
@@ -137,6 +164,192 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
     await batch.commit();
     functions.logger.info(`Dados do Firestore deletados para usuário: ${userId}`);
 
+    // 1.3. Deletar dados em coleções por localização
+    try {
+      // Usar localização obtida anteriormente (antes de deletar o documento)
+      if (userLocation && userLocation.city && userLocation.state) {
+        const {city, state} = userLocation;
+        const locationId = normalizeLocationId(city, state);
+        functions.logger.info(`Deletando dados do usuário em localização: ${locationId}`);
+        
+        // Deletar produtos em coleções por localização
+        const locationProductsRef = getLocationCollection(db, 'products', city, state);
+        const locationProductsSnapshot = await locationProductsRef
+          .where('sellerId', '==', userId)
+          .get();
+        
+        if (!locationProductsSnapshot.empty) {
+          const locationProductsBatch = db.batch();
+          locationProductsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
+            locationProductsBatch.delete(doc.ref);
+          });
+          await locationProductsBatch.commit();
+          functions.logger.info(
+            `Produtos deletados de locations/${locationId}/products: ` +
+            `${locationProductsSnapshot.size} produtos`
+          );
+        }
+        
+        // Deletar stories em coleções por localização
+        const locationStoriesRef = getLocationCollection(db, 'stories', city, state);
+        const locationStoriesSnapshot = await locationStoriesRef
+          .where('userId', '==', userId)
+          .get();
+        
+        if (!locationStoriesSnapshot.empty) {
+          const locationStoriesBatch = db.batch();
+          locationStoriesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
+            locationStoriesBatch.delete(doc.ref);
+          });
+          await locationStoriesBatch.commit();
+          functions.logger.info(
+            `Stories deletadas de locations/${locationId}/stories: ` +
+            `${locationStoriesSnapshot.size} stories`
+          );
+        }
+        
+        // Deletar ordens em coleções por localização
+        const locationOrdersRef = getLocationCollection(db, 'orders', city, state);
+        const locationOrdersClientSnapshot = await locationOrdersRef
+          .where('clientId', '==', userId)
+          .get();
+        const locationOrdersProviderSnapshot = await locationOrdersRef
+          .where('providerId', '==', userId)
+          .get();
+        
+        if (!locationOrdersClientSnapshot.empty || !locationOrdersProviderSnapshot.empty) {
+          const locationOrdersBatch = db.batch();
+          locationOrdersClientSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
+            locationOrdersBatch.delete(doc.ref);
+          });
+          locationOrdersProviderSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
+            locationOrdersBatch.delete(doc.ref);
+          });
+          await locationOrdersBatch.commit();
+          const totalOrders = locationOrdersClientSnapshot.size + locationOrdersProviderSnapshot.size;
+          functions.logger.info(
+            `Ordens deletadas de locations/${locationId}/orders: ${totalOrders} ordens`
+          );
+        }
+      } else {
+        functions.logger.warn(
+          `Localização do usuário ${userId} não disponível, ` +
+          'pulando exclusão de dados por localização'
+        );
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      functions.logger.warn(`Erro ao deletar dados por localização: ${errorMessage}`);
+      // Continuar mesmo se houver erro
+    }
+
+    // 1.4. Deletar visualizações e analytics de stories
+    try {
+      // Buscar todas as stories do usuário primeiro
+      // (já deletadas acima, mas precisamos dos IDs)
+      const allStoriesSnapshot = await db.collection('stories')
+        .where('userId', '==', userId)
+        .get();
+      
+      const storyIds: string[] = [];
+      allStoriesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
+        storyIds.push(doc.id);
+      });
+      
+      // Também buscar stories em coleções por localização (usar localização obtida anteriormente)
+      if (userLocation && userLocation.city && userLocation.state) {
+        const locationStoriesRef = getLocationCollection(db, 'stories', userLocation.city, userLocation.state);
+        const locationStoriesSnapshot = await locationStoriesRef
+          .where('userId', '==', userId)
+          .get();
+        locationStoriesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
+          if (!storyIds.includes(doc.id)) {
+            storyIds.push(doc.id);
+          }
+        });
+      }
+      
+      // Deletar visualizações e analytics de cada story
+      for (const storyId of storyIds) {
+        try {
+          // Deletar visualizações (story_views/{storyId}/views)
+          const storyViewsRef = db.collection('story_views').doc(storyId);
+          const viewsRef = storyViewsRef.collection('views');
+          const viewsSnapshot = await viewsRef.get();
+          
+          if (!viewsSnapshot.empty) {
+            const viewsBatch = db.batch();
+            viewsSnapshot.forEach((viewDoc: admin.firestore.QueryDocumentSnapshot) => {
+              viewsBatch.delete(viewDoc.ref);
+            });
+            await viewsBatch.commit();
+          }
+          
+          // Deletar ações (story_views/{storyId}/actions)
+          const actionsRef = storyViewsRef.collection('actions');
+          const actionsSnapshot = await actionsRef.get();
+          if (!actionsSnapshot.empty) {
+            const actionsBatch = db.batch();
+            actionsSnapshot.forEach((actionDoc: admin.firestore.QueryDocumentSnapshot) => {
+              actionsBatch.delete(actionDoc.ref);
+            });
+            await actionsBatch.commit();
+          }
+          
+          // Deletar interações (story_views/{storyId}/interactions)
+          const interactionsRef = storyViewsRef.collection('interactions');
+          const interactionsSnapshot = await interactionsRef.get();
+          if (!interactionsSnapshot.empty) {
+            const interactionsBatch = db.batch();
+            interactionsSnapshot.forEach((interactionDoc: admin.firestore.QueryDocumentSnapshot) => {
+              interactionsBatch.delete(interactionDoc.ref);
+            });
+            await interactionsBatch.commit();
+          }
+          
+          // Deletar documento principal de story_views
+          await storyViewsRef.delete();
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+          functions.logger.warn(`Erro ao deletar analytics da story ${storyId}: ${errorMessage}`);
+        }
+      }
+      
+      functions.logger.info(`Analytics de stories deletados: ${storyIds.length} stories processadas`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      functions.logger.warn(`Erro ao deletar analytics de stories: ${errorMessage}`);
+      // Continuar mesmo se houver erro
+    }
+
+    // 1.5. Deletar mensagens de conversas (subcoleção messages)
+    try {
+      const conversationsSnapshot = await db.collection('conversations')
+        .where('userId', '==', userId)
+        .get();
+      
+      for (const conversationDoc of conversationsSnapshot.docs) {
+        const messagesRef = conversationDoc.ref.collection('messages');
+        const messagesSnapshot = await messagesRef.get();
+        
+        if (!messagesSnapshot.empty) {
+          const messagesBatch = db.batch();
+          messagesSnapshot.forEach((msgDoc: admin.firestore.QueryDocumentSnapshot) => {
+            messagesBatch.delete(msgDoc.ref);
+          });
+          await messagesBatch.commit();
+          functions.logger.info(
+            `Mensagens da conversa ${conversationDoc.id} deletadas: ` +
+            `${messagesSnapshot.size} mensagens`
+          );
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      functions.logger.warn(`Erro ao deletar mensagens de conversas: ${errorMessage}`);
+      // Continuar mesmo se houver erro
+    }
+
     // 2. Deletar dados do Realtime Database
     const rtdbRef = rtdb.ref(`users/${userId}`);
     await rtdbRef.remove();
@@ -178,6 +391,16 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
     const servicesPath = `${userId}/services/`;
     const [serviceFiles] = await bucket.getFiles({ prefix: servicesPath });
     await Promise.all(serviceFiles.map(file => file.delete()));
+
+    // Deletar stories (imagens/vídeos)
+    const storiesPath = `${userId}/stories/`;
+    const [storyFiles] = await bucket.getFiles({ prefix: storiesPath });
+    await Promise.all(storyFiles.map(file => file.delete()));
+
+    // Deletar posts (imagens/vídeos)
+    const postsPath = `${userId}/posts/`;
+    const [postFiles] = await bucket.getFiles({ prefix: postsPath });
+    await Promise.all(postFiles.map(file => file.delete()));
 
     functions.logger.info(`Arquivos do Storage deletados para usuário: ${userId}`);
 

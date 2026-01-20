@@ -11,14 +11,36 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import com.taskgoapp.taskgo.core.firebase.LocationHelper
+import com.taskgoapp.taskgo.core.location.LocationStateManager
+import com.taskgoapp.taskgo.core.location.LocationState
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FirestoreOrderRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val authRepository: FirebaseAuthRepository
+    private val authRepository: FirebaseAuthRepository,
+    private val locationStateManager: LocationStateManager
 ) {
+    // Construtor secundário para compatibilidade com código que não usa injeção de dependência
+    constructor(
+        firestore: FirebaseFirestore,
+        authRepository: FirebaseAuthRepository
+    ) : this(
+        firestore,
+        authRepository,
+        // Criar LocationStateManager temporário - não será usado para queries neste contexto
+        LocationStateManager(
+            object : com.taskgoapp.taskgo.domain.repository.UserRepository {
+                override fun observeCurrentUser() = kotlinx.coroutines.flow.flowOf(null)
+                override suspend fun updateUser(user: com.taskgoapp.taskgo.core.model.UserProfile) {}
+                override suspend fun updateAvatar(avatarUri: String) {}
+            }
+        )
+    )
     // Coleção pública para queries (prestadores precisam ver ordens pendentes)
     // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
     private val publicOrdersCollection = firestore.collection("orders")
@@ -265,19 +287,58 @@ class FirestoreOrderRepository @Inject constructor(
     
     /**
      * Observa ordens de serviço disponíveis na região do usuário
-     * CRÍTICO: Usa coleção por localização locations/{city}_{state}/orders
+     * ✅ Agora usa LocationStateManager e coleção por localização locations/{locationId}/orders
      */
     fun observeLocalServiceOrders(
-        city: String? = null,
-        state: String? = null,
         category: String? = null
+    ): Flow<List<OrderFirestore>> = locationStateManager.locationState
+        .flatMapLatest { locationState ->
+            when (locationState) {
+                is LocationState.Loading -> {
+                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeLocalServiceOrders")
+                    flowOf(emptyList())
+                }
+                is LocationState.Error -> {
+                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeLocalServiceOrders")
+                    flowOf(emptyList())
+                }
+                is LocationState.Ready -> {
+                    // ✅ Localização pronta - fazer query Firestore
+                    val locationId = locationState.locationId
+                    
+                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
+                    if (locationId == "unknown" || locationId.isBlank()) {
+                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeLocalServiceOrders")
+                        flowOf(emptyList())
+                    } else {
+                        observeLocalServiceOrdersFromFirestore(locationState, category)
+                    }
+                }
+            }
+        }
+    
+    private fun observeLocalServiceOrdersFromFirestore(
+        locationState: LocationState.Ready,
+        category: String?
     ): Flow<List<OrderFirestore>> = callbackFlow {
         var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
-            // CRÍTICO: Se cidade e estado forem fornecidos, usar coleção por localização
-            if (city != null && state != null && city.isNotBlank() && state.isNotBlank()) {
-                android.util.Log.d("FirestoreOrderRepo", "🔵 Observando ordens por localização: city=$city, state=$state")
-                val locationOrdersCollection = LocationHelper.getLocationCollection(firestore, "orders", city, state)
+            // ✅ Usar coleção por localização
+            val locationOrdersCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                locationState.city,
+                locationState.state
+            )
+            
+            Log.d("FirestoreOrderRepo", """
+                📍 Querying Firestore with location:
+                City: ${locationState.city}
+                State: ${locationState.state}
+                LocationId: ${locationState.locationId}
+                Category: $category
+                Firestore Path: locations/${locationState.locationId}/orders
+            """.trimIndent())
                 
                 var query = locationOrdersCollection
                     .whereEqualTo("status", "pending")
@@ -313,7 +374,7 @@ class FirestoreOrderRepository @Inject constructor(
                                 }
                             } ?: emptyList()
                             
-                            android.util.Log.d("FirestoreOrderRepo", "📦 ${orders.size} ordens encontradas na localização $city, $state")
+                            Log.d("FirestoreOrderRepo", "📦 ${orders.size} ordens encontradas na localização ${locationState.city}, ${locationState.state}")
                             trySend(orders)
                         } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
                             // Canal já foi fechado, ignorar
@@ -321,61 +382,6 @@ class FirestoreOrderRepository @Inject constructor(
                             android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
                         }
                     }
-            } else {
-                // Fallback: usar coleção global se localização não fornecida
-                android.util.Log.w("FirestoreOrderRepo", "⚠️ Localização não fornecida, usando coleção global (compatibilidade)")
-                var query = publicOrdersCollection
-                    .whereEqualTo("status", "pending")
-                    .whereEqualTo("deleted", false)
-                
-                // Filtrar por categoria se fornecida
-                if (category != null && category.isNotBlank()) {
-                    query = query.whereEqualTo("category", category)
-                }
-                
-                listenerRegistration = query
-                    .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                    .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        android.util.Log.e("FirestoreOrderRepo", "Erro ao observar ordens locais: ${error.message}", error)
-                        try {
-                            trySend(emptyList())
-                        } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
-                            // Canal já foi fechado, ignorar
-                        } catch (e: Exception) {
-                            android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
-                        }
-                        return@addSnapshotListener
-                    }
-                    
-                    try {
-                        val orders = snapshot?.documents?.mapNotNull { doc ->
-                            try {
-                                doc.toObject(OrderFirestore::class.java)?.copy(id = doc.id)
-                            } catch (e: Exception) {
-                                android.util.Log.e("FirestoreOrderRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
-                                null
-                            }
-                        }?.filter { order ->
-                            // Filtrar por localização se fornecida
-                            if (city != null || state != null) {
-                                val location = order.location.lowercase()
-                                val matchesCity = city == null || location.contains(city.lowercase())
-                                val matchesState = state == null || location.contains(state.lowercase())
-                                matchesCity && matchesState
-                            } else {
-                                true
-                            }
-                        } ?: emptyList()
-                        
-                        trySend(orders)
-                    } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
-                        // Canal já foi fechado, ignorar
-                    } catch (e: Exception) {
-                        android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
-                    }
-                }
-            }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreOrderRepo", "Erro ao configurar listener de ordens locais: ${e.message}", e)
             try {

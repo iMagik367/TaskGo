@@ -15,6 +15,11 @@ class FirebaseFunctionsService @Inject constructor(
 ) {
 
     // Auth Functions
+    suspend fun getUserEmailByDocument(document: String): Result<Map<String, Any>> {
+        val data = mapOf("document" to document)
+        return executeFunction("getUserEmailByDocument", data)
+    }
+
     suspend fun setInitialUserRole(role: String, accountType: String? = null): Result<Map<String, Any>> {
         val data = mapOf(
             "role" to role

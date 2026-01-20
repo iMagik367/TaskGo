@@ -11,22 +11,28 @@ import com.taskgoapp.taskgo.data.firestore.models.PostLocation as PostLocationFi
 import com.taskgoapp.taskgo.data.mapper.PostMapper
 import com.taskgoapp.taskgo.domain.repository.FeedRepository
 import com.taskgoapp.taskgo.core.firebase.LocationHelper
+import com.taskgoapp.taskgo.core.location.LocationStateManager
+import com.taskgoapp.taskgo.core.location.LocationState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Date
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FirestoreFeedRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val authRepository: FirebaseAuthRepository
+    private val authRepository: FirebaseAuthRepository,
+    private val locationStateManager: LocationStateManager
 ) : FeedRepository {
     
     // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
@@ -42,13 +48,60 @@ class FirestoreFeedRepository @Inject constructor(
         userLatitude: Double,
         userLongitude: Double,
         radiusKm: Double
+    ): Flow<List<Post>> = locationStateManager.locationState
+        .flatMapLatest { locationState ->
+            when (locationState) {
+                is LocationState.Loading -> {
+                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeFeedPosts")
+                    flowOf(emptyList())
+                }
+                is LocationState.Error -> {
+                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeFeedPosts")
+                    flowOf(emptyList())
+                }
+                is LocationState.Ready -> {
+                    // ✅ Localização pronta - fazer query Firestore
+                    val locationId = locationState.locationId
+                    
+                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
+                    if (locationId == "unknown" || locationId.isBlank()) {
+                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeFeedPosts")
+                        flowOf(emptyList())
+                    } else {
+                        observeFeedPostsFromFirestore(locationState, userLatitude, userLongitude, radiusKm)
+                    }
+                }
+            }
+        }
+    
+    private fun observeFeedPostsFromFirestore(
+        locationState: LocationState.Ready,
+        userLatitude: Double,
+        userLongitude: Double,
+        radiusKm: Double
     ): Flow<List<Post>> = callbackFlow {
         val listenerRegistration: ListenerRegistration
         
         try {
+            // ✅ Usar coleção por localização
+            val collectionToUse = LocationHelper.getLocationCollection(
+                firestore,
+                "feed",
+                locationState.city,
+                locationState.state
+            )
+            
+            Log.d("FirestoreFeedRepository", """
+                📍 Querying Firestore with location:
+                City: ${locationState.city}
+                State: ${locationState.state}
+                LocationId: ${locationState.locationId}
+                Firestore Path: locations/${locationState.locationId}/feed
+            """.trimIndent())
+            
             // Buscar todos os posts ordenados por data de criação (mais recentes primeiro)
             // O filtro por distância será feito em memória após buscar os posts
-            listenerRegistration = postsCollection
+            listenerRegistration = collectionToUse
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .limit(100) // Limitar a 100 posts por vez para performance
                 .addSnapshotListener { snapshot, error ->

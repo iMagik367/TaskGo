@@ -54,41 +54,81 @@ class LoginViewModel @Inject constructor(
         
         viewModelScope.launch {
             try {
-                // Buscar usuário por CPF/CNPJ
-                val user = firestoreUserRepository.getUserByDocument(document)
+                // CRÍTICO: Usar Cloud Function para buscar email por CPF/CNPJ
+                // Isso permite busca sem autenticação (necessário para login)
+                Log.d("LoginViewModel", "Buscando email por CPF/CNPJ via Cloud Function: $document")
+                val result = firebaseFunctionsService.getUserEmailByDocument(document)
                 
-                if (user == null || user.email.isBlank()) {
-                    _uiState.value = LoginUiState(
-                        isLoading = false,
-                        errorMessage = "CPF/CNPJ não encontrado. Verifique se você já possui cadastro.",
-                        isSuccess = false
-                    )
-                    return@launch
-                }
-                
-                // CRÍTICO: Verificar se o usuário é parceiro (partner ou provider - legacy)
-                val userRole = user.role?.lowercase() ?: ""
-                if (userRole != "partner" && userRole != "provider") {
-                    Log.w("LoginViewModel", "Tentativa de login com CPF para usuário que não é parceiro. Role: $userRole")
-                    _uiState.value = LoginUiState(
-                        isLoading = false,
-                        errorMessage = "Este CPF/CNPJ não está cadastrado como parceiro. Use email e senha para fazer login.",
-                        isSuccess = false,
-                        requiresTwoFactor = false
-                    )
-                    return@launch
-                }
-                
-                // Fazer login com o email encontrado - o método login() já verifica 2FA
-                Log.d("LoginViewModel", "Email encontrado para documento: ${user.email}, Role: ${user.role}")
-                // Usar o método login() que já verifica 2FA
-                login(user.email, password)
+                result.fold(
+                    onSuccess = { data ->
+                        val email = data["email"] as? String
+                        val role = data["role"] as? String
+                        
+                        if (email.isNullOrBlank()) {
+                            _uiState.value = LoginUiState(
+                                isLoading = false,
+                                errorMessage = "CPF/CNPJ não encontrado. Verifique se você já possui cadastro.",
+                                isSuccess = false,
+                                requiresTwoFactor = false
+                            )
+                            return@fold
+                        }
+                        
+                        // Verificar se é parceiro (já validado na Cloud Function, mas verificar novamente)
+                        val userRole = role?.lowercase() ?: ""
+                        if (userRole != "partner" && userRole != "provider") {
+                            Log.w("LoginViewModel", "Tentativa de login com CPF para usuário que não é parceiro. Role: $userRole")
+                            _uiState.value = LoginUiState(
+                                isLoading = false,
+                                errorMessage = "Este CPF/CNPJ não está cadastrado como parceiro. Use email e senha para fazer login.",
+                                isSuccess = false,
+                                requiresTwoFactor = false
+                            )
+                            return@fold
+                        }
+                        
+                        // Fazer login com o email encontrado - o método login() já verifica 2FA
+                        Log.d("LoginViewModel", "Email encontrado para documento: $email, Role: $role")
+                        login(email, password)
+                    },
+                    onFailure = { exception ->
+                        Log.e("LoginViewModel", "Erro ao buscar email por documento: ${exception.message}", exception)
+                        val errorMessage = when (exception) {
+                            is com.google.firebase.functions.FirebaseFunctionsException -> {
+                                when (exception.code) {
+                                    com.google.firebase.functions.FirebaseFunctionsException.Code.NOT_FOUND -> {
+                                        "CPF/CNPJ não encontrado. Verifique se você já possui cadastro."
+                                    }
+                                    com.google.firebase.functions.FirebaseFunctionsException.Code.FAILED_PRECONDITION -> {
+                                        exception.message ?: "Este CPF/CNPJ não está cadastrado como parceiro."
+                                    }
+                                    com.google.firebase.functions.FirebaseFunctionsException.Code.INVALID_ARGUMENT -> {
+                                        exception.message ?: "CPF/CNPJ inválido. Verifique o formato."
+                                    }
+                                    else -> {
+                                        "Erro ao buscar usuário. Tente novamente."
+                                    }
+                                }
+                            }
+                            else -> {
+                                "Erro ao buscar usuário. Tente novamente."
+                            }
+                        }
+                        _uiState.value = LoginUiState(
+                            isLoading = false,
+                            errorMessage = errorMessage,
+                            isSuccess = false,
+                            requiresTwoFactor = false
+                        )
+                    }
+                )
             } catch (e: Exception) {
-                Log.e("LoginViewModel", "Erro ao buscar usuário por documento: ${e.message}", e)
+                Log.e("LoginViewModel", "Erro inesperado ao buscar usuário por documento: ${e.message}", e)
                 _uiState.value = LoginUiState(
                     isLoading = false,
                     errorMessage = "Erro ao buscar usuário. Tente novamente.",
-                    isSuccess = false
+                    isSuccess = false,
+                    requiresTwoFactor = false
                 )
             }
         }

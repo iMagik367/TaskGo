@@ -30,6 +30,7 @@ data class UserProfile(
     val email: String,
     val phone: String?,
     val city: String?,
+    val state: String? = null, // Estado (UF) - adicionado para suporte a arquitetura regional
     val profession: String?, // ex: "Montador de Móveis"
     val accountType: AccountType,
     val rating: Double?, // mostra em "Meus dados"

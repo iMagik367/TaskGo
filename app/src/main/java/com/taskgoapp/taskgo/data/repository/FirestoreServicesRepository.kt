@@ -4,10 +4,16 @@ import com.taskgoapp.taskgo.data.firestore.models.ServiceFirestore
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.ListenerRegistration
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
+import com.taskgoapp.taskgo.core.location.LocationStateManager
+import com.taskgoapp.taskgo.core.location.LocationState
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.channels.awaitClose
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,9 +22,11 @@ class FirestoreServicesRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository,
     private val authRepository: FirebaseAuthRepository,
-    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+    private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
+    private val locationStateManager: LocationStateManager
 ) {
     // Coleção pública para queries (visualização de serviços por outros usuários)
+    // DEBUG ONLY - Mantida apenas para compatibilidade durante migração
     private val publicServicesCollection = firestore.collection("services")
     
     // Helper para obter subcoleção do usuário
@@ -63,13 +71,57 @@ class FirestoreServicesRepository @Inject constructor(
 
     /**
      * Observa todos os serviços ativos (sem filtro de categoria)
-     * Usa coleção pública para queries eficientes de visualização
-     * NOTA: Esta coleção pública é sincronizada quando serviços são criados/atualizados
+     * ✅ Agora usa coleção por localização locations/{locationId}/services
+     * NOTA: Esta coleção é sincronizada quando serviços são criados/atualizados
      */
-    fun observeAllActiveServices(): Flow<List<ServiceFirestore>> = callbackFlow {
+    fun observeAllActiveServices(): Flow<List<ServiceFirestore>> = locationStateManager.locationState
+        .flatMapLatest { locationState ->
+            when (locationState) {
+                is LocationState.Loading -> {
+                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeAllActiveServices")
+                    flowOf(emptyList())
+                }
+                is LocationState.Error -> {
+                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeAllActiveServices")
+                    flowOf(emptyList())
+                }
+                is LocationState.Ready -> {
+                    // ✅ Localização pronta - fazer query Firestore
+                    val locationId = locationState.locationId
+                    
+                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
+                    if (locationId == "unknown" || locationId.isBlank()) {
+                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeAllActiveServices")
+                        flowOf(emptyList())
+                    } else {
+                        observeAllActiveServicesFromFirestore(locationState)
+                    }
+                }
+            }
+        }
+    
+    private fun observeAllActiveServicesFromFirestore(
+        locationState: LocationState.Ready
+    ): Flow<List<ServiceFirestore>> = callbackFlow {
         var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
-            listenerRegistration = publicServicesCollection
+            // ✅ Usar coleção por localização
+            val collectionToUse = LocationHelper.getLocationCollection(
+                firestore,
+                "services",
+                locationState.city,
+                locationState.state
+            )
+            
+            Log.d("FirestoreServicesRepository", """
+                📍 Querying Firestore with location:
+                City: ${locationState.city}
+                State: ${locationState.state}
+                LocationId: ${locationState.locationId}
+                Firestore Path: locations/${locationState.locationId}/services
+            """.trimIndent())
+            
+            listenerRegistration = collectionToUse
                 .whereEqualTo("active", true)
                 .limit(50) // Aumentar limite para melhor cobertura
                 .addSnapshotListener { snapshot, error ->
@@ -123,11 +175,57 @@ class FirestoreServicesRepository @Inject constructor(
     
     /**
      * Observa todos os serviços ativos de uma categoria
-     * Usa coleção pública para queries eficientes
+     * ✅ Agora usa coleção por localização locations/{locationId}/services
      */
-    fun observeServicesByCategory(category: String): Flow<List<ServiceFirestore>> = callbackFlow {
+    fun observeServicesByCategory(category: String): Flow<List<ServiceFirestore>> = locationStateManager.locationState
+        .flatMapLatest { locationState ->
+            when (locationState) {
+                is LocationState.Loading -> {
+                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeServicesByCategory")
+                    flowOf(emptyList())
+                }
+                is LocationState.Error -> {
+                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeServicesByCategory")
+                    flowOf(emptyList())
+                }
+                is LocationState.Ready -> {
+                    // ✅ Localização pronta - fazer query Firestore
+                    val locationId = locationState.locationId
+                    
+                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
+                    if (locationId == "unknown" || locationId.isBlank()) {
+                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeServicesByCategory")
+                        flowOf(emptyList())
+                    } else {
+                        observeServicesByCategoryFromFirestore(locationState, category)
+                    }
+                }
+            }
+        }
+    
+    private fun observeServicesByCategoryFromFirestore(
+        locationState: LocationState.Ready,
+        category: String
+    ): Flow<List<ServiceFirestore>> = callbackFlow {
         try {
-            val listenerRegistration = publicServicesCollection
+            // ✅ Usar coleção por localização
+            val collectionToUse = LocationHelper.getLocationCollection(
+                firestore,
+                "services",
+                locationState.city,
+                locationState.state
+            )
+            
+            Log.d("FirestoreServicesRepository", """
+                📍 Querying Firestore with location:
+                City: ${locationState.city}
+                State: ${locationState.state}
+                LocationId: ${locationState.locationId}
+                Category: $category
+                Firestore Path: locations/${locationState.locationId}/services
+            """.trimIndent())
+            
+            val listenerRegistration = collectionToUse
                 .whereEqualTo("category", category)
                 .whereEqualTo("active", true)
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)

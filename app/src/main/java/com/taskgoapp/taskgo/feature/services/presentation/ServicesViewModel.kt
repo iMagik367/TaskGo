@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -125,23 +126,12 @@ class ServicesViewModel @Inject constructor(
             try {
                 userRepository.observeCurrentUser().collect { user ->
                     _userCity.value = user?.city
-                    // CRÍTICO: UserProfile não tem state diretamente, obter via FirestoreUserRepository.address.state
-                    val currentUser = firebaseAuth.currentUser
-                    if (currentUser != null) {
-                        try {
-                            val userFirestore = firestoreUserRepository.getUser(currentUser.uid)
-                            _userState.value = userFirestore?.address?.state
-                            android.util.Log.d("ServicesViewModel", "📍 Localização do perfil obtida: city=${_userCity.value}, state=${_userState.value}")
-                        } catch (e: Exception) {
-                            android.util.Log.w("ServicesViewModel", "Erro ao obter state do Firestore: ${e.message}")
-                            _userState.value = null
-                        }
-                    } else {
-                        _userState.value = null
-                    }
+                    // UserProfile agora tem state diretamente (adicionado na versão 88)
+                    _userState.value = user?.state
+                    android.util.Log.d("ServicesViewModel", "Localizacao do perfil obtida: city=${_userCity.value}, state=${_userState.value}")
                 }
             } catch (e: Exception) {
-                android.util.Log.e("ServicesViewModel", "Erro ao obter localização do perfil: ${e.message}", e)
+                android.util.Log.e("ServicesViewModel", "Erro ao obter localizacao do perfil: ${e.message}", e)
             }
         }
     }
@@ -159,16 +149,15 @@ class ServicesViewModel @Inject constructor(
             // Se há categorias preferidas e nenhuma categoria específica foi selecionada,
             // filtrar ordens por preferredCategories
             if (category != null && category.isNotBlank()) {
-                // CRÍTICO: Usar observeLocalServiceOrders com categoria ao invés de observeOrdersByCategory
-                // observeOrdersByCategory só aceita category, não tem parâmetros de localização
-                orderRepository.observeLocalServiceOrders(city = userCity, state = userState, category = category)
+                // ✅ observeLocalServiceOrders agora usa LocationStateManager automaticamente
+                orderRepository.observeLocalServiceOrders(category = category)
             } else if (preferredCategoriesList.isNotEmpty()) {
                 // Filtrar ordens pelas categorias preferidas do Parceiro
                 // Como observeLocalServiceOrders aceita apenas uma categoria, vamos buscar todas e filtrar depois
-                orderRepository.observeLocalServiceOrders(city = userCity, state = userState, category = null)
+                orderRepository.observeLocalServiceOrders(category = null)
             } else {
                 // Buscar todas as ordens pendentes (sem filtro de categoria)
-                orderRepository.observeLocalServiceOrders(city = userCity, state = userState, category = null)
+                orderRepository.observeLocalServiceOrders(category = null)
             }
         } else {
             kotlinx.coroutines.flow.flowOf(emptyList<OrderFirestore>())
@@ -254,7 +243,24 @@ class ServicesViewModel @Inject constructor(
     private fun loadProviders() {
         viewModelScope.launch {
             try {
-                val providers = providersRepository.getFeaturedProviders(limit = 100)
+                // CRÍTICO: Carregar prestadores filtrados por localização e categoria
+                val user = userRepository.observeCurrentUser().firstOrNull()
+                val userCity = user?.city?.takeIf { it.isNotBlank() }
+                val userState = user?.state?.takeIf { it.isNotBlank() }
+                
+                val providers = if (userCity != null && userState != null) {
+                    // Buscar prestadores por localização (sem filtro de categoria inicial)
+                    // O filtro por categoria será aplicado no combine
+                    providersRepository.getProvidersByLocationAndCategory(
+                        city = userCity,
+                        state = userState,
+                        category = null, // Categoria será filtrada no combine
+                        limit = 100
+                    )
+                } else {
+                    // Fallback: buscar todos os prestadores em destaque
+                    providersRepository.getFeaturedProviders(limit = 100)
+                }
                 _allProviders.value = providers.map { it.provider }
             } catch (e: Exception) {
                 android.util.Log.e("ServicesViewModel", "Erro ao carregar prestadores: ${e.message}", e)

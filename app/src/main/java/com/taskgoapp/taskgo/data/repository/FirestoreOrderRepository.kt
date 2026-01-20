@@ -380,8 +380,8 @@ class FirestoreOrderRepository @Inject constructor(
                             // Canal já foi fechado, ignorar
                         } catch (e: Exception) {
                             android.util.Log.w("FirestoreOrderRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
-                        }
-                    }
+                }
+            }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreOrderRepo", "Erro ao configurar listener de ordens locais: ${e.message}", e)
             try {

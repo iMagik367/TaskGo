@@ -1,0 +1,19 @@
+# Ignorar arquivos Android durante o build do backend
+app/
+android/
+gradle/
+.gradle/
+build/
+*.gradle
+*.gradle.kts
+gradlew
+gradlew.bat
+local.properties
+keystore.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Manter apenas o backend
+!backend/

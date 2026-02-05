@@ -1,0 +1,9 @@
+DB_HOST=dpg-xxxxx-a.railway.app
+DB_PORT=5432
+DB_NAME=railway
+DB_USER=postgres
+DB_PASSWORD=zvaeSjfZVeeGhoyznVDirVEfxZiRWFMk
+PORT=3000
+NODE_ENV=production
+STRIPE_SECRET_KEY=sk_live_SUA_CHAVE_AQUI
+STRIPE_WEBHOOK_SECRET=whsec_SEU_SECRET_AQUI

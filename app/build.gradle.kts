@@ -86,8 +86,8 @@ android {
         applicationId = "com.taskgoapp.taskgo"
         minSdk = 24
         targetSdk = 35
-        versionCode = 143
-        versionName = "1.4.0"
+        versionCode = 144
+        versionName = "1.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         

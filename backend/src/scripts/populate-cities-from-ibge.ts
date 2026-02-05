@@ -8,7 +8,7 @@
  */
 
 import { query } from '../database/connection';
-import { LocationRepository } from '../../repositories/LocationRepository';
+import { LocationRepository } from '../repositories/LocationRepository';
 
 const locationRepo = new LocationRepository();
 

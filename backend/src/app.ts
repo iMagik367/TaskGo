@@ -78,7 +78,7 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Iniciar servidor mesmo se o banco não estiver disponível
 httpServer.listen(PORT, '0.0.0.0', () => {

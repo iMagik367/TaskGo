@@ -22,7 +22,7 @@ export class NotificationService {
     await client.query('LISTEN new_service_order');
     
     client.on('notification', (msg) => {
-      if (msg.channel === 'new_service_order') {
+      if (msg.channel === 'new_service_order' && msg.payload) {
         this.handleNewServiceOrderNotification(msg.payload);
       }
     });

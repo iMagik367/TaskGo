@@ -1,4 +1,4 @@
-import { UUID } from 'crypto';
+import { UUID } from '../types';
 
 export interface BankAccount {
   id: UUID;

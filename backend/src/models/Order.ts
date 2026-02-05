@@ -1,4 +1,4 @@
-import { UUID } from 'crypto';
+import { UUID } from '../types';
 
 // Ordem de Serviço
 export interface ServiceOrder {

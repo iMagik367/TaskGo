@@ -1,0 +1,15 @@
+# Ignorar tudo exceto backend
+*
+!backend/
+!backend/**
+!Dockerfile
+!.dockerignore
+
+# Ignorar arquivos desnecessários
+**/node_modules
+**/.git
+**/.gradle
+**/build
+**/*.log
+**/.idea
+**/.vscode

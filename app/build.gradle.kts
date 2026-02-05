@@ -21,7 +21,10 @@ val localProps = Properties().apply {
         }
     }
 }
-val apiBaseUrl = (localProps.getProperty("apiBaseUrl") ?: "http://10.0.2.2:8091/v1/").trim()
+// API Base URL - pode ser configurada via local.properties
+// Para produção, será substituída pela URL do Railway
+val apiBaseUrl = (localProps.getProperty("apiBaseUrl") ?: "http://10.0.2.2:3000/api").trim()
+val railwayApiUrl = (localProps.getProperty("railwayApiUrl") ?: "").trim()
 val defaultDebugAppCheckTokenName = "TaskGo"
 val defaultDebugAppCheckToken = "4D4F1322-E272-454F-9396-ED80E3DBDBD7"
 
@@ -185,7 +188,9 @@ android {
             // TODO: Investigar crash do R8 e reabilitar minificação em versão futura
             isMinifyEnabled = false
             isShrinkResources = false
-            buildConfigField("String", "API_BASE_URL", "\"https://api.taskgo.com/v1/\"")
+            // API URL - Railway Backend
+            val releaseApiUrl = if (railwayApiUrl.isNotEmpty()) railwayApiUrl else "https://taskgo-production.up.railway.app/api"
+            buildConfigField("String", "API_BASE_URL", "\"$releaseApiUrl\"")
             buildConfigField("boolean", "USE_EMULATOR", "false")
             buildConfigField(
                 "String",

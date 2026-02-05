@@ -3,11 +3,11 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copiar package.json e package-lock.json primeiro (para cache de dependências)
-COPY backend/package*.json ./
+# Copiar package.json primeiro
+COPY backend/package.json ./
 
-# Instalar dependências (incluindo devDependencies para build)
-RUN npm ci
+# Instalar dependências (usa npm install se não houver package-lock.json)
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # Copiar código fonte
 COPY backend/ ./
@@ -15,11 +15,8 @@ COPY backend/ ./
 # Compilar TypeScript
 RUN npm run build
 
-# Expor porta
+# Expor porta (Railway usa variável PORT automaticamente)
 EXPOSE 3000
-
-# Variável de ambiente para porta
-ENV PORT=3000
 
 # Comando de start
 CMD ["npm", "start"]

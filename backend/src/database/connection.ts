@@ -20,7 +20,8 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
   console.error('❌ Erro inesperado no PostgreSQL:', err);
-  process.exit(-1);
+  // Não encerrar o processo - permitir que o servidor continue
+  // O Railway pode reiniciar se necessário
 });
 
 // Helper para queries

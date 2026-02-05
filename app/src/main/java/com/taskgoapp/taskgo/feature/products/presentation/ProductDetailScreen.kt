@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.products.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -159,7 +160,11 @@ private fun ProductDetailContent(
         
         // Seller Info
         Card(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
@@ -200,7 +205,11 @@ private fun ProductDetailContent(
         // Product Description
         if (product.description != null) {
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)

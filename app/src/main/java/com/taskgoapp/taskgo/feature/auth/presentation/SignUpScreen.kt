@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -11,7 +12,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,22 +36,24 @@ import androidx.compose.ui.text.TextRange
 import com.taskgoapp.taskgo.core.model.UserType
 import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.core.design.TGIcons
-import com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField
 import com.taskgoapp.taskgo.core.design.OutlinedTextFieldWithValue
+import com.taskgoapp.taskgo.core.design.EnhancedOutlinedTextField
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
 import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
 import com.taskgoapp.taskgo.core.theme.TaskGoSurface
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.res.stringResource
 import com.taskgoapp.taskgo.R
-import com.taskgoapp.taskgo.core.validation.CepService
 import com.taskgoapp.taskgo.core.validation.DocumentValidator
 import com.taskgoapp.taskgo.core.validation.ValidationResult
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import androidx.compose.material3.MenuAnchorType
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignUpScreen(
     onNavigateToLogin: () -> Unit,
@@ -61,7 +66,6 @@ fun SignUpScreen(
     val scope = rememberCoroutineScope()
     
     // Injetar serviços via Hilt (criar instâncias locais por enquanto)
-    val cepService = remember { CepService() }
     val documentValidator = remember { DocumentValidator() }
     val governmentValidator = remember { com.taskgoapp.taskgo.core.validation.GovernmentDocumentValidator() }
     
@@ -88,22 +92,18 @@ fun SignUpScreen(
     // Observar categorias de serviço do ViewModel
     val serviceCategories by viewModel.serviceCategories.collectAsState()
     
-    // Campos de endereço
-    var zipCode by remember { mutableStateOf(TextFieldValue("")) }
-    var street by remember { mutableStateOf("") }
-    var number by remember { mutableStateOf("") }
-    var complement by remember { mutableStateOf("") }
-    var neighborhood by remember { mutableStateOf("") }
-    var city by remember { mutableStateOf("") }
-    var state by remember { mutableStateOf("") }
-    var country by remember { mutableStateOf("Brasil") }
+    // Campos de localização (cidade e estado)
+    var selectedState by remember { mutableStateOf<String?>(null) }
+    var selectedCity by remember { mutableStateOf<String?>(null) }
+    val availableStates = com.taskgoapp.taskgo.core.data.BrazilianCities.allStates
+    val availableCities = remember(selectedState) {
+        selectedState?.let { com.taskgoapp.taskgo.core.data.BrazilianCities.getCitiesForState(it) } ?: emptyList()
+    }
     
     // Estados de validação e loading
     var cpfError by remember { mutableStateOf<String?>(null) }
     var cnpjError by remember { mutableStateOf<String?>(null) }
     var rgError by remember { mutableStateOf<String?>(null) }
-    var cepError by remember { mutableStateOf<String?>(null) }
-    var isLoadingCep by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf<String?>(null) }
     var confirmPasswordError by remember { mutableStateOf<String?>(null) }
     
@@ -241,9 +241,9 @@ fun SignUpScreen(
                         .fillMaxWidth()
                         .clickable { selectedAccountType = AccountType.PARCEIRO },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (selectedAccountType == AccountType.PARCEIRO) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
+                        containerColor = TaskGoBackgroundWhite
                     ),
-                    border = if (selectedAccountType == AccountType.PARCEIRO) BorderStroke(2.dp, TaskGoGreen) else null
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Row(
                         modifier = Modifier
@@ -281,9 +281,9 @@ fun SignUpScreen(
                         .fillMaxWidth()
                         .clickable { selectedAccountType = AccountType.CLIENTE },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (selectedAccountType == AccountType.CLIENTE) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
+                        containerColor = TaskGoBackgroundWhite
                     ),
-                    border = if (selectedAccountType == AccountType.CLIENTE) BorderStroke(2.dp, TaskGoGreen) else null
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Row(
                         modifier = Modifier
@@ -582,8 +582,9 @@ fun SignUpScreen(
                         val cleanRgDigits = rgTextFieldValue.text.replace(Regex("[^0-9A-Za-z]"), "")
                         if (cleanRgDigits.length >= 6) {
                             // Valida o RG formatado (com pontos e hífen) ou sem formatação
+                            // ✅ REMOVIDO: state - localização vem do perfil do usuário (cadastro), NUNCA do GPS
                             val rgToValidate = rgTextFieldValue.text.uppercase()
-                            val validation = documentValidator.validateRg(rgToValidate, state.takeIf { it.isNotEmpty() })
+                            val validation = documentValidator.validateRg(rgToValidate, null)
                             rgError = if (validation is ValidationResult.Invalid) validation.message else null
                         } else {
                             rgError = null
@@ -620,229 +621,102 @@ fun SignUpScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Seção de Endereço
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Endereço",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TaskGoTextBlack,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = " (Obrigatório)",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TaskGoTextBlack,
-                    fontWeight = FontWeight.Normal
-                )
-            }
+            // Seção de Localização (Cidade e Estado)
+            Text(
+                text = "Localização",
+                style = MaterialTheme.typography.titleMedium,
+                color = TaskGoTextBlack,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth()
+            )
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            // Campo CEP com busca automática de endereço
-            OutlinedTextFieldWithValue(
-                value = zipCode,
-                onValueChange = { newValue: TextFieldValue ->
-                    // Formata preservando cursor
-                    zipCode = com.taskgoapp.taskgo.core.utils.TextFormatters.formatCepWithCursor(newValue)
-                    val cleanValue = zipCode.text.replace(Regex("[^0-9]"), "")
-                    
-                    if (cleanValue.length <= 8) {
-                        cepError = null
-                        
-                        // Busca endereço quando tiver 8 dígitos
-                        if (cleanValue.length == 8) {
-                            
-                            // Busca endereço automaticamente
-                            scope.launch {
-                                isLoadingCep = true
-                                cepError = null
-                                
-                                delay(500) // Delay para evitar múltiplas requisições
-                                
-                                cepService.searchCep(cleanValue).fold(
-                                    onSuccess = { cepResult ->
-                                        street = cepResult.logradouro
-                                        neighborhood = cepResult.bairro
-                                        city = cepResult.localidade
-                                        state = cepResult.uf
-                                        cepResult.complemento?.let { complement = it }
-                                        isLoadingCep = false
-                                    },
-                                    onFailure = { error ->
-                                        cepError = error.message ?: "CEP não encontrado"
-                                        isLoadingCep = false
-                                    }
-                                )
+            // Select Box de Estado
+            var expandedState by remember { mutableStateOf(false) }
+            val stateText: String = (selectedState ?: "").ifEmpty { "Selecione o estado" }
+            ExposedDropdownMenuBox(
+                expanded = expandedState,
+                onExpandedChange = { expandedState = !expandedState }
+            ) {
+                OutlinedTextField(
+                    value = stateText,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Estado (Obrigatório)", color = TaskGoTextGray, fontSize = 14.sp) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedState) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TaskGoGreen,
+                        unfocusedBorderColor = TaskGoTextGray,
+                        focusedLabelColor = TaskGoTextGray,
+                        unfocusedLabelColor = TaskGoTextGray
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = expandedState,
+                    onDismissRequest = { expandedState = false }
+                ) {
+                    availableStates.forEach { state ->
+                        DropdownMenuItem(
+                            text = { Text(state) },
+                            onClick = {
+                                selectedState = state
+                                selectedCity = null
+                                expandedState = false
                             }
-                        }
-                    }
-                },
-                label = { 
-                    Text(
-                        "CEP",
-                        color = TaskGoTextGray,
-                        fontSize = 14.sp
-                    ) 
-                },
-                placeholder = { Text("00000-000", color = TaskGoTextGray) },
-                singleLine = true,
-                trailingIcon = {
-                    if (isLoadingCep) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
                         )
                     }
-                },
-                isError = cepError != null,
-                supportingText = if (cepError != null) {
-                    { Text(cepError ?: "", color = MaterialTheme.colorScheme.error) }
-                } else null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 72.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = if (cepError != null) MaterialTheme.colorScheme.error else TaskGoGreen,
-                    unfocusedBorderColor = if (cepError != null) MaterialTheme.colorScheme.error else Color(0xFFD9D9D9),
-                    focusedLabelColor = TaskGoTextGray,
-                    unfocusedLabelColor = TaskGoTextGray,
-                    cursorColor = TaskGoGreen
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                enabled = !isLoadingCep,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp)
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Campo Rua
-            EnhancedOutlinedTextField(
-                value = street,
-                onValueChange = { newValue -> street = newValue },
-                label = { 
-                    Text(
-                        "Rua",
-                        color = TaskGoTextGray,
-                        fontSize = 14.sp
-                    ) 
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 72.dp),
-                keyboardType = KeyboardType.Text,
-                minLines = 1,
-                maxLines = 3
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Campo Número e Complemento
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                EnhancedOutlinedTextField(
-                    value = number,
-                    onValueChange = { newValue -> number = newValue },
-                    label = { 
-                        Text(
-                            "Número",
-                            color = TaskGoTextGray,
-                            fontSize = 14.sp
-                        ) 
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 72.dp),
-                    keyboardType = KeyboardType.Number
-                )
-                
-                EnhancedOutlinedTextField(
-                    value = complement,
-                    onValueChange = { newValue -> complement = newValue },
-                    label = { 
-                        Text(
-                            "Complemento",
-                            color = TaskGoTextGray,
-                            fontSize = 14.sp
-                        ) 
-                    },
-                    placeholder = { Text("Apto, Bloco, etc.", color = TaskGoTextGray) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 72.dp),
-                    keyboardType = KeyboardType.Text,
-                    minLines = 1,
-                    maxLines = 3
-                )
+                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Campo Bairro
-            EnhancedOutlinedTextField(
-                value = neighborhood,
-                onValueChange = { newValue -> neighborhood = newValue },
-                label = { 
-                    Text(
-                        "Bairro",
-                        color = TaskGoTextGray,
-                        fontSize = 14.sp
-                    ) 
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 72.dp),
-                keyboardType = KeyboardType.Text,
-                minLines = 1,
-                maxLines = 3
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Campo Cidade e Estado
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            // Select Box de Cidade
+            var expandedCity by remember { mutableStateOf(false) }
+            val cityText: String = (selectedCity ?: "").ifEmpty { if (selectedState == null) "Selecione o estado primeiro" else "Selecione a cidade" }
+            val isCityEnabled = selectedState != null && availableCities.isNotEmpty()
+            ExposedDropdownMenuBox(
+                expanded = expandedCity && isCityEnabled,
+                onExpandedChange = { if (isCityEnabled) expandedCity = !expandedCity }
             ) {
-                EnhancedOutlinedTextField(
-                    value = city,
-                    onValueChange = { newValue -> city = newValue },
-                    label = { 
-                        Text(
-                            "Cidade",
-                            color = TaskGoTextGray,
-                            fontSize = 14.sp
-                        ) 
-                    },
+                OutlinedTextField(
+                    value = cityText,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = isCityEnabled,
+                    label = { Text("Cidade (Obrigatório)", color = TaskGoTextGray, fontSize = 14.sp) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCity && isCityEnabled) },
                     modifier = Modifier
-                        .weight(2f)
-                        .heightIn(min = 72.dp),
-                    keyboardType = KeyboardType.Text,
-                    minLines = 1,
-                    maxLines = 3
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TaskGoGreen,
+                        unfocusedBorderColor = TaskGoTextGray,
+                        focusedLabelColor = TaskGoTextGray,
+                        unfocusedLabelColor = TaskGoTextGray,
+                        disabledBorderColor = TaskGoTextGray.copy(alpha = 0.5f),
+                        disabledLabelColor = TaskGoTextGray.copy(alpha = 0.5f)
+                    )
                 )
-                
-                EnhancedOutlinedTextField(
-                    value = state,
-                    onValueChange = { newValue -> state = newValue },
-                    label = { 
-                        Text(
-                            "Estado",
-                            color = TaskGoTextGray,
-                            fontSize = 14.sp
-                        ) 
-                    },
-                    placeholder = { Text("SP", color = TaskGoTextGray) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 72.dp),
-                    keyboardType = KeyboardType.Text
-                )
+                if (isCityEnabled) {
+                    ExposedDropdownMenu(
+                        expanded = expandedCity,
+                        onDismissRequest = { expandedCity = false }
+                    ) {
+                        availableCities.forEach { city ->
+                            DropdownMenuItem(
+                                text = { Text(city) },
+                                onClick = {
+                                    selectedCity = city
+                                    expandedCity = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -1099,30 +973,26 @@ fun SignUpScreen(
             
             // Variáveis para validação e submissão
             val phoneText = phone.text
-            val zipCodeText = zipCode.text
             val birthDateText = birthDate.text
             val cpfText = cpf.text.replace(Regex("[^0-9]"), "") // Remove formatação do CPF
             val cnpjText = cnpj.text.replace(Regex("[^0-9]"), "") // Remove formatação do CNPJ
             val rgText = rgTextFieldValue.text.replace(Regex("[^0-9A-Za-z]"), "") // Remove formatação do RG
-            val isAddressComplete = zipCodeText.isNotEmpty() && street.isNotEmpty() && 
-                                   number.isNotEmpty() && neighborhood.isNotEmpty() && 
-                                   city.isNotEmpty() && state.isNotEmpty()
             
             Button(
                 onClick = { 
                     android.util.Log.d("SignUpScreen", "Botão Cadastrar clicado")
                     
-                    // Criar objeto Address (obrigatório)
+                    // Criar objeto Address com cidade e estado selecionados
                     val address = com.taskgoapp.taskgo.core.model.Address(
-                        street = street,
-                        number = number,
-                        complement = complement.takeIf { it.isNotEmpty() },
-                        neighborhood = neighborhood,
-                        city = city,
-                        state = state,
-                        country = country,
-                        zipCode = zipCodeText,
-                        cep = zipCodeText
+                        street = "",
+                        number = "",
+                        complement = null,
+                        neighborhood = "",
+                        city = selectedCity ?: "",
+                        state = selectedState ?: "",
+                        country = "Brasil",
+                        zipCode = "",
+                        cep = ""
                     )
                     
                     // Parse birthDate se fornecido
@@ -1143,11 +1013,9 @@ fun SignUpScreen(
                         null
                     }
                     
-                    // Mapear AccountType para UserType (temporário, para compatibilidade)
+                    // Mapear AccountType para UserType
                     val userType = when (selectedAccountType) {
-                        AccountType.PARCEIRO -> com.taskgoapp.taskgo.core.model.UserType.PROVIDER // Parceiro mapeia para PROVIDER
-                        AccountType.PRESTADOR -> com.taskgoapp.taskgo.core.model.UserType.PROVIDER // Legacy
-                        AccountType.VENDEDOR -> com.taskgoapp.taskgo.core.model.UserType.PROVIDER // Legacy - agora é provider também
+                        AccountType.PARCEIRO -> com.taskgoapp.taskgo.core.model.UserType.PARTNER
                         AccountType.CLIENTE -> com.taskgoapp.taskgo.core.model.UserType.CLIENT
                     }
                     
@@ -1189,13 +1057,13 @@ fun SignUpScreen(
                          cpfError == null &&
                          rgText.length >= 6 &&
                          rgError == null &&
-                         isAddressComplete &&
+                         selectedCity != null &&
+                         selectedState != null &&
                          password.isNotEmpty() && 
                          confirmPassword.isNotEmpty() && 
                          password == confirmPassword &&
                          passwordError == null &&
                          confirmPasswordError == null &&
-                         // Validação adicional: RG formatado deve ser válido (XX.XXX.XXX-X = 9 dígitos ou mais)
                          (rgText.isEmpty() || (rgText.length >= 6 && rgText.length <= 12))
             ) {
                 if (uiState.isLoading) {

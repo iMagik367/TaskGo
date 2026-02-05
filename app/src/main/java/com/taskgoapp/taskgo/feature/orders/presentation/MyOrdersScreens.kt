@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.orders.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,10 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
-import com.taskgoapp.taskgo.core.theme.TaskGoGreen
-import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
-import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
+import com.taskgoapp.taskgo.core.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,8 +137,9 @@ private fun OrderCard(
 ) {
 	Card(
 		modifier = Modifier.fillMaxWidth(),
-		colors = CardDefaults.cardColors(containerColor = Color.White),
-		elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+		colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+		elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+		border = BorderStroke(1.dp, TaskGoBorder)
 	) {
 		Column(Modifier.padding(16.dp)) {
 			Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

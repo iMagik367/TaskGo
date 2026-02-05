@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.feed.presentation.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -29,8 +30,9 @@ fun BlockUserDialog(
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = Color.White
-            )
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Column(
                 modifier = Modifier

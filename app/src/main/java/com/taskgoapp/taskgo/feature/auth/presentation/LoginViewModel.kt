@@ -7,11 +7,14 @@ import com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.core.model.AccountType
+import com.taskgoapp.taskgo.core.model.fold
 import com.google.firebase.auth.GoogleAuthProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.Date
@@ -21,7 +24,8 @@ data class LoginUiState(
     val errorMessage: String? = null,
     val isSuccess: Boolean = false,
     val requiresTwoFactor: Boolean = false,
-    val showAccountTypeDialog: Boolean = false
+    val showAccountTypeDialog: Boolean = false,
+    val requiresIdentityVerification: Boolean = false
 )
 
 @HiltViewModel
@@ -30,7 +34,10 @@ class LoginViewModel @Inject constructor(
     private val firestoreUserRepository: FirestoreUserRepository,
     private val initialDataSyncManager: com.taskgoapp.taskgo.core.sync.InitialDataSyncManager,
     private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager,
-    private val firebaseFunctionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+    private val firebaseFunctionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
+    private val locationUpdateService: com.taskgoapp.taskgo.core.location.LocationUpdateService,
+    private val categoriesRepository: com.taskgoapp.taskgo.domain.repository.CategoriesRepository,
+    private val locationManager: com.taskgoapp.taskgo.core.location.LocationManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -38,10 +45,14 @@ class LoginViewModel @Inject constructor(
     
     // Armazenar temporariamente o firebaseUser quando mostrar dialog de AccountType
     private var pendingFirebaseUser: com.google.firebase.auth.FirebaseUser? = null
+    
+    // Observar categorias de serviço para o dialog
+    val serviceCategories = categoriesRepository.observeServiceCategories()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * Login com CPF/CNPJ - busca o email associado ao documento e faz login
-     * Apenas para parceiros (role = "partner" ou "provider" - legacy)
+     * Apenas para parceiros (role = "partner")
      */
     fun loginWithDocument(document: String, password: String) {
         if (_uiState.value.isLoading) {
@@ -60,7 +71,7 @@ class LoginViewModel @Inject constructor(
                 val result = firebaseFunctionsService.getUserEmailByDocument(document)
                 
                 result.fold(
-                    onSuccess = { data ->
+                    onSuccess = { data: Map<String, Any> ->
                         val email = data["email"] as? String
                         val role = data["role"] as? String
                         
@@ -71,27 +82,25 @@ class LoginViewModel @Inject constructor(
                                 isSuccess = false,
                                 requiresTwoFactor = false
                             )
-                            return@fold
+                        } else {
+                            // Verificar se é parceiro (já validado na Cloud Function, mas verificar novamente)
+                            val userRole = role?.lowercase() ?: ""
+                            if (userRole != "partner") {
+                                Log.w("LoginViewModel", "Tentativa de login com CPF para usuário que não é parceiro. Role: $userRole")
+                                _uiState.value = LoginUiState(
+                                    isLoading = false,
+                                    errorMessage = "Este CPF/CNPJ não está cadastrado como parceiro. Use email e senha para fazer login.",
+                                    isSuccess = false,
+                                    requiresTwoFactor = false
+                                )
+                            } else {
+                                // Fazer login com o email encontrado - o método login() já verifica 2FA
+                                Log.d("LoginViewModel", "Email encontrado para documento: $email, Role: $role")
+                                login(email, password)
+                            }
                         }
-                        
-                        // Verificar se é parceiro (já validado na Cloud Function, mas verificar novamente)
-                        val userRole = role?.lowercase() ?: ""
-                        if (userRole != "partner" && userRole != "provider") {
-                            Log.w("LoginViewModel", "Tentativa de login com CPF para usuário que não é parceiro. Role: $userRole")
-                            _uiState.value = LoginUiState(
-                                isLoading = false,
-                                errorMessage = "Este CPF/CNPJ não está cadastrado como parceiro. Use email e senha para fazer login.",
-                                isSuccess = false,
-                                requiresTwoFactor = false
-                            )
-                            return@fold
-                        }
-                        
-                        // Fazer login com o email encontrado - o método login() já verifica 2FA
-                        Log.d("LoginViewModel", "Email encontrado para documento: $email, Role: $role")
-                        login(email, password)
                     },
-                    onFailure = { exception ->
+                    onFailure = { exception: Throwable ->
                         Log.e("LoginViewModel", "Erro ao buscar email por documento: ${exception.message}", exception)
                         val errorMessage = when (exception) {
                             is com.google.firebase.functions.FirebaseFunctionsException -> {
@@ -159,7 +168,7 @@ class LoginViewModel @Inject constructor(
                 
                 val result = authRepository.signInWithEmail(email.trim(), password)
                 result.fold(
-                    onSuccess = { firebaseUser ->
+                    onSuccess = { firebaseUser: com.google.firebase.auth.FirebaseUser ->
                         Log.d("LoginViewModel", "Login bem-sucedido: ${firebaseUser.uid}")
                         
                         // Salvar email para biometria
@@ -172,39 +181,25 @@ class LoginViewModel @Inject constructor(
                             
                             val existingUser = firestoreUserRepository.getUser(firebaseUser.uid)
                             if (existingUser == null) {
-                                // Criar usuário no Firestore se não existir
-                                Log.d("LoginViewModel", "Criando perfil no Firestore...")
-                                val newUser = UserFirestore(
-                                    uid = firebaseUser.uid,
-                                    email = firebaseUser.email ?: email.trim(),
-                                    displayName = firebaseUser.displayName,
-                                    photoURL = firebaseUser.photoUrl?.toString(),
-                                    role = "client",
-                                    profileComplete = false,
-                                    verified = firebaseUser.isEmailVerified,
-                                    createdAt = Date(),
-                                    updatedAt = Date(),
-                                    twoFactorEnabled = false
+                                // CRÍTICO: NÃO criar usuário com role padrão aqui
+                                // O role DEVE ser definido APENAS quando o usuário escolhe o tipo de conta
+                                // Se o usuário não existe, mostrar dialog de seleção de tipo de conta
+                                Log.d("LoginViewModel", "Usuário não existe no Firestore - mostrando dialog de seleção de tipo de conta")
+                                pendingFirebaseUser = firebaseUser
+                                _uiState.value = LoginUiState(
+                                    isLoading = false,
+                                    errorMessage = null,
+                                    isSuccess = false,
+                                    requiresTwoFactor = false,
+                                    showAccountTypeDialog = true
                                 )
-                                
-                                firestoreUserRepository.updateUser(newUser).fold(
-                                    onSuccess = {
-                                        Log.d("LoginViewModel", "Perfil criado com sucesso no Firestore")
-                                        userFirestore = newUser
-                                        checkTwoFactorAndNavigate(userFirestore, firebaseUser)
-                                    },
-                                    onFailure = { exception ->
-                                        Log.e("LoginViewModel", "Erro ao criar perfil no Firestore: ${exception.message}", exception)
-                                        // Mesmo com erro, permitir login mas sem 2FA
-                                        checkTwoFactorAndNavigate(null, firebaseUser)
-                                    }
-                                )
+                                return@launch
                             } else {
                                 Log.d("LoginViewModel", "Usuário já existe no Firestore: ${existingUser.displayName}, Role: ${existingUser.role}, 2FA: ${existingUser.twoFactorEnabled}")
                                 
                                 // Verificar se é parceiro tentando fazer login via email
                                 val existingUserRole = existingUser.role?.lowercase() ?: ""
-                                if (existingUserRole == "partner" || existingUserRole == "provider") {
+                                if (existingUserRole == "partner") {
                                     // Parceiros devem usar CPF/CNPJ para login
                                     authRepository.signOut()
                                     _uiState.value = LoginUiState(
@@ -213,11 +208,10 @@ class LoginViewModel @Inject constructor(
                                         isSuccess = false,
                                         requiresTwoFactor = false
                                     )
-                                    return@fold
+                                } else {
+                                    userFirestore = existingUser
+                                    checkTwoFactorAndNavigate(userFirestore, firebaseUser)
                                 }
-                                
-                                userFirestore = existingUser
-                                checkTwoFactorAndNavigate(userFirestore, firebaseUser)
                             }
                         } catch (e: Exception) {
                             Log.e("LoginViewModel", "Erro ao verificar/criar usuário no Firestore: ${e.message}", e)
@@ -290,6 +284,22 @@ class LoginViewModel @Inject constructor(
      * Verifica se 2FA está ativado e navega adequadamente
      */
     private fun checkTwoFactorAndNavigate(userFirestore: com.taskgoapp.taskgo.data.firestore.models.UserFirestore?, firebaseUser: com.google.firebase.auth.FirebaseUser) {
+        // Verificar se precisa de verificação de identidade (parceiro não verificado)
+        val isPartner = userFirestore?.role?.lowercase() == "partner"
+        val needsIdentityVerification = isPartner && userFirestore?.verified != true && (userFirestore?.profileComplete != true)
+        
+        if (needsIdentityVerification) {
+            Log.d("LoginViewModel", "Parceiro precisa de verificação de identidade, navegando...")
+            _uiState.value = LoginUiState(
+                isLoading = false,
+                isSuccess = false,
+                requiresTwoFactor = false,
+                requiresIdentityVerification = true,
+                errorMessage = null
+            )
+            return
+        }
+        
         // Verificar se 2FA está ativado
         val twoFactorEnabled = userFirestore?.twoFactorEnabled == true
         Log.d("LoginViewModel", "Verificando 2FA: enabled=$twoFactorEnabled, userFirestore=${userFirestore?.uid}")
@@ -300,11 +310,17 @@ class LoginViewModel @Inject constructor(
                 isLoading = false,
                 isSuccess = false,
                 requiresTwoFactor = true,
+                requiresIdentityVerification = false,
                 errorMessage = null
             )
         } else {
             Log.d("LoginViewModel", "2FA não ativado, navegando para home")
-            _uiState.value = LoginUiState(isLoading = false, isSuccess = true, errorMessage = null, requiresTwoFactor = false)
+            _uiState.value = LoginUiState(isLoading = false, isSuccess = true, errorMessage = null, requiresTwoFactor = false, requiresIdentityVerification = false)
+            
+            // ✅ REMOVIDO: LocationUpdateService usa GPS para atualizar city/state
+            // LEI MÁXIMA DO TASKGO: city/state deve vir APENAS do perfil do usuário (cadastro)
+            // NUNCA usar GPS para city/state - GPS apenas para coordenadas (mapa) quando necessário
+            Log.d("LoginViewModel", "✅ Login bem-sucedido - city/state vêm do perfil do Firestore")
             
             // Sincronizar dados em background (não bloqueia login)
             viewModelScope.launch {
@@ -340,7 +356,7 @@ class LoginViewModel @Inject constructor(
                 
                 val result = authRepository.signInWithGoogle(idToken)
                 result.fold(
-                    onSuccess = { firebaseUser ->
+                    onSuccess = { firebaseUser: com.google.firebase.auth.FirebaseUser ->
                         Log.d("LoginViewModel", "Login com Google bem-sucedido: ${firebaseUser.uid}")
                         
                         // Verificar se o usuário existe no Firestore, se não, criar
@@ -352,23 +368,18 @@ class LoginViewModel @Inject constructor(
                         }
                         
                         if (existingUser != null) {
-                            // CRÍTICO: Verificar se o usuário JÁ TEM role definido (partner ou client)
-                            // Se já tem role definido, NUNCA mostrar dialog, mesmo que pendingAccountType seja true
-                            val hasDefinedRole = existingUser.role != null && 
-                                               existingUser.role.isNotBlank() && 
-                                               (existingUser.role.lowercase() == "partner" || existingUser.role.lowercase() == "client")
+                            // CRÍTICO: Verificar se o usuário JÁ TEM role válido definido (partner ou client)
+                            // Role válido = não é null, não é vazio, e é "partner" ou "client" (não "user" padrão)
+                            val role = existingUser.role?.lowercase() ?: ""
+                            val hasValidRole = role.isNotBlank() && (role == "partner" || role == "client")
                             
-                            // Verificar se é um usuário "pendente" - APENAS no primeiro login após cadastro
-                            // Critério: pendingAccountType == true E (role == null OU role == "client" padrão) E profileComplete == false
-                            // E NÃO tem role definido (hasDefinedRole == false)
-                            val isPendingUser = !hasDefinedRole && 
-                                             existingUser.pendingAccountType == true && 
-                                             (existingUser.role == null || existingUser.role.lowercase() == "client") && 
-                                             existingUser.profileComplete == false
+                            // CRÍTICO: Se pendingAccountType == true OU não tem role válido, SEMPRE mostrar dialog
+                            // Isso garante que o dialog apareça mesmo se o usuário fechar e tentar de novo
+                            val needsAccountTypeSelection = existingUser.pendingAccountType == true || !hasValidRole
                             
-                            if (isPendingUser) {
-                                // PRIMEIRO LOGIN APÓS CADASTRO - Usuário foi criado pela Cloud Function mas ainda não selecionou tipo de conta
-                                Log.d("LoginViewModel", "PRIMEIRO LOGIN: Usuário pendente detectado, mostrando dialog de seleção de tipo de conta. Role atual: ${existingUser.role}, pendingAccountType: ${existingUser.pendingAccountType}")
+                            if (needsAccountTypeSelection) {
+                                // USUÁRIO PRECISA SELECIONAR TIPO DE CONTA
+                                Log.d("LoginViewModel", "PRIMEIRO LOGIN: Usuário precisa selecionar tipo de conta. Role atual: '${existingUser.role}', pendingAccountType: ${existingUser.pendingAccountType}, hasValidRole: $hasValidRole")
                                 pendingFirebaseUser = firebaseUser
                                 _uiState.value = LoginUiState(
                                     isLoading = false,
@@ -377,9 +388,8 @@ class LoginViewModel @Inject constructor(
                                     requiresTwoFactor = false
                                 )
                             } else {
-                                // USUÁRIO JÁ TEM TIPO DE CONTA DEFINIDO - NÃO mostrar dialog NUNCA
-                                val existingRole = existingUser.role?.lowercase() ?: "client"
-                                Log.d("LoginViewModel", "LOGIN SUBSEQUENTE: Usuário já tem tipo de conta definido. Role: $existingRole, pendingAccountType: ${existingUser.pendingAccountType}, profileComplete: ${existingUser.profileComplete}, hasDefinedRole: $hasDefinedRole")
+                                // USUÁRIO JÁ TEM TIPO DE CONTA VÁLIDO DEFINIDO - NÃO mostrar dialog
+                                Log.d("LoginViewModel", "LOGIN SUBSEQUENTE: Usuário já tem tipo de conta válido definido. Role: $role, pendingAccountType: ${existingUser.pendingAccountType}")
                             
                                 // Salvar email para biometria
                                 preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
@@ -388,7 +398,7 @@ class LoginViewModel @Inject constructor(
                                 checkTwoFactorAndNavigate(existingUser, firebaseUser)
                             }
                         } else {
-                            // NOVO USUÁRIO - Primeiro login, mostrar dialog de seleção de tipo de conta
+                            // NOVO USUÁRIO - Documento não existe no Firestore, mostrar dialog de seleção de tipo de conta
                             Log.d("LoginViewModel", "PRIMEIRO LOGIN: Novo usuário Google (documento não existe no Firestore), mostrando dialog de seleção de tipo de conta")
                             pendingFirebaseUser = firebaseUser
                             _uiState.value = LoginUiState(
@@ -474,7 +484,7 @@ class LoginViewModel @Inject constructor(
     /**
      * Cria o usuário no Firestore com o AccountType selecionado após login com Google
      */
-    fun createUserWithAccountType(accountType: com.taskgoapp.taskgo.core.model.AccountType) {
+    fun createUserWithAccountType(data: com.taskgoapp.taskgo.core.design.AccountTypeSelectionData) {
         val firebaseUser = pendingFirebaseUser ?: return
         pendingFirebaseUser = null
         
@@ -482,148 +492,199 @@ class LoginViewModel @Inject constructor(
         
         viewModelScope.launch {
             try {
-                val role = when (accountType) {
+                val role = when (data.accountType) {
                     com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> "partner"
-                    com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR -> "partner" // Legacy - migrar para partner
-                    com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR -> "partner" // Legacy - migrar para partner
                     com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> "client"
+                    else -> throw IllegalStateException("AccountType inválido: ${data.accountType}. Deve ser PARCEIRO ou CLIENTE.")
                 }
                 
-                Log.d("LoginViewModel", "Criando/atualizando perfil no Firestore com AccountType: $accountType, role: $role")
+                val userCity = data.city?.takeIf { it.isNotBlank() }
+                    ?: run {
+                        _uiState.value = LoginUiState(
+                            isLoading = false,
+                            errorMessage = "Cidade é obrigatória e não pode estar vazia",
+                            isSuccess = false,
+                            requiresTwoFactor = false
+                        )
+                        return@launch
+                    }
                 
-                // CRÍTICO: Primeiro chamar setInitialUserRole Cloud Function para definir Custom Claims
-                Log.d("LoginViewModel", "🔵 Chamando setInitialUserRole Cloud Function...")
-                Log.d("LoginViewModel", "   Parâmetros: role=$role, accountType=${accountType.name}, userId=${firebaseUser.uid}")
-                val setRoleResult = firebaseFunctionsService.setInitialUserRole(role, accountType.name)
+                val userState = data.state?.takeIf { it.isNotBlank() }
+                    ?: run {
+                        _uiState.value = LoginUiState(
+                            isLoading = false,
+                            errorMessage = "Estado é obrigatório e não pode estar vazio",
+                            isSuccess = false,
+                            requiresTwoFactor = false
+                        )
+                        return@launch
+                    }
+                
+                val validatedCity = com.taskgoapp.taskgo.core.location.LocationValidator.validateAndNormalizeCity(userCity) ?: userCity
+                val validatedState = com.taskgoapp.taskgo.core.location.LocationValidator.validateAndNormalizeState(userState) ?: userState
+                
+                // CRÍTICO: Criar documento do usuário ANTES de chamar setInitialUserRole
+                // A Cloud Function precisa que o documento exista para atualizar o role
+                Log.d("LoginViewModel", "📝 Criando documento inicial do usuário no Firestore...")
+                val initialUserDoc = UserFirestore(
+                    uid = firebaseUser.uid,
+                    email = firebaseUser.email ?: "",
+                    displayName = firebaseUser.displayName,
+                    photoURL = firebaseUser.photoUrl?.toString(),
+                    role = "client", // Temporário - será atualizado pela Cloud Function
+                    pendingAccountType = true,
+                    profileComplete = false,
+                    verified = firebaseUser.isEmailVerified,
+                    createdAt = Date(),
+                    updatedAt = Date(),
+                    city = validatedCity,
+                    state = validatedState,
+                    cpf = data.cpf,
+                    cnpj = data.cnpj,
+                    rg = data.rg
+                )
+                
+                // Salvar documento inicial
+                firestoreUserRepository.updateUser(initialUserDoc).fold(
+                    onSuccess = {
+                        Log.d("LoginViewModel", "✅ Documento inicial criado com sucesso")
+                    },
+                    onFailure = { e ->
+                        Log.e("LoginViewModel", "❌ Erro ao criar documento inicial: ${e.message}", e)
+                        _uiState.value = LoginUiState(
+                            isLoading = false,
+                            errorMessage = "Erro ao criar perfil: ${e.message}",
+                            isSuccess = false,
+                            requiresTwoFactor = false
+                        )
+                        return@launch
+                    }
+                )
+                
+                // Aguardar propagação do Firestore
+                kotlinx.coroutines.delay(500)
+                
+                // Agora chamar setInitialUserRole para definir o role correto
+                val setRoleResult = firebaseFunctionsService.setInitialUserRole(role, data.accountType.name)
                 
                 setRoleResult.fold(
-                    onSuccess = { result ->
+                    onSuccess = { result: Map<String, Any> ->
                         Log.d("LoginViewModel", "✅ setInitialUserRole bem-sucedido: $result")
-                        val resultRole = result["role"] as? String ?: "não encontrado"
+                        val resultRole = result["role"] as? String
                         Log.d("LoginViewModel", "   Role retornado pela CF: $resultRole")
                         
-                        // CRÍTICO: Recarregar token para obter novos Custom Claims
-                        Log.d("LoginViewModel", "Recarregando token para obter novos Custom Claims...")
-                        try {
+                        viewModelScope.launch {
+                            // CRÍTICO: Recarregar token para obter novos Custom Claims
                             firebaseUser.getIdToken(true).await()
-                            Log.d("LoginViewModel", "Token recarregado com sucesso")
-                        } catch (e: Exception) {
-                            Log.e("LoginViewModel", "Erro ao recarregar token: ${e.message}", e)
-                        }
-                        
-                        // Verificar se o documento já existe antes de atualizar
-                        val existingUser = try {
-                            firestoreUserRepository.getUser(firebaseUser.uid)
-                        } catch (e: Exception) {
-                            Log.w("LoginViewModel", "Erro ao verificar usuário existente: ${e.message}")
-                            null
-                        }
-                        
-                        // Preservar createdAt se o usuário já existir
-                        val createdAt = existingUser?.createdAt ?: Date()
-                        
-                        val userFirestore = UserFirestore(
-                            uid = firebaseUser.uid,
-                            email = firebaseUser.email ?: "",
-                            displayName = firebaseUser.displayName,
-                            photoURL = firebaseUser.photoUrl?.toString(),
-                            role = role, // CRÍTICO: Definir role corretamente
-                            pendingAccountType = false, // CRÍTICO: Remover flag para que dialog não apareça mais
-                            profileComplete = existingUser?.profileComplete ?: false,
-                            verified = firebaseUser.isEmailVerified,
-                            createdAt = createdAt, // Preservar data de criação original
-                            updatedAt = Date()
-                        )
-                        
-                        Log.d("LoginViewModel", "Usuário antes de atualizar: ${existingUser?.uid}, role: ${existingUser?.role}, pendingAccountType: ${existingUser?.pendingAccountType}")
-                        Log.d("LoginViewModel", "Dados a serem salvos: role=$role, pendingAccountType=false")
-                        
-                        firestoreUserRepository.updateUser(userFirestore).fold(
-                            onSuccess = {
-                                Log.d("LoginViewModel", "✅ Perfil atualizado com sucesso no Firestore. AccountType: $accountType, role: $role, pendingAccountType: false")
-                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
-                                
-                                // CRÍTICO: Forçar sincronização dos dados do usuário após atualizar role
-                                Log.d("LoginViewModel", "🔄 Forçando sincronização dos dados do usuário após atualização de role...")
-                                viewModelScope.launch {
-                                    try {
-                                        initialDataSyncManager.syncAllUserData()
-                                        Log.d("LoginViewModel", "✅ Sincronização de dados concluída")
-                                    } catch (e: Exception) {
-                                        Log.e("LoginViewModel", "Erro ao sincronizar dados após atualização de role: ${e.message}", e)
-                                    }
-                                }
-                                
-                                // Verificar se o role foi salvo corretamente após atualização
-                                kotlinx.coroutines.delay(500) // Aguardar para garantir que a atualização foi processada
-                                val verifyUser = try {
-                                    firestoreUserRepository.getUser(firebaseUser.uid)
-                                } catch (e: Exception) {
-                                    Log.w("LoginViewModel", "Erro ao verificar usuário após atualização: ${e.message}")
-                                    null
-                                }
-                                val savedRole = verifyUser?.role?.lowercase() ?: "não encontrado"
-                                val savedPending = verifyUser?.pendingAccountType ?: false
-                                Log.d("LoginViewModel", "🔍 VERIFICAÇÃO CRÍTICA - role salvo: $savedRole (esperado: $role), pendingAccountType: $savedPending (esperado: false)")
-                                
-                                // Verificar 2FA e navegar
-                                checkTwoFactorAndNavigate(verifyUser ?: userFirestore, firebaseUser)
-                            },
-                            onFailure = { exception ->
-                                Log.e("LoginViewModel", "Erro ao atualizar perfil no Firestore: ${exception.message}", exception)
-                                // Mesmo com erro no Firestore, o Custom Claim já foi definido, então permitir login
-                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
-                                checkTwoFactorAndNavigate(existingUser ?: userFirestore, firebaseUser)
-                            }
-                        )
-                    },
-                    onFailure = { exception ->
-                        Log.e("LoginViewModel", "❌ ERRO ao chamar setInitialUserRole: ${exception.message}", exception)
-                        Log.e("LoginViewModel", "   Exception type: ${exception.javaClass.simpleName}")
-                        Log.e("LoginViewModel", "   Stack trace:", exception)
-                        // Se falhar, tentar salvar diretamente no Firestore (fallback)
-                        val existingUser = try {
-                            firestoreUserRepository.getUser(firebaseUser.uid)
-                        } catch (e: Exception) {
-                            Log.w("LoginViewModel", "Erro ao verificar usuário existente: ${e.message}")
-                            null
-                        }
-                        
-                        val createdAt = existingUser?.createdAt ?: Date()
-                        val userFirestore = UserFirestore(
-                            uid = firebaseUser.uid,
-                            email = firebaseUser.email ?: "",
-                            displayName = firebaseUser.displayName,
-                            photoURL = firebaseUser.photoUrl?.toString(),
-                            role = role,
-                            pendingAccountType = false,
-                            profileComplete = existingUser?.profileComplete ?: false,
-                            verified = firebaseUser.isEmailVerified,
-                            createdAt = createdAt,
-                            updatedAt = Date()
-                        )
-                        
-                        firestoreUserRepository.updateUser(userFirestore).fold(
-                            onSuccess = {
-                                Log.d("LoginViewModel", "Perfil atualizado no Firestore (fallback)")
-                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
-                                checkTwoFactorAndNavigate(userFirestore, firebaseUser)
-                            },
-                            onFailure = { e ->
-                                Log.e("LoginViewModel", "Erro ao criar perfil (fallback): ${e.message}", e)
-                                preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                            
+                            // CRÍTICO: Aguardar propagação do Firestore após Cloud Function salvar
+                            // A Cloud Function já salvou em users/{userId} e locations/{locationId}/users/{userId}
+                            kotlinx.coroutines.delay(1000)
+                            
+                            // CRÍTICO: Ler o usuário do Firestore - o role já foi salvo pela Cloud Function
+                            // O getUser busca primeiro em users/{userId} e depois em locations/{locationId}/users/{userId}
+                            val existingUser = firestoreUserRepository.getUser(firebaseUser.uid)
+                            
+                            if (existingUser == null) {
+                                Log.e("LoginViewModel", "❌ ERRO: existingUser é null após setInitialUserRole")
                                 _uiState.value = LoginUiState(
                                     isLoading = false,
-                                    errorMessage = "Erro ao criar perfil: ${e.message}",
-                                    showAccountTypeDialog = false,
+                                    errorMessage = "Erro ao ler dados do usuário após definir tipo de conta",
+                                    isSuccess = false,
                                     requiresTwoFactor = false
                                 )
+                                return@launch
                             }
-                        )
+                            
+                            // CRÍTICO: O existingUser sempre existirá após setInitialUserRole
+                            // A Cloud Function já salvou em users/{userId} e o getUser sempre encontra lá
+                            // O role já foi salvo pela Cloud Function e está no existingUser
+                            val userFirestore = existingUser.copy(
+                                pendingAccountType = false,
+                                city = validatedCity,
+                                state = validatedState,
+                                cpf = data.cpf,
+                                cnpj = data.cnpj,
+                                rg = data.rg,
+                                preferredCategories = if (data.accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO && data.selectedCategories.isNotEmpty()) {
+                                    data.selectedCategories.toList()
+                                } else existingUser.preferredCategories,
+                                updatedAt = Date()
+                            )
+                            
+                            Log.d("LoginViewModel", "✅ Role lido do Firestore: ${userFirestore.role}")
+                            
+                            firestoreUserRepository.updateUser(userFirestore).fold(
+                                onSuccess = { _: Unit ->
+                                    preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                    try {
+                                        initialDataSyncManager.syncAllUserData()
+                                    } catch (e: Exception) {
+                                        // Ignorar erro de sincronização
+                                    }
+                                    
+                                    if (data.accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO) {
+                                        _uiState.value = LoginUiState(
+                                            isLoading = false,
+                                            isSuccess = false,
+                                            requiresTwoFactor = false,
+                                            requiresIdentityVerification = true,
+                                            errorMessage = null
+                                        )
+                                    } else {
+                                        checkTwoFactorAndNavigate(userFirestore, firebaseUser)
+                                    }
+                                },
+                                onFailure = { exception: Throwable ->
+                                    preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                    checkTwoFactorAndNavigate(existingUser ?: userFirestore, firebaseUser)
+                                }
+                            )
+                        }
+                    },
+                    onFailure = { exception: Throwable ->
+                        viewModelScope.launch {
+                            val existingUser = try {
+                                firestoreUserRepository.getUser(firebaseUser.uid)
+                            } catch (e: Exception) {
+                                null
+                            }
+                            
+                            val createdAt = existingUser?.createdAt ?: Date()
+                            val userFirestore = UserFirestore(
+                                uid = firebaseUser.uid,
+                                email = firebaseUser.email ?: "",
+                                displayName = firebaseUser.displayName,
+                                photoURL = firebaseUser.photoUrl?.toString(),
+                                role = role,
+                                pendingAccountType = false,
+                                profileComplete = existingUser?.profileComplete ?: false,
+                                verified = firebaseUser.isEmailVerified,
+                                createdAt = createdAt,
+                                updatedAt = Date(),
+                                city = validatedCity,
+                                state = validatedState
+                            )
+                            
+                            firestoreUserRepository.updateUser(userFirestore).fold(
+                                onSuccess = { _: Unit ->
+                                    preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                    checkTwoFactorAndNavigate(userFirestore, firebaseUser)
+                                },
+                                onFailure = { e: Throwable ->
+                                    preferencesManager.saveEmailForBiometric(firebaseUser.email ?: "")
+                                    _uiState.value = LoginUiState(
+                                        isLoading = false,
+                                        errorMessage = "Erro ao criar perfil: ${e.message}",
+                                        showAccountTypeDialog = false,
+                                        requiresTwoFactor = false
+                                    )
+                                }
+                            )
+                        }
                     }
                 )
             } catch (e: Exception) {
-                Log.e("LoginViewModel", "Erro ao criar usuário com AccountType: ${e.message}", e)
                 _uiState.value = LoginUiState(
                     isLoading = false,
                     errorMessage = "Erro ao criar perfil: ${e.message}",
@@ -636,7 +697,12 @@ class LoginViewModel @Inject constructor(
     
     fun cancelAccountTypeSelection() {
         pendingFirebaseUser = null
-        _uiState.value = LoginUiState(showAccountTypeDialog = false)
+        _uiState.value = LoginUiState(
+            isLoading = false,
+            showAccountTypeDialog = false,
+            isSuccess = false,
+            requiresTwoFactor = false
+        )
         // Fazer logout já que cancelou a seleção
         viewModelScope.launch {
             authRepository.signOut()

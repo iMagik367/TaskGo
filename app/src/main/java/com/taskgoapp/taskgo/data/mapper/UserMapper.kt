@@ -27,8 +27,6 @@ object UserMapper {
             state = this.state,
             profession = this.profession,
             accountType = when (this.accountType) {
-                "PRESTADOR" -> AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
-                "VENDEDOR" -> AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
                 "PARCEIRO" -> AccountType.PARCEIRO
                 "CLIENTE" -> AccountType.CLIENTE
                 else -> AccountType.CLIENTE
@@ -61,22 +59,27 @@ object UserMapper {
     
     fun UserFirestore.toModel(): UserProfile {
         // Mapear role string para AccountType enum
-        // Suporta legacy roles (provider, seller) mapeando para PARCEIRO
-        val accountType = when (this.role.lowercase()) {
-            "provider" -> AccountType.PARCEIRO // Legacy - migrar para partner
-            "seller" -> AccountType.PARCEIRO // Legacy - migrar para partner
-            "partner" -> AccountType.PARCEIRO
-            "client" -> AccountType.CLIENTE
-            else -> AccountType.CLIENTE
+        // CRÍTICO: O role SEMPRE será "partner" ou "client" - garantido pelo sistema
+        val accountType = if (this.role.lowercase() == "partner") {
+            AccountType.PARCEIRO
+        } else {
+            AccountType.CLIENTE
         }
+        
+        // Lei 1: city e state DEVEM estar na raiz do documento users/{userId}
+        // NÃO usar address.city ou address.state - isso viola a Lei 1
+        // ✅ REMOVIDO: LocationUpdateService não atualiza mais city/state via GPS
+        // City/state vêm APENAS do cadastro do usuário no Firestore
+        val city = this.city?.takeIf { it.isNotBlank() }
+        val state = this.state?.takeIf { it.isNotBlank() }
         
         return UserProfile(
             id = this.uid,
             name = this.displayName ?: "",
             email = this.email,
             phone = this.phone,
-            city = this.address?.city,
-            state = this.address?.state, // Extrair state do address
+            city = city,
+            state = state,
             profession = null, // UserFirestore não tem profession diretamente
             accountType = accountType,
             rating = this.rating,

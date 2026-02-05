@@ -5,8 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskgoapp.taskgo.data.local.datastore.PreferencesManager
 import com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
-import com.taskgoapp.taskgo.core.location.LocationStateManager
-import com.taskgoapp.taskgo.core.location.LocationState
+import com.taskgoapp.taskgo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +22,8 @@ class SplashViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
     private val authRepository: FirebaseAuthRepository,
     private val initialDataSyncManager: com.taskgoapp.taskgo.core.sync.InitialDataSyncManager,
-    private val locationStateManager: LocationStateManager
+    private val userRepository: UserRepository,
+    private val locationUpdateService: com.taskgoapp.taskgo.core.location.LocationUpdateService
 ) : ViewModel() {
     
     val permissionsRequested = preferencesManager.permissionsRequested
@@ -93,59 +93,52 @@ class SplashViewModel @Inject constructor(
                         tokenValid = false
                     }
                     
-                    // CRÍTICO: Só navegar para home se o token for válido E localização estiver pronta
+                    // CRÍTICO: Só navegar para home se o token for válido
                     if (tokenValid) {
-                        // ⚠️ ETAPA 4: Garantir localização no login/primeiro uso
-                        // Aguardar localização estar pronta antes de navegar para home
-                        Log.d("SplashViewModel", "Aguardando localização estar pronta...")
-                        
-                        // Aguardar localização com timeout de 10 segundos
-                        val locationState = withTimeoutOrNull(10.seconds) {
-                            locationStateManager.locationState.first { it is LocationState.Ready || it is LocationState.Error }
+                        // Verificar se o usuário tem city/state no perfil (obrigatório)
+                        val currentUserProfile = withTimeoutOrNull(5.seconds) {
+                            userRepository.observeCurrentUser().first()
                         }
                         
-                        when (locationState) {
-                            is LocationState.Ready -> {
-                                Log.d("SplashViewModel", """
-                                    Localização pronta:
-                                    City: ${locationState.city}
-                                    State: ${locationState.state}
-                                    LocationId: ${locationState.locationId}
-                                """.trimIndent())
-                                
-                                // Verificar se precisa fazer sync inicial (em background, não bloqueia navegação)
-                                val needsSync = !preferencesManager.isInitialSyncCompleted(currentUser.uid)
-                                if (needsSync) {
-                                    Log.d("SplashViewModel", "Primeiro acesso do usuário, iniciando sincronização em background...")
-                                    // Executar sync em background sem bloquear navegação
-                                    viewModelScope.launch {
-                                        try {
-                                            initialDataSyncManager.syncAllUserData()
-                                            preferencesManager.setInitialSyncCompleted(currentUser.uid)
-                                            Log.d("SplashViewModel", "Sincronização inicial concluída")
-                                        } catch (e: Exception) {
-                                            Log.e("SplashViewModel", "Erro ao sincronizar dados iniciais: ${e.message}", e)
-                                            // Continuar mesmo se o sync falhar - não é crítico para login
-                                        }
+                        val userCity = currentUserProfile?.city?.takeIf { it.isNotBlank() }
+                        val userState = currentUserProfile?.state?.takeIf { it.isNotBlank() }
+                        
+                        if (userCity != null && userState != null) {
+                            Log.d("SplashViewModel", """
+                                Usuário tem localização no perfil:
+                                City: $userCity
+                                State: $userState
+                            """.trimIndent())
+                            
+                            // Verificar se precisa fazer sync inicial (em background, não bloqueia navegação)
+                            val needsSync = !preferencesManager.isInitialSyncCompleted(currentUser.uid)
+                            if (needsSync) {
+                                Log.d("SplashViewModel", "Primeiro acesso do usuário, iniciando sincronização em background...")
+                                // Executar sync em background sem bloquear navegação
+                                viewModelScope.launch {
+                                    try {
+                                        initialDataSyncManager.syncAllUserData()
+                                        preferencesManager.setInitialSyncCompleted(currentUser.uid)
+                                        Log.d("SplashViewModel", "Sincronização inicial concluída")
+                                    } catch (e: Exception) {
+                                        Log.e("SplashViewModel", "Erro ao sincronizar dados iniciais: ${e.message}", e)
+                                        // Continuar mesmo se o sync falhar - não é crítico para login
                                     }
                                 }
-                                
-                                // Localização pronta - navegar para home
-                                Log.d("SplashViewModel", "Usuário autenticado e localização pronta, navegando para home")
-                                onNavigateToHome()
                             }
-                            is LocationState.Error -> {
-                                Log.e("SplashViewModel", "Erro ao obter localização: ${locationState.reason}")
-                                // Continuar para home mesmo sem localização (pode ser corrigido depois)
-                                // Mas isso não deve acontecer se o usuário tem city/state no perfil
-                                Log.w("SplashViewModel", "Navegando para home sem localização válida (pode causar problemas)")
-                                onNavigateToHome()
-                            }
-                            else -> {
-                                Log.w("SplashViewModel", "Timeout aguardando localização (10s), navegando para home mesmo assim")
-                                // Continuar para home mesmo sem localização (pode ser corrigido depois)
-                                onNavigateToHome()
-                            }
+                            
+                            // ✅ LEI MÁXIMA DO TASKGO: city/state deve vir APENAS do perfil do usuário (cadastro)
+                            // NUNCA usar GPS para city/state - GPS apenas para coordenadas (mapa) quando necessário
+                            Log.d("SplashViewModel", "✅ Usuário autenticado - city/state vêm do perfil do Firestore")
+                            
+                            // Localização válida - navegar para home
+                            Log.d("SplashViewModel", "Usuário autenticado e localização válida, navegando para home")
+                            onNavigateToHome()
+                        } else {
+                            Log.w("SplashViewModel", "Usuário não tem city/state no perfil. City: ${userCity ?: "null"}, State: ${userState ?: "null"}")
+                            // Continuar para home mesmo assim - o usuário pode completar o cadastro depois
+                            Log.w("SplashViewModel", "Navegando para home sem city/state válido (usuário deve completar cadastro)")
+                            onNavigateToHome()
                         }
                     } else {
                         // Token inválido - fazer signOut e ir para login

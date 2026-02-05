@@ -1,6 +1,7 @@
 package com.taskgoapp.taskgo.feature.products.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -66,8 +67,7 @@ fun ProductsScreen(
     var showImagePreview by remember { mutableStateOf<String?>(null) }
     
     val isPartner = accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO || 
-                    accountType == com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR || 
-                    accountType == com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR
+                    accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO
     
     // Adicionar "Todos" no início das categorias se não estiver presente
     val categoriesWithAll = remember(categories) {
@@ -270,7 +270,11 @@ private fun ProductCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column {
             Box(
@@ -401,7 +405,11 @@ private fun ImagePreviewModal(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Column {
                 Box(

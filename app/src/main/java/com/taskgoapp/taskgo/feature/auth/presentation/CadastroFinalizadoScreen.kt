@@ -1,6 +1,7 @@
 ﻿package com.taskgoapp.taskgo.feature.auth.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -12,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 
 @Composable
 fun CadastroFinalizadoScreen(
@@ -26,8 +29,9 @@ fun CadastroFinalizadoScreen(
                 .fillMaxWidth()
                 .padding(32.dp),
             colors = CardDefaults.cardColors(
-                containerColor = Color.White
-            )
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),

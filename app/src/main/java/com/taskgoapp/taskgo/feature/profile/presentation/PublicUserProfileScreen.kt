@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.profile.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -60,8 +61,8 @@ fun PublicUserProfileScreen(
     // Parceiro mostra tanto Serviços quanto Produtos
     val tabs = remember(uiState.accountType) {
         when (uiState.accountType) {
-            AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> 
-                listOf("Feed", "Serviços", "Produtos", "Sobre") // Unificado para Parceiro
+            AccountType.PARCEIRO -> 
+                listOf("Feed", "Serviços", "Produtos", "Sobre")
             else -> listOf("Feed", "Sobre")
         }
     }
@@ -185,9 +186,9 @@ fun PublicUserProfileScreen(
                             )
                         }
                         1 -> {
-                            // Aba Serviços - para Parceiro e Prestador
+                            // Aba Serviços - para Parceiro
                             when (uiState.accountType) {
-                                AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> {
+                                AccountType.PARCEIRO -> {
                                     ServicesTabContent(
                                         services = services,
                                         onServiceClick = onServiceClick,
@@ -204,9 +205,9 @@ fun PublicUserProfileScreen(
                             }
                         }
                         2 -> {
-                            // Aba Produtos - para Parceiro e Vendedor
+                            // Aba Produtos - para Parceiro
                             when (uiState.accountType) {
-                                AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> {
+                                AccountType.PARCEIRO -> {
                                     ProductsTabContent(
                                         products = products,
                                         onProductClick = onProductClick,
@@ -252,7 +253,8 @@ private fun ProfileHeader(
     Card(
         modifier = modifier.padding(16.dp),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite)
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier
@@ -286,8 +288,6 @@ private fun ProfileHeader(
             Text(
                 text = when (accountType) {
                     AccountType.PARCEIRO -> "Parceiro"
-                    AccountType.PRESTADOR -> "Parceiro" // Legacy
-                    AccountType.VENDEDOR -> "Parceiro" // Legacy
                     else -> "Cliente"
                 },
                 style = MaterialTheme.typography.bodyMedium,
@@ -394,7 +394,8 @@ private fun AboutTabContent(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite)
+                colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier
@@ -409,7 +410,10 @@ private fun AboutTabContent(
                         color = TaskGoTextBlack
                     )
                     
-                    userProfile.address?.city?.let { city ->
+                    // LEI MÁXIMA DO TASKGO: Ler city/state APENAS da raiz do documento, NUNCA de address
+                    val userCity = userProfile.city
+                    val userState = userProfile.state
+                    if (!userCity.isNullOrBlank() || !userState.isNullOrBlank()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -421,7 +425,12 @@ private fun AboutTabContent(
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = city,
+                                text = when {
+                                    !userCity.isNullOrBlank() && !userState.isNullOrBlank() -> "$userCity - $userState"
+                                    !userCity.isNullOrBlank() -> userCity
+                                    !userState.isNullOrBlank() -> userState
+                                    else -> ""
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TaskGoTextBlack
                             )
@@ -495,7 +504,8 @@ private fun ServiceCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite)
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier
@@ -550,7 +560,8 @@ private fun ProductCard(
             .aspectRatio(0.75f)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite)
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.fillMaxSize()
@@ -619,7 +630,8 @@ private fun ReviewCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite)
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier

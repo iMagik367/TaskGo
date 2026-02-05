@@ -150,7 +150,11 @@ fun ServiceCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -194,7 +198,11 @@ fun ProductCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column {
             Box(
@@ -251,7 +259,11 @@ fun ProposalCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)

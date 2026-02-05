@@ -7,10 +7,11 @@ import {validateAppCheck} from './security/appCheck';
 
 /**
  * Trigger: Send notification when product order status changes
- * Monitors purchase_orders collection for status changes
+ * CRÍTICO: Agora monitora locations/{locationId}/orders/{orderId} em vez de purchase_orders global
+ * NOTA: Este trigger será executado para TODAS as localizações
  */
 export const onProductOrderStatusChange = functions.firestore
-  .document('purchase_orders/{orderId}')
+  .document('locations/{locationId}/orders/{orderId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data();
     const after = change.after.data();
@@ -162,9 +163,11 @@ export const onProductOrderStatusChange = functions.firestore
 
 /**
  * Trigger: Create initial tracking event when product order is created
+ * CRÍTICO: Agora monitora locations/{locationId}/orders/{orderId} em vez de purchase_orders global
+ * NOTA: Este trigger será executado para TODAS as localizações
  */
 export const onProductOrderCreated = functions.firestore
-  .document('purchase_orders/{orderId}')
+  .document('locations/{locationId}/orders/{orderId}')
   .onCreate(async (snapshot, context) => {
     const orderId = context.params.orderId;
     const orderData = snapshot.data();
@@ -231,13 +234,28 @@ export const updateProductOrderStatus = functions.https.onCall(async (data, cont
       );
     }
 
-    const orderDoc = await db.collection('purchase_orders').doc(orderId).get();
-    if (!orderDoc.exists) {
+    // CRÍTICO: Buscar order na coleção por localização
+    // Precisamos buscar em todas as localizações pois não sabemos qual é
+    const userId = context.auth.uid;
+    const locationsSnapshot = await db.collection('locations').limit(100).get();
+    let orderDoc: admin.firestore.DocumentSnapshot | null = null;
+    let locationOrdersCollection: admin.firestore.CollectionReference | null = null;
+    
+    for (const locationDoc of locationsSnapshot.docs) {
+      const locOrdersCollection = db.collection('locations').doc(locationDoc.id).collection('orders');
+      const doc = await locOrdersCollection.doc(orderId).get();
+      if (doc.exists) {
+        orderDoc = doc;
+        locationOrdersCollection = locOrdersCollection;
+        break;
+      }
+    }
+    
+    if (!orderDoc || !orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
 
     const orderData = orderDoc.data();
-    const userId = context.auth.uid;
 
     // Verify permissions (store owner or client)
     if (orderData?.storeId !== userId && orderData?.clientId !== userId) {
@@ -256,7 +274,12 @@ export const updateProductOrderStatus = functions.https.onCall(async (data, cont
       updateData.deliveredAt = admin.firestore.FieldValue.serverTimestamp();
     }
 
-    await orderDoc.ref.update(updateData);
+    // CRÍTICO: Update order na coleção por localização
+    if (locationOrdersCollection) {
+      await locationOrdersCollection.doc(orderId).update(updateData);
+    } else {
+      await orderDoc.ref.update(updateData);
+    }
 
     functions.logger.info(`Product order ${orderId} status updated to ${status}`);
     return {success: true};

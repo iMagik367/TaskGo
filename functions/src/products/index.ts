@@ -1,15 +1,15 @@
-import * as admin from 'firebase-admin';
 import {getFirestore} from '../utils/firestore';
 import * as functions from 'firebase-functions';
 import {AppError, handleError, assertAuthenticated} from '../utils/errors';
 import {validateAppCheck} from '../security/appCheck';
 import {getUserRole} from '../security/roles';
 import {COLLECTIONS} from '../utils/constants';
-import {getLocationCollection, getUserLocation, normalizeLocationId} from '../utils/location';
+import {getUserLocation, validateCityAndState, normalizeLocationId} from '../utils/location';
+import {productsPath, getUserLocationId, createStandardPayload, createUpdatePayload} from '../utils/firestorePaths';
 
 /**
  * Cria um novo produto
- * Apenas usuários com role "seller" ou "partner" podem criar produtos
+ * Apenas usuários com role "partner" podem criar produtos
  * Cloud Function é a autoridade - valida permissões e dados
  */
 export const createProduct = functions.https.onCall(
@@ -34,12 +34,12 @@ export const createProduct = functions.https.onCall(
         userRole = userDoc.data()?.role || 'user';
       }
 
-      // Apenas sellers/partners/providers podem criar produtos
-      const allowedRoles = ['seller', 'partner', 'provider'];
+      // Apenas partners podem criar produtos
+      const allowedRoles = ['partner'];
       if (!allowedRoles.includes(userRole)) {
         throw new AppError(
           'permission-denied',
-          `Only sellers, partners, and providers can create products. Current role: ${userRole}`,
+          `Only partners can create products. Current role: ${userRole}`,
           403,
         );
       }
@@ -97,35 +97,85 @@ export const createProduct = functions.https.onCall(
         );
       }
 
-      // CRÍTICO: Obter localização do usuário para organizar por região
-      const userLocation = await getUserLocation(db, userId);
-      const {city, state} = userLocation;
+      // CRÍTICO: Usar APENAS city/state do perfil do usuário (cadastro) - LEI MÁXIMA DO TASKGO
+      // GPS (latitude/longitude) é usado APENAS para coordenadas no mapa, NÃO para determinar city/state
+      let city: string;
+      let state: string;
+      let locationId: string;
+      
+      // PRIORIDADE 1: Usar city/state enviados pelo frontend (vêm do perfil do usuário)
+      if (data.city && data.state) {
+        const validated = validateCityAndState(data.city, data.state);
+        if (!validated.valid) {
+          throw new functions.https.HttpsError(
+            'invalid-argument',
+            `Invalid location data: ${validated.error}`,
+          );
+        }
+        city = validated.city!;
+        state = validated.state!;
+        locationId = normalizeLocationId(city, state);
+        
+        functions.logger.info('📍 createProduct: Usando city/state do perfil (enviado pelo frontend)', {
+          userId,
+          city,
+          state,
+          locationId,
+          latitude: data.latitude, // GPS apenas para coordenadas
+          longitude: data.longitude, // GPS apenas para coordenadas
+        });
+      } else {
+        // FALLBACK: Obter do perfil do usuário no Firestore (se frontend não enviou)
+        functions.logger.warn(
+            '📍 createProduct: Frontend não enviou city/state, obtendo do perfil do usuário',
+            {userId}
+        );
+        const userLocation = await getUserLocation(db, userId);
+        city = userLocation.city;
+        state = userLocation.state;
+        
+        if (!city || !state) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Location not available. User must have city and state in their profile.',
+          );
+        }
+        
+        locationId = await getUserLocationId(db, userId);
+        
+        functions.logger.info('📍 createProduct: Usando city/state do perfil do Firestore', {
+          userId,
+          city,
+          state,
+          locationId,
+        });
+      }
 
       // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
-      const locationId = normalizeLocationId(city || 'unknown', state || 'unknown');
       const firestorePath = `locations/${locationId}/products`;
       
       functions.logger.info('📍 LOCATION TRACE', {
         function: 'createProduct',
         userId,
-        city: city || 'unknown',
-        state: state || 'unknown',
+        city: city,
+        state: state,
         locationId,
         firestorePath,
-        rawCity: city || '',
-        rawState: state || '',
+        source: 'users/{userId} root fields (city, state)',
         timestamp: new Date().toISOString(),
       });
 
-      if (!city || !state) {
-        functions.logger.warn(
-          `User ${userId} does not have location information. ` +
-          'Product will be saved in \'unknown\' location.'
-        );
+      // CRÍTICO: Validar que city e state estão presentes e válidos
+      if (!city || !state || city.trim() === '' || state.trim() === '') {
+        const errorMsg = `User ${userId} does not have valid location information ` +
+          `(city='${city}', state='${state}'). ` +
+          'Cannot create product without valid location.';
+        functions.logger.error(errorMsg);
+        throw new functions.https.HttpsError('failed-precondition', errorMsg);
       }
 
-      // Criar dados do produto
-      const productData = {
+      // Criar dados do produto usando payload padrão
+      const productData = createStandardPayload({
         sellerId: userId,
         title: title.trim(),
         description: description.trim(),
@@ -133,21 +183,14 @@ export const createProduct = functions.https.onCall(
         price,
         images: Array.isArray(images) ? images : [],
         stock: stock !== undefined ? stock : null,
-        active: active === true,
         status: 'active', // Apenas produtos com status "active" são públicos
         city: city || '', // Adicionar cidade explicitamente
         state: state || '', // Adicionar estado explicitamente
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
+        locationId: locationId, // CRÍTICO: Adicionar locationId para busca eficiente (SSR, reviews, etc)
+      }, active === true);
 
-      // CRÍTICO: Salvar na coleção pública por localização
-      const locationProductsCollection = getLocationCollection(
-        db,
-        COLLECTIONS.PRODUCTS || 'products',
-        city || 'unknown',
-        state || 'unknown'
-      );
+      // CRÍTICO: Salvar APENAS na coleção pública por localização
+      const locationProductsCollection = productsPath(db, locationId);
       const productRef = await locationProductsCollection.add(productData);
       const productId = productRef.id;
 
@@ -161,24 +204,13 @@ export const createProduct = functions.https.onCall(
         timestamp: new Date().toISOString(),
       });
 
-      // Também salvar na coleção global para compatibilidade (será removido futuramente)
-      await db.collection(COLLECTIONS.PRODUCTS || 'products').doc(productId).set(productData);
-
-      // Criar também na subcoleção do usuário (para organização - dados privados)
-      await db
-        .collection(COLLECTIONS.USERS)
-        .doc(userId)
-        .collection('products')
-        .doc(productId)
-        .set(productData);
-
       functions.logger.info(`Product created: ${productId}`, {
         productId,
         sellerId: userId,
         category,
         price,
-        location: `${city || 'unknown'}, ${state || 'unknown'}`,
-        locationCollection: `locations/${normalizeLocationId(city || 'unknown', state || 'unknown')}/products`,
+        location: `${city}, ${state}`,
+        locationCollection: `locations/${locationId}/products`,
         timestamp: new Date().toISOString(),
       });
 
@@ -216,8 +248,13 @@ export const updateProduct = functions.https.onCall(
         throw new AppError('invalid-argument', 'updates is required and must be an object', 400);
       }
 
-      // Buscar produto
-      const productDoc = await db.collection(COLLECTIONS.PRODUCTS || 'products').doc(productId).get();
+      // Buscar produto - precisa procurar em todas as localizações
+      // Obter locationId do usuário para buscar no path correto
+      const locationId = await getUserLocationId(db, userId);
+      
+      const locationProductsCollection = productsPath(db, locationId);
+      const productDoc = await locationProductsCollection.doc(productId).get();
+      
       if (!productDoc.exists) {
         throw new AppError('not-found', 'Product not found', 404);
       }
@@ -231,9 +268,7 @@ export const updateProduct = functions.https.onCall(
 
       // Validar campos permitidos para atualização
       const allowedFields = ['title', 'description', 'category', 'price', 'images', 'stock', 'active', 'status'];
-      const updateData: Record<string, unknown> = {
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
+      const updateDataRaw: Record<string, unknown> = {};
 
       for (const field of allowedFields) {
         if (updates[field] !== undefined) {
@@ -269,20 +304,15 @@ export const updateProduct = functions.https.onCall(
             throw new AppError('invalid-argument', 'status must be "active" or "inactive"', 400);
           }
 
-          updateData[field] = updates[field];
+          updateDataRaw[field] = updates[field];
         }
       }
 
-      // Atualizar na coleção pública
-      await db.collection(COLLECTIONS.PRODUCTS || 'products').doc(productId).update(updateData);
+      // Criar payload de atualização padrão
+      const updateData = createUpdatePayload(updateDataRaw);
 
-      // Atualizar na subcoleção do usuário
-      await db
-        .collection(COLLECTIONS.USERS)
-        .doc(userId)
-        .collection('products')
-        .doc(productId)
-        .update(updateData);
+      // Atualizar APENAS na coleção pública por localização
+      await locationProductsCollection.doc(productId).update(updateData);
 
       functions.logger.info(`Product updated: ${productId}`, {
         productId,
@@ -320,8 +350,13 @@ export const deleteProduct = functions.https.onCall(
         throw new AppError('invalid-argument', 'productId is required', 400);
       }
 
-      // Buscar produto
-      const productDoc = await db.collection(COLLECTIONS.PRODUCTS || 'products').doc(productId).get();
+      // Buscar produto - precisa procurar em todas as localizações
+      // Obter locationId do usuário para buscar no path correto
+      const locationId = await getUserLocationId(db, userId);
+      
+      const locationProductsCollection = productsPath(db, locationId);
+      const productDoc = await locationProductsCollection.doc(productId).get();
+      
       if (!productDoc.exists) {
         throw new AppError('not-found', 'Product not found', 404);
       }
@@ -333,16 +368,8 @@ export const deleteProduct = functions.https.onCall(
         throw new AppError('permission-denied', 'Only product owner can delete product', 403);
       }
 
-      // Deletar da coleção pública
-      await db.collection(COLLECTIONS.PRODUCTS || 'products').doc(productId).delete();
-
-      // Deletar da subcoleção do usuário
-      await db
-        .collection(COLLECTIONS.USERS)
-        .doc(userId)
-        .collection('products')
-        .doc(productId)
-        .delete();
+      // Deletar APENAS da coleção pública por localização
+      await locationProductsCollection.doc(productId).delete();
 
       functions.logger.info(`Product deleted: ${productId}`, {
         productId,

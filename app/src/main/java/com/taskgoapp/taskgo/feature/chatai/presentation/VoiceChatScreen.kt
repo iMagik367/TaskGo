@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -301,8 +302,9 @@ fun VoiceChatScreen(
                 .fillMaxWidth()
                 .padding(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer
-            )
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Text(
                 text = error,

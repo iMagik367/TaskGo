@@ -9,6 +9,9 @@ import com.taskgoapp.taskgo.core.model.ServiceOrder
 import com.taskgoapp.taskgo.core.model.Proposal
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 import com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository
+import com.taskgoapp.taskgo.core.model.Result
+import com.taskgoapp.taskgo.core.model.onSuccess
+import com.taskgoapp.taskgo.core.model.onFailure
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -71,18 +74,22 @@ class ServiceRepositoryImpl @Inject constructor(
                     status = "accepted",
                     proposalDetails = null
                 )
-                result.onSuccess {
+                result.onSuccess { _: Map<String, Any> ->
                     android.util.Log.d("ServiceRepository", "Proposta aceita com sucesso: $proposalId")
-                }.onFailure { exception ->
+                }.onFailure { exception: Throwable ->
                     android.util.Log.e("ServiceRepository", "Erro ao aceitar proposta: ${exception.message}", exception)
                     // Reverter mudança local em caso de erro
-                    proposalDao.updateAccepted(proposalId, false)
+                    kotlinx.coroutines.runBlocking {
+                        proposalDao.updateAccepted(proposalId, false)
+                    }
                     throw exception
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ServiceRepository", "Erro ao aceitar proposta: ${e.message}", e)
                 // Reverter mudança local
-                proposalDao.updateAccepted(proposalId, false)
+                kotlinx.coroutines.runBlocking {
+                    proposalDao.updateAccepted(proposalId, false)
+                }
                 throw e
             }
         }
@@ -104,9 +111,9 @@ class ServiceRepositoryImpl @Inject constructor(
                     status = "cancelled",
                     proposalDetails = null
                 )
-                result.onSuccess {
+                result.onSuccess { _: Map<String, Any> ->
                     android.util.Log.d("ServiceRepository", "Proposta rejeitada com sucesso: $proposalId")
-                }.onFailure { exception ->
+                }.onFailure { exception: Throwable ->
                     android.util.Log.e("ServiceRepository", "Erro ao rejeitar proposta: ${exception.message}", exception)
                     throw exception
                 }

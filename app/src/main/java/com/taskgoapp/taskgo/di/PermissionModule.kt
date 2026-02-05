@@ -29,7 +29,10 @@ object PermissionModule {
     
     @Provides
     @Singleton
-    fun provideLocationManager(@ApplicationContext context: Context): LocationManager {
-        return LocationManager(context)
+    fun provideLocationManager(
+        @ApplicationContext context: Context,
+        preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager
+    ): LocationManager {
+        return LocationManager(context, preferencesManager)
     }
 }

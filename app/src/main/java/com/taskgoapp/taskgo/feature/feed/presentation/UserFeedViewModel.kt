@@ -30,18 +30,37 @@ class UserFeedViewModel @Inject constructor(
      * Carrega posts de um usuário específico
      */
     fun loadUserPosts(userId: String) {
+        android.util.Log.d("UserFeedViewModel", "🔵 loadUserPosts: Iniciando para userId=$userId")
+        
+        if (userId.isBlank()) {
+            android.util.Log.e("UserFeedViewModel", "🔴 ERRO: userId está vazio!")
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                error = "UserId não pode estar vazio"
+            )
+            return
+        }
+        
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             
             try {
-                getUserPostsUseCase(userId).collect { posts ->
+                android.util.Log.d("UserFeedViewModel", "🟢 Chamando getUserPostsUseCase...")
+                val flow = getUserPostsUseCase(userId)
+                android.util.Log.d("UserFeedViewModel", "   Flow obtido, iniciando coleta...")
+                
+                flow.collect { posts ->
+                    android.util.Log.d("UserFeedViewModel", "🟡 COLECT: Recebidos ${posts.size} posts do UseCase")
                     _uiState.value = _uiState.value.copy(
                         posts = posts,
                         isLoading = false
                     )
+                    android.util.Log.d("UserFeedViewModel", "✅ UI atualizada com ${posts.size} posts")
                 }
             } catch (e: Exception) {
-                android.util.Log.e("UserFeedViewModel", "Erro ao carregar posts do usuário: ${e.message}", e)
+                android.util.Log.e("UserFeedViewModel", "🔴 EXCEPTION em loadUserPosts", e)
+                android.util.Log.e("UserFeedViewModel", "   Tipo: ${e.javaClass.simpleName}, Mensagem: ${e.message}")
+                e.printStackTrace()
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = "Erro ao carregar posts: ${e.message}"

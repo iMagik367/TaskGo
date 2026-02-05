@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.settings.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -179,8 +180,9 @@ private fun BankAccountCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (account.isDefault) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier

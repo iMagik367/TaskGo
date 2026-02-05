@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.settings.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,7 @@ import com.taskgoapp.taskgo.core.security.ConsentRecord
 import com.taskgoapp.taskgo.core.security.ConsentType
 import com.taskgoapp.taskgo.core.security.LGPDComplianceManager
 import com.taskgoapp.taskgo.core.theme.*
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,10 +36,9 @@ fun ConsentHistoryScreen(
 ) {
     val context = LocalContext.current
     val lgpdManager = remember(context) {
-        LGPDComplianceManager(
-            context,
-            com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
-        )
+        val app = context.applicationContext as com.taskgoapp.taskgo.TaskGoApp
+        EntryPointAccessors.fromApplication(app, com.taskgoapp.taskgo.di.LGPDEntryPoint::class.java)
+            .lgpdComplianceManager()
     }
     val auth = FirebaseAuth.getInstance()
     val currentUser = auth.currentUser
@@ -193,12 +194,9 @@ private fun ConsentHistoryCard(
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (consent.granted) {
-                TaskGoGreen.copy(alpha = 0.1f)
-            } else {
-                TaskGoError.copy(alpha = 0.1f)
-            }
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier

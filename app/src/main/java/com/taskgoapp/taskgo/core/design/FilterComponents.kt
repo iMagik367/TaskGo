@@ -27,11 +27,10 @@ import com.taskgoapp.taskgo.core.theme.*
 data class FilterState(
     val selectedCategories: Set<String> = emptySet(),
     val priceRange: PriceRange? = null,
-    val location: LocationFilter? = null,
+    // REMOVIDO: location e useLocationRadius - localização sempre automática do perfil
     val sortBy: SortOption = SortOption.RELEVANCE,
     val searchQuery: String = "",
-    val minRating: Double? = null,
-    val useLocationRadius: Boolean = false
+    val minRating: Double? = null
 )
 
 data class PriceRange(
@@ -39,11 +38,7 @@ data class PriceRange(
     val max: Double? = null
 )
 
-data class LocationFilter(
-    val city: String? = null,
-    val state: String? = null,
-    val radiusKm: Int? = null // Raio em km
-)
+// REMOVIDO: LocationFilter - localização sempre automática do perfil
 
 enum class SortOption(val label: String) {
     RELEVANCE("Relevância"),
@@ -239,203 +234,9 @@ fun FilterBottomSheet(
                     HorizontalDivider()
                 }
                 
-                // Filtro de Localização
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Localização",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TaskGoTextBlack
-                    )
-                    
-                    // Estado - Dropdown
-                    var selectedState by remember(filterState.location?.state) {
-                        mutableStateOf(filterState.location?.state ?: "")
-                    }
-                    var expandedState by remember { mutableStateOf(false) }
-                    
-                    ExposedDropdownMenuBox(
-                        expanded = expandedState,
-                        onExpandedChange = { expandedState = !expandedState }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedState,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Estado (UF)") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedState) },
-                            placeholder = { Text("Selecione o estado") }
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedState,
-                            onDismissRequest = { expandedState = false }
-                        ) {
-                            com.taskgoapp.taskgo.core.data.BrazilianCities.allStates.forEach { state ->
-                                DropdownMenuItem(
-                                    text = { Text(state) },
-                                    onClick = {
-                                        selectedState = state
-                                        expandedState = false
-                                        onFilterStateChange(
-                                            filterState.copy(
-                                                location = filterState.location?.copy(state = state, city = null) 
-                                                    ?: LocationFilter(state = state)
-                                            )
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Cidade - Dropdown (carrega baseado no estado selecionado)
-                    var selectedCity by remember(filterState.location?.city, selectedState) {
-                        mutableStateOf(filterState.location?.city ?: "")
-                    }
-                    var expandedCity by remember { mutableStateOf(false) }
-                    val availableCities = remember(selectedState) {
-                        if (selectedState.isNotEmpty()) {
-                            com.taskgoapp.taskgo.core.data.BrazilianCities.getCitiesForState(selectedState)
-                        } else {
-                            emptyList()
-                        }
-                    }
-                    
-                    ExposedDropdownMenuBox(
-                        expanded = expandedCity,
-                        onExpandedChange = { expandedCity = !expandedCity }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedCity,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Cidade") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCity) },
-                            placeholder = { Text(if (selectedState.isEmpty()) "Selecione primeiro o estado" else "Selecione a cidade") },
-                            enabled = selectedState.isNotEmpty()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedCity,
-                            onDismissRequest = { expandedCity = false }
-                        ) {
-                            availableCities.forEach { city ->
-                                DropdownMenuItem(
-                                    text = { Text(city) },
-                                    onClick = {
-                                        selectedCity = city
-                                        expandedCity = false
-                                        onFilterStateChange(
-                                            filterState.copy(
-                                                location = filterState.location?.copy(city = city)
-                                                    ?: LocationFilter(state = selectedState, city = city)
-                                            )
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Checkbox para usar localização atual
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onFilterStateChange(
-                                    filterState.copy(
-                                        useLocationRadius = !filterState.useLocationRadius
-                                    )
-                                )
-                            },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = filterState.useLocationRadius,
-                            onCheckedChange = { checked ->
-                                onFilterStateChange(
-                                    filterState.copy(useLocationRadius = checked)
-                                )
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Usar minha localização atual",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TaskGoTextBlack
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Raio - Slider (habilitado apenas se usar localização)
-                    if (filterState.useLocationRadius) {
-                        var sliderValue by remember(filterState.location?.radiusKm, filterState.useLocationRadius) {
-                            mutableStateOf((filterState.location?.radiusKm?.takeIf { it in 10..100 } ?: 10).toFloat())
-                        }
-                        
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Raio: ${sliderValue.toInt()} km",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = TaskGoTextBlack
-                            )
-                            
-                            Slider(
-                                value = sliderValue,
-                                onValueChange = { newValue ->
-                                    sliderValue = newValue
-                                    val radiusKm = newValue.toInt()
-                                    onFilterStateChange(
-                                        filterState.copy(
-                                            location = filterState.location?.copy(radiusKm = radiusKm)
-                                                ?: LocationFilter(radiusKm = radiusKm)
-                                        )
-                                    )
-                                },
-                                valueRange = 10f..100f,
-                                steps = 8, // Incrementos de 10km (10, 20, 30, ..., 100)
-                                colors = SliderDefaults.colors(
-                                    thumbColor = TaskGoGreen,
-                                    activeTrackColor = TaskGoGreen,
-                                    inactiveTrackColor = Color(0xFFE0E0E0)
-                                )
-                            )
-                            
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "10 km",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TaskGoTextGray
-                                )
-                                Text(
-                                    text = "100 km",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TaskGoTextGray
-                                )
-                            }
-                        }
-                    }
-                    
-                }
-                
-                HorizontalDivider()
+                // REMOVIDO: Filtro de Localização
+                // Localização sempre automática do perfil do usuário
+                // (HorizontalDivider removido - não necessário sem filtro de localização)
                 
                 // Filtro de Avaliação
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

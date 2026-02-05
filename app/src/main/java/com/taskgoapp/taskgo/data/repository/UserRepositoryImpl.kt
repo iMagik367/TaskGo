@@ -141,18 +141,51 @@ class UserRepositoryImpl @Inject constructor(
         try {
             val existingUser = firestoreUserRepository.getUser(user.id)
             val role = when (user.accountType) {
-                com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> "partner" // Novo role unificado
-                com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR -> "partner" // Legacy - migrar para partner
-                com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR -> "partner" // Legacy - migrar para partner
+                com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> "partner"
                 com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> "client"
             }
             
+            // Lei 1: city/state são salvos APENAS diretamente no documento (user.city, user.state)
+            // NÃO salvar em address - isso causa inconsistência
+            // Backend lê APENAS de user.city/user.state - NÃO há fallback para address
+            val address = existingUser?.address?.copy(
+                // Manter outros campos do address, mas city/state serão lidos da raiz
+                street = existingUser.address?.street ?: "",
+                number = existingUser.address?.number ?: "",
+                complement = existingUser.address?.complement,
+                neighborhood = existingUser.address?.neighborhood ?: "",
+                zipCode = existingUser.address?.zipCode ?: "",
+                country = existingUser.address?.country ?: "Brasil"
+            ) ?: if (user.city != null && user.state != null) {
+                com.taskgoapp.taskgo.core.model.Address(
+                    id = "",
+                    name = "",
+                    phone = "",
+                    cep = "",
+                    street = "",
+                    district = "",
+                    city = user.city ?: "",
+                    state = user.state ?: "",
+                    number = "",
+                    complement = null,
+                    neighborhood = "",
+                    zipCode = "",
+                    country = "Brasil"
+                )
+            } else null
+            
+            // Lei 1: city e state DEVEM estar na raiz do documento users/{userId}
+            // ✅ REMOVIDO: LocationUpdateService não atualiza mais city/state via GPS
+            // City/state vêm APENAS do cadastro do usuário no Firestore
             val userFirestore = existingUser?.copy(
                 displayName = user.name,
                 email = user.email,
                 phone = user.phone,
                 role = role,
                 photoURL = user.avatarUri,
+                address = address,
+                city = user.city, // Lei 1: Na raiz do documento
+                state = user.state, // Lei 1: Na raiz do documento
                 updatedAt = java.util.Date()
             ) ?: com.taskgoapp.taskgo.data.firestore.models.UserFirestore(
                 uid = user.id,
@@ -161,6 +194,9 @@ class UserRepositoryImpl @Inject constructor(
                 phone = user.phone,
                 role = role,
                 photoURL = user.avatarUri,
+                address = address,
+                city = user.city, // Lei 1: Na raiz do documento
+                state = user.state, // Lei 1: Na raiz do documento
                 profileComplete = true,
                 verified = false,
                 createdAt = java.util.Date(),
@@ -187,9 +223,7 @@ class UserRepositoryImpl @Inject constructor(
                 "city" to (user.city ?: ""),
                 "profession" to (user.profession ?: ""),
                 "role" to when (user.accountType) {
-                    com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> "partner" // Novo role unificado
-                    com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR -> "partner" // Legacy - migrar para partner
-                    com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR -> "partner" // Legacy - migrar para partner
+                    com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> "partner"
                     com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> "client"
                 },
                 "photoURL" to (user.avatarUri ?: ""),

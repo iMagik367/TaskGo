@@ -46,7 +46,7 @@ class MyServicesViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             
-            orderRepository.observeOrders(currentUser.uid, "provider")
+            orderRepository.observeOrders(currentUser.uid, "partner")
                 .catch { e ->
                     Log.e("MyServicesViewModel", "Erro ao carregar ordens", e)
                     _uiState.value = _uiState.value.copy(

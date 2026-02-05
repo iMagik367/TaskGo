@@ -4,6 +4,7 @@ import * as functions from 'firebase-functions';
 import {COLLECTIONS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
+import {getUserLocationId} from './utils/firestorePaths';
 
 const booleanFields = (payload: Record<string, unknown>, requiredKeys: string[]): Record<string, boolean> => {
   const result: Record<string, boolean> = {};
@@ -36,8 +37,40 @@ export const updateNotificationSettings = functions.https.onCall(async (data, co
 
     const userId = context.auth!.uid;
     const db = getFirestore();
+    
+    // CRÍTICO: Buscar city/state do usuário para salvar em locations/{locationId}/users
+    const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User not found');
+    }
+    
+    const userData = userDoc.data();
+    const userCity = userData?.city;
+    const userState = userData?.state;
+    
+    if (!userCity || !userState) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'User must have city and state defined in profile'
+      );
+    }
+    
+    const locationId = await getUserLocationId(db, userId);
+    
+    // Salvar em users global (compatibilidade)
     await db
         .collection(COLLECTIONS.USERS)
+        .doc(userId)
+        .set({
+          notificationSettings: settings,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+    
+    // Salvar em locations/{locationId}/users/{userId}
+    await db
+        .collection('locations')
+        .doc(locationId)
+        .collection('users')
         .doc(userId)
         .set({
           notificationSettings: settings,
@@ -69,8 +102,40 @@ export const updatePrivacySettings = functions.https.onCall(async (data, context
 
     const userId = context.auth!.uid;
     const db = getFirestore();
+    
+    // CRÍTICO: Buscar city/state do usuário para salvar em locations/{locationId}/users
+    const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User not found');
+    }
+    
+    const userData = userDoc.data();
+    const userCity = userData?.city;
+    const userState = userData?.state;
+    
+    if (!userCity || !userState) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'User must have city and state defined in profile'
+      );
+    }
+    
+    const locationId = await getUserLocationId(db, userId);
+    
+    // Salvar em users global (compatibilidade)
     await db
         .collection(COLLECTIONS.USERS)
+        .doc(userId)
+        .set({
+          privacySettings: settings,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+    
+    // Salvar em locations/{locationId}/users/{userId}
+    await db
+        .collection('locations')
+        .doc(locationId)
+        .collection('users')
         .doc(userId)
         .set({
           privacySettings: settings,
@@ -101,8 +166,40 @@ export const updateLanguagePreference = functions.https.onCall(async (data, cont
 
     const userId = context.auth!.uid;
     const db = getFirestore();
+    
+    // CRÍTICO: Buscar city/state do usuário para salvar em locations/{locationId}/users
+    const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User not found');
+    }
+    
+    const userData = userDoc.data();
+    const userCity = userData?.city;
+    const userState = userData?.state;
+    
+    if (!userCity || !userState) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'User must have city and state defined in profile'
+      );
+    }
+    
+    const locationId = await getUserLocationId(db, userId);
+    
+    // Salvar em users global (compatibilidade)
     await db
         .collection(COLLECTIONS.USERS)
+        .doc(userId)
+        .set({
+          language,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+    
+    // Salvar em locations/{locationId}/users/{userId}
+    await db
+        .collection('locations')
+        .doc(locationId)
+        .collection('users')
         .doc(userId)
         .set({
           language,

@@ -2,6 +2,7 @@ package com.taskgoapp.taskgo.feature.services.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -253,7 +254,8 @@ private fun ServiceOrderCard(
             .fillMaxWidth()
             .clickable { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor)
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier
@@ -352,7 +354,11 @@ private fun LocalServiceOrdersCategoryCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onCategoryClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier

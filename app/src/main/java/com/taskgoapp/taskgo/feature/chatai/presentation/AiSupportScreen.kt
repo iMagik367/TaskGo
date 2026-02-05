@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -136,8 +137,9 @@ fun AiSupportScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Text(
                         text = error,

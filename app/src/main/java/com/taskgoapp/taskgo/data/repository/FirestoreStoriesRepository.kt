@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.taskgoapp.taskgo.core.model.Result
+import com.taskgoapp.taskgo.core.model.fold
 import com.taskgoapp.taskgo.core.model.Story
 import com.taskgoapp.taskgo.core.model.StoryAnalytics
 import com.taskgoapp.taskgo.core.model.StoryView
@@ -14,8 +15,8 @@ import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.data.mapper.StoryMapper
 import com.taskgoapp.taskgo.domain.repository.StoriesRepository
 import com.taskgoapp.taskgo.core.firebase.LocationHelper
-import com.taskgoapp.taskgo.core.location.LocationStateManager
-import com.taskgoapp.taskgo.core.location.LocationState
+import com.taskgoapp.taskgo.core.location.LocationManager
+import com.taskgoapp.taskgo.core.location.LocationValidator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.CoroutineScope
@@ -43,13 +45,56 @@ class FirestoreStoriesRepository @Inject constructor(
     private val authRepository: FirebaseAuthRepository,
     private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
     private val userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository,
-    private val locationStateManager: LocationStateManager
+    private val locationManager: LocationManager
 ) : StoriesRepository {
     
-    // DEBUG ONLY - Coleção global mantida apenas para compatibilidade durante migração
-    // REMOVER APÓS VALIDAÇÃO COMPLETA
-    private val storiesCollectionGlobal = firestore.collection("stories")
+    private suspend fun getLocationForOperation(): Triple<String, String, String> {
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+        
+        if (userCity.isBlank() || userState.isBlank()) {
+            throw Exception("City e state são obrigatórios")
+        }
+        
+        val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+        return Triple(userCity, userState, locationId)
+    }
+    
+    // REMOVIDO: Coleção global - stories estão apenas em locations/{locationId}/stories
     private val storyViewsCollection = firestore.collection("story_views")
+    
+    /**
+     * Helper para obter locationId (de LocationState ou GPS)
+     * CRÍTICO: NUNCA retorna null - GPS é garantido
+     * Retorna Triple(city, state, locationId) - sempre válido
+     */
+    private suspend fun getLocationIdForOperation(): Triple<String, String, String> {
+        // LEI MÁXIMA DO TASKGO: Usar APENAS city/state do perfil do usuário (cadastro)
+        // NUNCA usar fallback - se não tiver, FALHAR
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() }
+        
+        if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+            val errorMsg = "ERRO CRÍTICO: Usuário não possui city/state válidos no cadastro. " +
+                    "City: ${currentUser?.city ?: "null"}, State: ${currentUser?.state ?: "null"}. " +
+                    "Não é possível criar story sem localização válida do cadastro."
+            android.util.Log.e("FirestoreStoriesRepository", "❌ $errorMsg")
+            throw Exception(errorMsg)
+        }
+        
+        android.util.Log.d("FirestoreStoriesRepository", "📍 Usando city/state do perfil: $userCity/$userState")
+        
+        val locationId = try {
+            LocationHelper.normalizeLocationId(userCity, userState)
+        } catch (e: Exception) {
+            android.util.Log.e("FirestoreStoriesRepository", "❌ Erro ao normalizar locationId: ${e.message}", e)
+            throw Exception("Erro ao normalizar locationId para city=$userCity, state=$userState: ${e.message}")
+        }
+        
+        return Triple(userCity, userState, locationId)
+    }
     
     // Helper para obter subcoleção de stories do usuário
     private fun getUserStoriesCollection(userId: String) = 
@@ -59,195 +104,108 @@ class FirestoreStoriesRepository @Inject constructor(
         currentUserId: String,
         radiusKm: Double,
         userLocation: Pair<Double, Double>?
-    ): Flow<List<Story>> = locationStateManager.locationState
-        .flatMapLatest { locationState ->
-            when (locationState) {
-                is LocationState.Loading -> {
-                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeStories")
-                    flowOf(emptyList())
-                }
-                is LocationState.Error -> {
-                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeStories")
-                    flowOf(emptyList())
-                }
-                is LocationState.Ready -> {
-                    // ✅ Localização pronta - fazer query Firestore
-                    val locationId = locationState.locationId
-                    
-                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
-                    if (locationId == "unknown" || locationId.isBlank()) {
-                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeStories")
-                        flowOf(emptyList())
-                    } else {
-                        observeStoriesFromFirestore(locationState, currentUserId, radiusKm, userLocation)
-                    }
-                }
-            }
-        }
-    
-    private fun observeStoriesFromFirestore(
-        locationState: LocationState.Ready,
-        currentUserId: String,
-        radiusKm: Double,
-        userLocation: Pair<Double, Double>?
     ): Flow<List<Story>> = callbackFlow {
-        try {
-            // Timestamp de 24 horas atrás (stories não expiradas)
-            val twentyFourHoursAgo = Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
-            val timestamp = com.google.firebase.Timestamp(twentyFourHoursAgo)
+        val listenerRegistration: ListenerRegistration? = try {
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
             
-            val collectionToUse = LocationHelper.getLocationCollection(
-                firestore,
-                "stories",
-                locationState.city,
-                locationState.state
-            )
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
             
-            Log.d("FirestoreStoriesRepository", """
-                📍 Querying Firestore with location:
-                City: ${locationState.city}
-                State: ${locationState.state}
-                LocationId: ${locationState.locationId}
-                Firestore Path: locations/${locationState.locationId}/stories
-            """.trimIndent())
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            val collectionToUse = LocationHelper.getLocationCollection(firestore, "stories", userCity, userState)
             
-            // Query: stories não expiradas, ordenadas por data de criação (mais recentes primeiro)
-            // Nota: Firestore requer índice composto para múltiplos orderBy, então usamos apenas createdAt
-            val query = collectionToUse
-                .whereGreaterThan("expiresAt", timestamp)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(100) // Limitar para performance
-            
-            val listenerRegistration = query.addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e("FirestoreStoriesRepository", 
-                        "❌ Erro ao observar stories: ${error.message}", error)
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-                
-                if (snapshot == null) {
-                    Log.w("FirestoreStoriesRepository", 
-                        "⚠️ Snapshot vazio (sem stories encontradas)")
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-                
-                Log.d("FirestoreStoriesRepository", 
-                    "Snapshot recebido: size=${snapshot.size()}, collection=locations/${locationState.locationId}/stories")
-                
-                // 📍 SNAPSHOT PROOF - Logar TUDO que vem do Firestore
-                Log.d("FirestoreSnapshot", """
-                    📍 FRONTEND SNAPSHOT PROOF
-                    Collection path: ${collectionToUse.path}
-                    Snapshot empty: ${snapshot.isEmpty}
-                    Snapshot size: ${snapshot.size()}
-                    Documents count: ${snapshot.documents.size}
-                """.trimIndent())
-                
-                snapshot.documents.forEachIndexed { index, doc ->
-                    Log.d("FirestoreSnapshot", """
-                        📍 FRONTEND SNAPSHOT PROOF - Document $index
-                        Doc ID: ${doc.id}
-                        Doc data keys: ${doc.data?.keys?.joinToString(", ") ?: "null"}
-                        Doc has expiresAt: ${doc.data?.containsKey("expiresAt")}
-                        Doc has createdAt: ${doc.data?.containsKey("createdAt")}
-                    """.trimIndent())
-                }
-                
-                
-                val storiesList = mutableListOf<Story>()
-                snapshot?.documents?.forEach { doc ->
-                    try {
-                        val data = doc.data ?: return@forEach
-                        val locationData = data["location"] as? Map<*, *>
-                        
-                        val locationFirestore = locationData?.let {
-                            com.taskgoapp.taskgo.data.firestore.models.StoryLocationFirestore(
-                                city = it["city"] as? String ?: "",
-                                state = it["state"] as? String ?: "",
-                                latitude = (it["latitude"] as? Number)?.toDouble() ?: 0.0,
-                                longitude = (it["longitude"] as? Number)?.toDouble() ?: 0.0
-                            )
-                        }
-                        
-                        // Converter createdAt e expiresAt corretamente (pode vir como Long ou Timestamp)
-                        val createdAtValue = data["createdAt"]
-                        val createdAt = when (createdAtValue) {
-                            is com.google.firebase.Timestamp -> createdAtValue
-                            is Long -> com.google.firebase.Timestamp(createdAtValue / 1000, ((createdAtValue % 1000) * 1_000_000).toInt())
-                            is java.util.Date -> com.google.firebase.Timestamp(createdAtValue)
-                            else -> null
-                        }
-                        
-                        val expiresAtValue = data["expiresAt"]
-                        val expiresAt = when (expiresAtValue) {
-                            is com.google.firebase.Timestamp -> expiresAtValue
-                            is Long -> com.google.firebase.Timestamp(expiresAtValue / 1000, ((expiresAtValue % 1000) * 1_000_000).toInt())
-                            is java.util.Date -> com.google.firebase.Timestamp(expiresAtValue)
-                            else -> null
-                        }
-                        
-                        val storyFirestore = StoryFirestore(
-                            id = doc.id,
-                            userId = data["userId"] as? String ?: "",
-                            userName = data["userName"] as? String ?: "",
-                            userAvatarUrl = data["userAvatarUrl"] as? String,
-                            mediaUrl = data["mediaUrl"] as? String ?: "",
-                            mediaType = data["mediaType"] as? String ?: "image",
-                            thumbnailUrl = data["thumbnailUrl"] as? String,
-                            caption = data["caption"] as? String,
-                            createdAt = createdAt,
-                            expiresAt = expiresAt,
-                            viewsCount = (data["viewsCount"] as? Number)?.toInt() ?: 0,
-                            location = locationFirestore
-                        )
-                        
-                        kotlinx.coroutines.runBlocking {
-                            val isViewed = checkIfStoryViewed(doc.id, currentUserId)
-                            storiesList.add(with(StoryMapper) {
-                                storyFirestore.toModel(isViewed)
-                            })
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("FirestoreStoriesRepository", "Erro ao processar story: ${e.message}", e)
+            collectionToUse
+                .whereGreaterThan("expiresAt", System.currentTimeMillis())
+                .orderBy("expiresAt", com.google.firebase.firestore.Query.Direction.ASCENDING)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        trySend(emptyList())
+                        return@addSnapshotListener
                     }
-                }
-                
-                val stories = storiesList
-                
-                // Filtrar stories do próprio usuário (já que é para o feed de outros)
-                var filteredStories = stories.filter { it.userId != currentUserId }
-                
-                // Filtrar por distância usando GPS (raio de 100km)
-                if (userLocation != null) {
-                    val (userLat, userLng) = userLocation
-                    filteredStories = filteredStories.filter { story ->
-                        story.location?.let { storyLocation ->
-                            if (storyLocation.latitude != 0.0 && storyLocation.longitude != 0.0) {
-                                val distance = com.taskgoapp.taskgo.core.location.calculateDistance(
-                                    userLat,
-                                    userLng,
-                                    storyLocation.latitude,
-                                    storyLocation.longitude
+                    
+                    val stories = snapshot?.documents?.mapNotNull { doc ->
+                        try {
+                            val data = doc.data ?: return@mapNotNull null
+                            val locationData = data["location"] as? Map<*, *>
+                            val locationFirestore = locationData?.let {
+                                com.taskgoapp.taskgo.data.firestore.models.StoryLocationFirestore(
+                                    city = it["city"] as? String ?: "",
+                                    state = it["state"] as? String ?: "",
+                                    latitude = (it["latitude"] as? Number)?.toDouble() ?: 0.0,
+                                    longitude = (it["longitude"] as? Number)?.toDouble() ?: 0.0
                                 )
-                                distance <= radiusKm // Usar o raio fornecido (padrão 50km, mas pode ser 100km)
-                            } else {
-                                false // Se não tem localização GPS, não mostrar
                             }
-                        } ?: false // Se não tem localização, não mostrar
-                    }
+                            val createdAtValue = data["createdAt"]
+                            val createdAt = when (createdAtValue) {
+                                is com.google.firebase.Timestamp -> createdAtValue
+                                is Long -> com.google.firebase.Timestamp(createdAtValue / 1000, ((createdAtValue % 1000) * 1_000_000).toInt())
+                                is java.util.Date -> com.google.firebase.Timestamp(createdAtValue)
+                                else -> null
+                            }
+                            val expiresAtValue = data["expiresAt"]
+                            val expiresAt = when (expiresAtValue) {
+                                is com.google.firebase.Timestamp -> expiresAtValue
+                                is Long -> com.google.firebase.Timestamp(expiresAtValue / 1000, ((expiresAtValue % 1000) * 1_000_000).toInt())
+                                is java.util.Date -> com.google.firebase.Timestamp(expiresAtValue)
+                                else -> null
+                            }
+                            val storyFirestore = StoryFirestore(
+                                id = doc.id,
+                                userId = data["userId"] as? String ?: "",
+                                userName = data["userName"] as? String ?: "",
+                                userAvatarUrl = data["userAvatarUrl"] as? String,
+                                userRole = data["userRole"] as? String, // Role do autor
+                                mediaUrl = data["mediaUrl"] as? String ?: "",
+                                mediaType = data["mediaType"] as? String ?: "image",
+                                thumbnailUrl = data["thumbnailUrl"] as? String,
+                                caption = data["caption"] as? String,
+                                createdAt = createdAt,
+                                expiresAt = expiresAt,
+                                viewsCount = (data["viewsCount"] as? Number)?.toInt() ?: 0,
+                                location = locationFirestore
+                            )
+                            
+                            // REGRA DE NEGÓCIO: Filtrar stories baseado no AccountType do usuário atual
+                            // - CLIENTE: vê apenas stories de parceiros (role = partner)
+                            // - PARCEIRO: vê todas as stories (próprias + de outros parceiros)
+                            val currentUserAccountType = currentUser.accountType
+                            val storyAuthorRole = storyFirestore.userRole?.lowercase() ?: ""
+                            
+                            when (currentUserAccountType) {
+                                com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> {
+                                    // Cliente vê apenas stories de parceiros
+                                    if (storyAuthorRole != "partner") {
+                                        return@mapNotNull null
+                                    }
+                                }
+                                com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> {
+                                    // Parceiro vê todas as stories (próprias + de outros parceiros)
+                                    // Não filtrar - REMOVIDO: filter { it.userId != currentUserId }
+                                }
+                                else -> {
+                                    // Outros tipos: não filtrar
+                                }
+                            }
+                            
+                            val isViewed = kotlinx.coroutines.runBlocking {
+                                checkIfStoryViewed(doc.id, currentUserId)
+                            }
+                            with(StoryMapper) { storyFirestore.toModel(isViewed) }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } ?: emptyList()
+                    
+                    trySend(stories)
                 }
-                
-                trySend(filteredStories)
-            }
-            
-            awaitClose { listenerRegistration.remove() }
         } catch (e: Exception) {
-            android.util.Log.e("FirestoreStoriesRepository", "Erro ao observar stories: ${e.message}", e)
             trySend(emptyList())
-            awaitClose { }
+            null
         }
+        awaitClose { listenerRegistration?.remove() }
     }
     
     override fun observeUserStories(userId: String, currentUserId: String): Flow<List<Story>> = callbackFlow {
@@ -255,31 +213,17 @@ class FirestoreStoriesRepository @Inject constructor(
             val twentyFourHoursAgo = Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
             val timestamp = com.google.firebase.Timestamp(twentyFourHoursAgo)
             
-            // CRÍTICO: Obter localização do usuário para buscar da coleção correta
-            var currentCity: String? = null
-            var currentState: String = ""
-            var collectionToUse: com.google.firebase.firestore.CollectionReference = storiesCollectionGlobal
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
             
-            try {
-                val user = withTimeoutOrNull(2000) {
-                    userRepository.observeCurrentUser().firstOrNull()
-                }
-                currentCity = user?.city?.takeIf { it.isNotBlank() }
-                currentState = user?.state?.takeIf { it.isNotBlank() } ?: ""
-                
-                if (currentCity != null && currentState.isNotBlank()) {
-                    // Usar coleção por localização
-                    collectionToUse = LocationHelper.getLocationCollection(firestore, "stories", currentCity!!, currentState)
-                    android.util.Log.d("FirestoreStoriesRepository", "🔵 Usando coleção por localização para stories do usuário: locations/${LocationHelper.normalizeLocationId(currentCity!!, currentState)}/stories")
-                } else {
-                    // Fallback: usar coleção global
-                    collectionToUse = storiesCollectionGlobal
-                    android.util.Log.w("FirestoreStoriesRepository", "⚠️ Localização não disponível para stories do usuário, usando coleção global")
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreStoriesRepository", "Erro ao obter usuário para localização de stories: ${e.message}")
-                collectionToUse = storiesCollectionGlobal
-            }
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            val collectionToUse = LocationHelper.getLocationCollection(firestore, "stories", userCity, userState)
+            android.util.Log.d("FirestoreStoriesRepository", "📍 Usando coleção por localização para stories do usuário: locations/$locationId/stories")
             
             val listenerRegistration = collectionToUse
                 .whereEqualTo("userId", userId)
@@ -371,15 +315,18 @@ class FirestoreStoriesRepository @Inject constructor(
                 return com.taskgoapp.taskgo.core.model.Result.Error(Exception("userId da story não corresponde ao usuário autenticado"))
             }
             
-            // Preparar dados para Cloud Function
-            val locationMap = story.location?.let { location ->
-                mapOf(
-                    "city" to location.city,
-                    "state" to location.state,
-                    "latitude" to location.latitude,
-                    "longitude" to location.longitude
-                )
-            }
+            val (userCity, userState, _) = getLocationForOperation()
+            
+            // Obter GPS para enviar à Cloud Function
+            val gpsLocation = locationManager.getCurrentLocationGuaranteed()
+            
+            // Preparar dados para Cloud Function com GPS e localização operacional
+            val locationMap = mapOf(
+                "city" to userCity,
+                "state" to userState,
+                "latitude" to gpsLocation.latitude,
+                "longitude" to gpsLocation.longitude
+            )
             
             // Usar Cloud Function createStory (backend como autoridade)
             val result = functionsService.createStory(
@@ -393,14 +340,17 @@ class FirestoreStoriesRepository @Inject constructor(
             
             // Converter de kotlin.Result para com.taskgoapp.taskgo.core.model.Result
             return result.fold(
-                onSuccess = { data ->
+                onSuccess = { data: Map<String, Any> ->
                     val storyId = data["storyId"] as? String
-                        ?: return com.taskgoapp.taskgo.core.model.Result.Error(Exception("Story ID não retornado pela Cloud Function"))
-                    
-                    android.util.Log.d("FirestoreStoriesRepository", "Story criada com sucesso via Cloud Function: $storyId")
-                    com.taskgoapp.taskgo.core.model.Result.Success(storyId)
+                    if (storyId == null) {
+                        android.util.Log.e("FirestoreStoriesRepository", "Story ID não retornado pela Cloud Function")
+                        com.taskgoapp.taskgo.core.model.Result.Error(Exception("Story ID não retornado pela Cloud Function"))
+                    } else {
+                        android.util.Log.d("FirestoreStoriesRepository", "Story criada com sucesso via Cloud Function: $storyId")
+                        com.taskgoapp.taskgo.core.model.Result.Success(storyId)
+                    }
                 },
-                onFailure = { error ->
+                onFailure = { error: Throwable ->
                     android.util.Log.e("FirestoreStoriesRepository", "Erro ao criar story via Cloud Function: ${error.message}", error)
                     com.taskgoapp.taskgo.core.model.Result.Error(error)
                 }
@@ -439,9 +389,16 @@ class FirestoreStoriesRepository @Inject constructor(
                     .await()
                 
                 // Incrementar contador de visualizações na story
-                storiesCollectionGlobal.document(storyId).update(
-                    "viewsCount", FieldValue.increment(1)
-                ).await()
+                val currentUser = userRepository.observeCurrentUser().first()
+                val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+                val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+                
+                if (userCity.isNotBlank() && userState.isNotBlank()) {
+                    val locationCollection = LocationHelper.getLocationCollection(firestore, "stories", userCity, userState)
+                    locationCollection.document(storyId).update(
+                        "viewsCount", FieldValue.increment(1)
+                    ).await()
+                }
             }
             
             com.taskgoapp.taskgo.core.model.Result.Success(Unit)
@@ -456,37 +413,32 @@ class FirestoreStoriesRepository @Inject constructor(
             val currentUserId = authRepository.getCurrentUser()?.uid
                 ?: return com.taskgoapp.taskgo.core.model.Result.Error(Exception("Usuário não autenticado"))
             
-            // Verificar na subcoleção do usuário primeiro (fonte de verdade)
-            val userStoriesCollection = getUserStoriesCollection(userId)
-            val userStoryDoc = userStoriesCollection.document(storyId).get().await()
+            val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
             
-            // Se não existe na subcoleção, verificar na coleção pública
-            if (!userStoryDoc.exists()) {
-                val storyDoc = storiesCollectionGlobal.document(storyId).get().await()
-                val story = storyDoc.toObject(StoryFirestore::class.java)
-                
-                // Verificar se o usuário é o dono da story
-                if (!storyDoc.exists() || story?.userId != userId) {
-                    return com.taskgoapp.taskgo.core.model.Result.Error(
-                        Exception("Story não encontrada ou você não tem permissão para deletar")
-                    )
-                }
-                
-                // Se existe apenas na coleção pública, deletar apenas dela
-                storiesCollectionGlobal.document(storyId).delete().await()
-            } else {
-                // Se existe na subcoleção do usuário, deletar de ambas
-                // Deletar da subcoleção primeiro (fonte de verdade)
-                userStoriesCollection.document(storyId).delete().await()
-                
-                // Também deletar da coleção pública para garantir sincronização imediata
-                try {
-                    storiesCollectionGlobal.document(storyId).delete().await()
-                } catch (e: Exception) {
-                    android.util.Log.w("FirestoreStoriesRepository", "Erro ao deletar story da coleção pública: ${e.message}")
-                    // Não falhar se pública falhar, a Cloud Function vai fazer a limpeza
-                }
+            if (userCity.isBlank() || userState.isBlank()) {
+                return com.taskgoapp.taskgo.core.model.Result.Error(Exception("Usuário não tem city/state no perfil"))
             }
+            
+            val locationCollection = LocationHelper.getLocationCollection(firestore, "stories", userCity, userState)
+            val storyDoc = locationCollection.document(storyId).get().await()
+            
+            if (!storyDoc.exists()) {
+                return com.taskgoapp.taskgo.core.model.Result.Error(
+                    Exception("Story não encontrada")
+                )
+            }
+            
+            val story = storyDoc.toObject(StoryFirestore::class.java)
+            if (story?.userId != userId) {
+                return com.taskgoapp.taskgo.core.model.Result.Error(
+                    Exception("Você não tem permissão para deletar esta story")
+                )
+            }
+            
+            // Deletar da coleção por localização
+            locationCollection.document(storyId).delete().await()
             
             android.util.Log.d("FirestoreStoriesRepository", "Story deletada: $storyId")
             com.taskgoapp.taskgo.core.model.Result.Success(Unit)
@@ -508,7 +460,17 @@ class FirestoreStoriesRepository @Inject constructor(
             val twentyFourHoursAgo = Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000)
             val timestamp = com.google.firebase.Timestamp(twentyFourHoursAgo)
             
-            val snapshot = storiesCollectionGlobal
+            val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            if (userCity.isBlank() || userState.isBlank()) {
+                return com.taskgoapp.taskgo.core.model.Result.Error(Exception("Usuário não tem city/state no perfil"))
+            }
+            
+            val locationCollection = LocationHelper.getLocationCollection(firestore, "stories", userCity, userState)
+            
+            val snapshot = locationCollection
                 .whereGreaterThan("expiresAt", timestamp)
                 .whereNotEqualTo("userId", currentUserId)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -600,8 +562,18 @@ class FirestoreStoriesRepository @Inject constructor(
     
     override fun observeStoryAnalytics(storyId: String, ownerUserId: String): Flow<StoryAnalytics> = callbackFlow {
         try {
-            // Verificar se a story pertence ao usuário
-            val storyDoc = storiesCollectionGlobal.document(storyId).get().await()
+            val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            if (userCity.isBlank() || userState.isBlank()) {
+                trySend(StoryAnalytics(storyId = storyId, userId = ownerUserId))
+                awaitClose { }
+                return@callbackFlow
+            }
+            
+            val locationCollection = LocationHelper.getLocationCollection(firestore, "stories", userCity, userState)
+            val storyDoc = locationCollection.document(storyId).get().await()
             val storyData = storyDoc.data
             if (storyData == null || storyData["userId"] != ownerUserId) {
                 android.util.Log.w("FirestoreStoriesRepository", "Story não encontrada ou usuário não é o dono")
@@ -793,4 +765,3 @@ class FirestoreStoriesRepository @Inject constructor(
         }
     }
 }
-

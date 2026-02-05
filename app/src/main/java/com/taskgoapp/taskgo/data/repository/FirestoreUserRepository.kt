@@ -4,6 +4,7 @@ import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.ListenerRegistration
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -15,20 +16,54 @@ import javax.inject.Singleton
 class FirestoreUserRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
-    private val usersCollection = firestore.collection("users")
+    // REMOVIDO: usersCollection global - usuários devem ser salvos em locations/{locationId}/users
+    // private val usersCollection = firestore.collection("users")
 
     suspend fun getUser(uid: String): UserFirestore? {
         return try {
             android.util.Log.d("FirestoreUserRepository", "Buscando usuário no Firestore: uid=$uid")
-            val document = usersCollection.document(uid).get().await()
-            if (document.exists()) {
-                val user = document.data?.let { mapUser(document.id, it) }
-                android.util.Log.d("FirestoreUserRepository", "Usuário encontrado: ${user?.displayName}, email: ${user?.email}, role: ${user?.role}")
-                user
-            } else {
-                android.util.Log.d("FirestoreUserRepository", "Usuário não encontrado no Firestore: uid=$uid")
-                null
+            
+            // ESTRATÉGIA HÍBRIDA: Buscar primeiro em users global (legacy), depois em locations/{locationId}/users
+            // 1. Tentar buscar na coleção global "users" (legacy/migração)
+            val globalDoc = firestore.collection("users").document(uid).get().await()
+            if (globalDoc.exists()) {
+                val user = globalDoc.data?.let { mapUser(globalDoc.id, it) }
+                if (user != null) {
+                    android.util.Log.d("FirestoreUserRepository", "✅ Usuário encontrado em users global: ${user.displayName}, email: ${user.email}, role: ${user.role}")
+                    
+                    // Se o usuário tem city/state, também buscar em locations/{locationId}/users para verificar se existe lá
+                    val userCity = user.city?.takeIf { it.isNotBlank() }
+                    val userState = user.state?.takeIf { it.isNotBlank() }
+                    if (userCity != null && userState != null) {
+                        try {
+                            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+                            val locationDoc = firestore.collection("locations").document(locationId)
+                                .collection("users").document(uid).get().await()
+                            if (locationDoc.exists()) {
+                                android.util.Log.d("FirestoreUserRepository", "✅ Usuário também encontrado em locations/$locationId/users")
+                                // Retornar o da coleção locations (mais atualizado)
+                                val locationUser = locationDoc.data?.let { mapUser(locationDoc.id, it) }
+                                if (locationUser != null) {
+                                    return locationUser
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("FirestoreUserRepository", "Erro ao buscar em locations: ${e.message}")
+                        }
+                    }
+                    
+                    return user
+                }
             }
+            
+            // 2. Se não encontrou na coleção global, tentar buscar em todas as locations conhecidas
+            // (Ineficiente, mas necessário para migração)
+            android.util.Log.d("FirestoreUserRepository", "Usuário não encontrado em users global, tentando locations...")
+            
+            // Por enquanto, retornar null se não encontrou na coleção global
+            // TODO: Implementar busca em locations/{locationId}/users quando tivermos lista de locations
+            android.util.Log.d("FirestoreUserRepository", "Usuário não encontrado no Firestore: uid=$uid")
+            null
         } catch (e: Exception) {
             android.util.Log.e("FirestoreUserRepository", "Erro ao buscar usuário: ${e.message}", e)
             null
@@ -38,10 +73,15 @@ class FirestoreUserRepository @Inject constructor(
     /**
      * Observa mudanças do usuário no Firestore em tempo real
      * CRÍTICO: Não falha se usuário não existe ainda (permite criação durante login)
+     * LEI MÁXIMA DO TASKGO: Observa TANTO em users global QUANTO em locations/{locationId}/users
      */
     fun observeUser(uid: String): Flow<UserFirestore?> = callbackFlow {
+        val listeners = mutableListOf<com.google.firebase.firestore.ListenerRegistration>()
+        
         try {
-            val listenerRegistration = usersCollection.document(uid)
+            // ESTRATÉGIA HÍBRIDA: Observar em ambas as coleções para garantir sincronização
+            // 1. Observar na coleção global "users" (legacy/compatibilidade)
+            val globalListener = firestore.collection("users").document(uid)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         // Se for erro de permissão, pode ser que o usuário não existe ainda
@@ -62,23 +102,81 @@ class FirestoreUserRepository @Inject constructor(
                     if (snapshot != null && snapshot.exists()) {
                         try {
                             val user = snapshot.data?.let { mapUser(snapshot.id, it) }
-                            android.util.Log.d("FirestoreUserRepository", "Usuário atualizado no Firestore: ${user?.displayName}, role: ${user?.role}")
+                            android.util.Log.d("FirestoreUserRepository", "🔄 Usuário atualizado em users global: ${user?.displayName}, role: ${user?.role}")
+                            
+                            // Se o usuário tem city/state, também observar em locations/{locationId}/users
+                            val userCity = user?.city?.takeIf { it.isNotBlank() }
+                            val userState = user?.state?.takeIf { it.isNotBlank() }
+                            if (userCity != null && userState != null && listeners.size == 1) {
+                                try {
+                                    val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+                                    val locationListener = firestore.collection("locations").document(locationId)
+                                        .collection("users").document(uid)
+                                        .addSnapshotListener { locationSnapshot, locationError ->
+                                            if (locationError != null) {
+                                                android.util.Log.w("FirestoreUserRepository", "Erro ao observar em locations: ${locationError.message}")
+                                                return@addSnapshotListener
+                                            }
+                                            
+                                            if (locationSnapshot != null && locationSnapshot.exists()) {
+                                                try {
+                                                    val locationUser = locationSnapshot.data?.let { mapUser(locationSnapshot.id, it) }
+                                                    if (locationUser != null) {
+                                                        android.util.Log.d("FirestoreUserRepository", "🔄 Usuário atualizado em locations/$locationId/users: ${locationUser.displayName}")
+                                                        // Priorizar dados de locations/{locationId}/users (mais atualizado)
+                                                        trySend(locationUser)
+                                                    }
+                                                } catch (e: Exception) {
+                                                    android.util.Log.e("FirestoreUserRepository", "Erro ao converter usuário de locations: ${e.message}", e)
+                                                }
+                                            }
+                                        }
+                                    listeners.add(locationListener)
+                                    android.util.Log.d("FirestoreUserRepository", "✅ Observando também em locations/$locationId/users")
+                                } catch (e: Exception) {
+                                    android.util.Log.w("FirestoreUserRepository", "Erro ao configurar listener de locations: ${e.message}")
+                                }
+                            }
+                            
                             trySend(user)
                         } catch (e: Exception) {
                             android.util.Log.e("FirestoreUserRepository", "Erro ao converter usuário: ${e.message}", e)
                             trySend(null)
                         }
                     } else {
-                        android.util.Log.d("FirestoreUserRepository", "Usuário não existe no Firestore ainda (será criado)")
-                        trySend(null)
+                        // CRÍTICO: Se o documento não existe mas já existia antes (foi deletado), forçar logout
+                        // Verificar se o usuário está autenticado - se sim e documento não existe, foi deletado
+                        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                        if (currentUser != null && currentUser.uid == uid) {
+                            android.util.Log.w("FirestoreUserRepository", "⚠️ Usuário autenticado mas documento não existe no Firestore - conta foi deletada, forçando logout")
+                            // Fazer logout imediatamente
+                            try {
+                                com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+                                android.util.Log.d("FirestoreUserRepository", "✅ Logout realizado com sucesso após detecção de conta deletada")
+                            } catch (e: Exception) {
+                                android.util.Log.e("FirestoreUserRepository", "Erro ao fazer logout: ${e.message}", e)
+                            }
+                            // Emitir null para indicar que o usuário foi deletado
+                            // O componente que observa este Flow deve detectar e forçar logout
+                            trySend(null)
+                        } else {
+                            android.util.Log.d("FirestoreUserRepository", "Usuário não existe no Firestore ainda (será criado)")
+                            trySend(null)
+                        }
                     }
                 }
+            listeners.add(globalListener)
             
-            awaitClose { listenerRegistration.remove() }
+            awaitClose { 
+                listeners.forEach { it.remove() }
+            }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreUserRepository", "Erro ao configurar listener de usuário: ${e.message}", e)
             trySend(null)
             // Não fechar o channel imediatamente, permitir retry
+            awaitClose { 
+                listeners.forEach { it.remove() }
+            }
         }
     }
     
@@ -112,55 +210,96 @@ class FirestoreUserRepository @Inject constructor(
             
             android.util.Log.d("FirestoreUserRepository", "Buscando usuários com searchId: $searchId")
             
-            // Buscar usuários que correspondem ao searchId
-            // Nota: Como userIdentifier é um hash, precisamos buscar por componentes individuais
-            // ou usar uma abordagem diferente. Por enquanto, vamos buscar por role e localização.
-            var query = usersCollection.whereEqualTo("role", role)
+            // LEI MÁXIMA DO TASKGO: Buscar em locations/{locationId}/users quando temos city/state
+            // Se não tiver city/state, buscar em users global (legacy)
+            val users = mutableListOf<UserFirestore>()
             
-            // Se tiver cidade e estado, podemos filtrar por endereço (requer índice composto)
-            // Por enquanto, vamos buscar todos e filtrar em memória
-            val snapshot = query.get().await()
-            
-            snapshot.documents.mapNotNull { doc ->
+            if (city != null && state != null) {
+                // Buscar em locations/{locationId}/users (correto)
                 try {
-                    val user = doc.toObject(UserFirestore::class.java)
-                    if (user != null) {
-                        // Verificar se corresponde aos critérios de busca
-                        val matchesLocation = when {
-                            city != null && state != null -> {
-                                user.address?.city?.equals(city, ignoreCase = true) == true &&
-                                user.address?.state?.equals(state, ignoreCase = true) == true
-                            }
-                            latitude != null && longitude != null -> {
-                                // Verificar se está dentro de um raio (será feito em camada superior)
-                                true // Por enquanto, retornar todos e filtrar depois
-                            }
-                            else -> true
-                        }
-                        
-                        val matchesCategories = if (categories != null && (role == "partner" || role == "provider" || role == "seller")) {
-                            user.preferredCategories?.any { cat -> 
-                                categories.any { searchCat -> 
-                                    cat.equals(searchCat, ignoreCase = true) 
+                    val locationId = LocationHelper.normalizeLocationId(city, state)
+                    val locationQuery = firestore.collection("locations").document(locationId)
+                        .collection("users")
+                        .whereEqualTo("role", role)
+                        .get()
+                        .await()
+                    
+                    android.util.Log.d("FirestoreUserRepository", "Buscando em locations/$locationId/users: ${locationQuery.size()} documentos")
+                    
+                    locationQuery.documents.forEach { doc ->
+                        try {
+                            val user = doc.data?.let { mapUser(doc.id, it) }
+                            if (user != null) {
+                                // Verificar categorias se necessário
+                                val matchesCategories = if (categories != null && role == "partner") {
+                                    user.preferredCategories?.any { cat -> 
+                                        categories.any { searchCat -> 
+                                            cat.equals(searchCat, ignoreCase = true) 
+                                        }
+                                    } ?: false
+                                } else {
+                                    true
                                 }
-                            } ?: false
-                        } else {
-                            true
+                                
+                                if (matchesCategories) {
+                                    users.add(user)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("FirestoreUserRepository", "Erro ao converter documento: ${e.message}", e)
                         }
-                        
-                        if (matchesLocation && matchesCategories) {
-                            user
-                        } else {
-                            null
-                        }
-                    } else {
-                        null
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("FirestoreUserRepository", "Erro ao converter documento: ${e.message}", e)
-                    null
+                    android.util.Log.w("FirestoreUserRepository", "Erro ao buscar em locations: ${e.message}, tentando users global")
                 }
             }
+            
+            // Fallback: Buscar em users global (legacy) se não encontrou em locations ou se não tem city/state
+            if (users.isEmpty() || city == null || state == null) {
+                android.util.Log.d("FirestoreUserRepository", "Buscando em users global (legacy)...")
+                var query = firestore.collection("users").whereEqualTo("role", role)
+                val snapshot = query.get().await()
+                
+                snapshot.documents.forEach { doc ->
+                    try {
+                        val user = doc.toObject(UserFirestore::class.java)
+                        if (user != null) {
+                            // Verificar se corresponde aos critérios de busca
+                            // Lei 1: Ler city/state APENAS da raiz do documento
+                            val matchesLocation = when {
+                                city != null && state != null -> {
+                                    user.city?.equals(city, ignoreCase = true) == true &&
+                                    user.state?.equals(state, ignoreCase = true) == true
+                                }
+                                latitude != null && longitude != null -> {
+                                    // Verificar se está dentro de um raio (será feito em camada superior)
+                                    true // Por enquanto, retornar todos e filtrar depois
+                                }
+                                else -> true
+                            }
+                            
+                            val matchesCategories = if (categories != null && role == "partner") {
+                                user.preferredCategories?.any { cat -> 
+                                    categories.any { searchCat -> 
+                                        cat.equals(searchCat, ignoreCase = true) 
+                                    }
+                                } ?: false
+                            } else {
+                                true
+                            }
+                            
+                            if (matchesLocation && matchesCategories) {
+                                users.add(user)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("FirestoreUserRepository", "Erro ao converter documento: ${e.message}", e)
+                    }
+                }
+            }
+            
+            android.util.Log.d("FirestoreUserRepository", "Total de usuários encontrados: ${users.size}")
+            return users
         } catch (e: Exception) {
             android.util.Log.e("FirestoreUserRepository", "Erro ao buscar usuários: ${e.message}", e)
             emptyList()
@@ -184,8 +323,8 @@ class FirestoreUserRepository @Inject constructor(
             
             // Tentar busca direta primeiro (mais eficiente se permitido pelas regras)
             try {
-                // Buscar por CPF
-                val cpfQuery = usersCollection
+                // CRÍTICO: Buscar em users global (legacy) - TODO: Migrar para locations/{locationId}/users
+                val cpfQuery = firestore.collection("users")
                     .whereEqualTo("cpf", cleanDocument)
                     .limit(1)
                     .get()
@@ -197,8 +336,8 @@ class FirestoreUserRepository @Inject constructor(
                     return user
                 }
                 
-                // Buscar por CNPJ
-                val cnpjQuery = usersCollection
+                // CRÍTICO: Buscar em users global (legacy) - TODO: Migrar para locations/{locationId}/users
+                val cnpjQuery = firestore.collection("users")
                     .whereEqualTo("cnpj", cleanDocument)
                     .limit(1)
                     .get()
@@ -220,7 +359,8 @@ class FirestoreUserRepository @Inject constructor(
             try {
                 // Buscar todos os usuários (com limite razoável)
                 // Nota: Isso pode ser lento, mas funciona mesmo sem autenticação
-                val allUsersSnapshot = usersCollection
+                // CRÍTICO: Buscar em users global (legacy) - TODO: Migrar para locations/{locationId}/users
+                val allUsersSnapshot = firestore.collection("users")
                     .limit(1000) // Limite razoável para não sobrecarregar
                     .get()
                     .await()
@@ -271,7 +411,8 @@ class FirestoreUserRepository @Inject constructor(
             displayName = data["displayName"] as? String,
             photoURL = data["photoURL"] as? String,
             phone = data["phone"] as? String,
-            role = data["role"] as? String ?: "client",
+            // CRÍTICO: O role SEMPRE será "partner" ou "client" - garantido pelo sistema
+            role = (data["role"] as String).lowercase(),
             pendingAccountType = data["pendingAccountType"] as? Boolean ?: false,
             profileComplete = data["profileComplete"] as? Boolean ?: false,
             verified = data["verified"] as? Boolean ?: false,
@@ -283,6 +424,11 @@ class FirestoreUserRepository @Inject constructor(
             documentBack = data["documentBack"] as? String,
             selfie = data["selfie"] as? String,
             address = (data["address"] as? Map<*, *>)?.let { addr ->
+                // PADRÃO ÚNICO: Ler city/state APENAS dos campos diretos do documento
+                // Backend salva em user.city e user.state, não em address
+                val city = (data["city"] as? String)?.takeIf { it.isNotBlank() } ?: ""
+                val state = (data["state"] as? String)?.takeIf { it.isNotBlank() } ?: ""
+                
                 com.taskgoapp.taskgo.core.model.Address(
                     id = addr["id"] as? String ?: "",
                     name = addr["name"] as? String ?: "",
@@ -290,14 +436,35 @@ class FirestoreUserRepository @Inject constructor(
                     cep = addr["cep"] as? String ?: (addr["zipCode"] as? String ?: ""),
                     street = addr["street"] as? String ?: "",
                     district = addr["district"] as? String ?: "",
-                    city = addr["city"] as? String ?: "",
-                    state = addr["state"] as? String ?: "",
+                    city = city,
+                    state = state,
                     number = addr["number"] as? String ?: "",
                     complement = addr["complement"] as? String,
                     neighborhood = addr["neighborhood"] as? String ?: "",
                     zipCode = addr["zipCode"] as? String ?: "",
                     country = addr["country"] as? String ?: "Brasil"
                 )
+            } ?: run {
+                // Se não tem address, criar um básico com city/state diretos do documento
+                val city = (data["city"] as? String)?.takeIf { it.isNotBlank() } ?: ""
+                val state = (data["state"] as? String)?.takeIf { it.isNotBlank() } ?: ""
+                if (city.isNotBlank() && state.isNotBlank()) {
+                    com.taskgoapp.taskgo.core.model.Address(
+                        id = "",
+                        name = "",
+                        phone = "",
+                        cep = "",
+                        street = "",
+                        district = "",
+                        city = city,
+                        state = state,
+                        number = "",
+                        complement = null,
+                        neighborhood = "",
+                        zipCode = "",
+                        country = "Brasil"
+                    )
+                } else null
             },
             addressProof = data["addressProof"] as? String,
             verifiedAt = parseDate(data["verifiedAt"]),
@@ -314,6 +481,9 @@ class FirestoreUserRepository @Inject constructor(
             documentsApprovedAt = parseDate(data["documentsApprovedAt"]),
             documentsApprovedBy = data["documentsApprovedBy"] as? String,
             preferredCategories = (data["preferredCategories"] as? List<*>)?.mapNotNull { it as? String },
+            // Lei 1: city e state DEVEM estar na raiz do documento users/{userId}
+            city = (data["city"] as? String)?.takeIf { it.isNotBlank() },
+            state = (data["state"] as? String)?.takeIf { it.isNotBlank() },
             userIdentifier = data["userIdentifier"] as? String,
             notificationSettings = (data["notificationSettings"] as? Map<*, *>)?.let {
                 com.taskgoapp.taskgo.data.firestore.models.NotificationSettingsFirestore(
@@ -345,17 +515,26 @@ class FirestoreUserRepository @Inject constructor(
 
     suspend fun updateUser(user: UserFirestore): Result<Unit> {
         return try {
-            // Validar que uid não está vazio
             if (user.uid.isBlank()) {
-                android.util.Log.e("FirestoreUserRepository", "Erro: uid está vazio ao tentar salvar usuário")
                 return Result.failure(Exception("UID não pode estar vazio"))
             }
             
-            android.util.Log.d("FirestoreUserRepository", "Salvando usuário no Firestore: uid=${user.uid}, email=${user.email}, displayName=${user.displayName}")
+            // CRÍTICO: O role DEVE ser definido pelo usuário (partner ou client)
+            // NUNCA aceitar "user" como válido
+            if (user.role.isNullOrBlank()) {
+                return Result.failure(Exception("Role não pode estar vazio. O usuário deve ter um role válido (partner ou client)."))
+            }
             
-            // Calcular userIdentifier automaticamente
+            val validRoles = listOf("partner", "client")
+            if (!validRoles.contains(user.role.lowercase())) {
+                return Result.failure(Exception("Role inválido: ${user.role}. Role deve ser 'partner' ou 'client'."))
+            }
+            
+            if (user.city.isNullOrBlank() || user.state.isNullOrBlank()) {
+                return Result.failure(Exception("City e state são obrigatórios e não podem estar vazios."))
+            }
+            
             val userIdentifier = com.taskgoapp.taskgo.core.utils.UserIdentifier.generateUserId(user)
-            android.util.Log.d("FirestoreUserRepository", "UserIdentifier calculado: $userIdentifier para role=${user.role}")
             
             // Converter UserFirestore para Map, tratando Date corretamente
             val dataMap = mutableMapOf<String, Any?>(
@@ -426,24 +605,43 @@ class FirestoreUserRepository @Inject constructor(
             // Remover campos null para não sobrescrever dados existentes
             dataMap.entries.removeAll { it.value == null }
             
+            val finalCity = user.city?.takeIf { it.isNotBlank() }
+                ?: return Result.failure(Exception("City é obrigatório e não pode estar vazio. O usuário deve ter city definido no cadastro."))
+            
+            val finalState = user.state?.takeIf { it.isNotBlank() }
+                ?: return Result.failure(Exception("State é obrigatório e não pode estar vazio. O usuário deve ter state definido no cadastro."))
+            
+            dataMap["city"] = finalCity
+            dataMap["state"] = finalState
+            
             // Converter Address se existir
+            // CRÍTICO: NÃO salvar city/state em address - backend lê de user.city/user.state
             user.address?.let { address ->
                 dataMap["address"] = mapOf(
                     "street" to (address.street ?: ""),
                     "number" to (address.number ?: ""),
                     "complement" to (address.complement ?: ""),
                     "neighborhood" to (address.neighborhood ?: ""),
-                    "city" to (address.city ?: ""),
-                    "state" to (address.state ?: ""),
+                    // REMOVIDO: city e state de address - usar APENAS campos diretos user.city/user.state
                     "zipCode" to (address.zipCode ?: ""),
                     "country" to (address.country ?: "Brasil")
                 )
             }
             
-            // Usar set() com merge para não sobrescrever campos existentes
-            usersCollection.document(user.uid).set(dataMap, com.google.firebase.firestore.SetOptions.merge()).await()
+            // CRÍTICO: Salvar em locations/{locationId}/users/{userId} em vez de users global
+            // Obter locationId de finalCity e finalState (sempre válidos - validação acima garante)
+            val locationId = try {
+                LocationHelper.normalizeLocationId(finalCity, finalState)
+            } catch (e: Exception) {
+                return Result.failure(Exception("Erro ao normalizar locationId para city=$finalCity, state=$finalState: ${e.message}"))
+            }
             
-            android.util.Log.d("FirestoreUserRepository", "Usuário salvo com sucesso no Firestore: ${user.uid}")
+            val locationUsersCollection = firestore.collection("locations").document(locationId).collection("users")
+            locationUsersCollection.document(user.uid).set(dataMap, com.google.firebase.firestore.SetOptions.merge()).await()
+            
+            val privateUsersCollection = firestore.collection("users").document(locationId).collection("users")
+            privateUsersCollection.document(user.uid).set(dataMap, com.google.firebase.firestore.SetOptions.merge()).await()
+            
             Result.success(Unit)
         } catch (e: kotlinx.coroutines.CancellationException) {
             android.util.Log.w("FirestoreUserRepository", "Operação de salvamento cancelada: ${e.message}")
@@ -456,9 +654,34 @@ class FirestoreUserRepository @Inject constructor(
 
     suspend fun updateField(uid: String, field: String, value: Any): Result<Unit> {
         return try {
-            usersCollection.document(uid)
-                .update(field, value, "updatedAt", FieldValue.serverTimestamp())
+            val user = getUser(uid)
+            val userCity = user?.city?.takeIf { it.isNotBlank() }
+            val userState = user?.state?.takeIf { it.isNotBlank() }
+            
+            if (userCity == null || userState == null) {
+                return Result.failure(Exception("Usuário não tem city/state no perfil"))
+            }
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            
+            // CRÍTICO: Atualizar em DUAS coleções
+            val updateData = mapOf(
+                field to value,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            
+            // 1. Atualizar em locations/{locationId}/users/{userId} (pública)
+            firestore.collection("locations").document(locationId)
+                .collection("users").document(uid)
+                .update(updateData)
                 .await()
+            
+            // 2. Atualizar em users/{locationId}/users/{userId} (privada)
+            firestore.collection("users").document(locationId)
+                .collection("users").document(uid)
+                .update(updateData)
+                .await()
+            
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -472,13 +695,37 @@ class FirestoreUserRepository @Inject constructor(
 
     suspend fun approveDocuments(uid: String, documents: List<String>, approvedBy: String): Result<Unit> {
         return try {
-            usersCollection.document(uid).update(
-                "documents", documents,
-                "documentsApproved", true,
-                "documentsApprovedAt", FieldValue.serverTimestamp(),
-                "documentsApprovedBy", approvedBy,
-                "updatedAt", FieldValue.serverTimestamp()
-            ).await()
+            val updateData = mapOf(
+                "documents" to documents,
+                "documentsApproved" to true,
+                "documentsApprovedAt" to FieldValue.serverTimestamp(),
+                "documentsApprovedBy" to approvedBy,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            
+            val user = getUser(uid)
+            val userCity = user?.city?.takeIf { it.isNotBlank() }
+            val userState = user?.state?.takeIf { it.isNotBlank() }
+            
+            if (userCity == null || userState == null) {
+                return Result.failure(Exception("Usuário não tem city/state no perfil"))
+            }
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            
+            // CRÍTICO: Atualizar em DUAS coleções
+            // 1. Atualizar em locations/{locationId}/users/{userId} (pública)
+            firestore.collection("locations").document(locationId)
+                .collection("users").document(uid)
+                .update(updateData)
+                .await()
+            
+            // 2. Atualizar em users/{locationId}/users/{userId} (privada)
+            firestore.collection("users").document(locationId)
+                .collection("users").document(uid)
+                .update(updateData)
+                .await()
+            
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -487,10 +734,34 @@ class FirestoreUserRepository @Inject constructor(
 
     suspend fun setStripeAccount(uid: String, accountId: String): Result<Unit> {
         return try {
-            usersCollection.document(uid).update(
-                "stripeAccountId", accountId,
-                "updatedAt", FieldValue.serverTimestamp()
-            ).await()
+            val updateData = mapOf(
+                "stripeAccountId" to accountId,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            
+            val user = getUser(uid)
+            val userCity = user?.city?.takeIf { it.isNotBlank() }
+            val userState = user?.state?.takeIf { it.isNotBlank() }
+            
+            if (userCity == null || userState == null) {
+                return Result.failure(Exception("Usuário não tem city/state no perfil"))
+            }
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            
+            // CRÍTICO: Atualizar em DUAS coleções
+            // 1. Atualizar em locations/{locationId}/users/{userId} (pública)
+            firestore.collection("locations").document(locationId)
+                .collection("users").document(uid)
+                .update(updateData)
+                .await()
+            
+            // 2. Atualizar em users/{locationId}/users/{userId} (privada)
+            firestore.collection("users").document(locationId)
+                .collection("users").document(uid)
+                .update(updateData)
+                .await()
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

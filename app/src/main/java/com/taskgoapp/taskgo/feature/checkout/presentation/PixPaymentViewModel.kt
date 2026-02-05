@@ -10,6 +10,8 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+import com.taskgoapp.taskgo.core.model.onSuccess
+import com.taskgoapp.taskgo.core.model.onFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,7 +49,7 @@ class PixPaymentViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val result = functionsService.createPixPayment(orderId)
-                result.onSuccess { data ->
+                result.onSuccess { data: Map<String, Any> ->
                     val pixKey = data["pixKey"] as? String
                     val qrCodeData = data["qrCodeData"] as? String
                     val amount = (data["amount"] as? Number)?.toDouble() ?: 0.0
@@ -70,7 +72,7 @@ class PixPaymentViewModel @Inject constructor(
                     
                     // Start polling for payment verification
                     paymentId?.let { startPaymentPolling(it) }
-                }.onFailure { throwable ->
+                }.onFailure { throwable: Throwable ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = throwable.message ?: "Erro ao criar pagamento PIX"
@@ -130,7 +132,7 @@ class PixPaymentViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isCheckingPayment = true)
                 
                 val result = functionsService.verifyPixPayment(paymentId)
-                result.onSuccess { data ->
+                result.onSuccess { data: Map<String, Any> ->
                     val status = data["status"] as? String
                     val paid = data["paid"] as? Boolean ?: false
                     
@@ -147,7 +149,7 @@ class PixPaymentViewModel @Inject constructor(
                     } else {
                         _uiState.value = _uiState.value.copy(isCheckingPayment = false)
                     }
-                }.onFailure {
+                }.onFailure { _: Throwable ->
                     // Continue polling even if verification fails temporarily
                     _uiState.value = _uiState.value.copy(isCheckingPayment = false)
                 }
@@ -170,7 +172,7 @@ class PixPaymentViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isCheckingPayment = true)
             val result = functionsService.verifyPixPayment(paymentId)
-            result.onSuccess { data ->
+            result.onSuccess { data: Map<String, Any> ->
                 val status = data["status"] as? String
                 val paid = data["paid"] as? Boolean ?: false
                 
@@ -185,7 +187,7 @@ class PixPaymentViewModel @Inject constructor(
                         error = "Pagamento ainda não confirmado. Status: $status"
                     )
                 }
-            }.onFailure { throwable ->
+            }.onFailure { throwable: Throwable ->
                 _uiState.value = _uiState.value.copy(
                     isCheckingPayment = false,
                     error = throwable.message ?: "Erro ao verificar pagamento"

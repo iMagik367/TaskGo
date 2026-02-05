@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.settings.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -41,8 +42,9 @@ fun AboutScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = TaskGoBackgroundGray
-                )
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(20.dp),
@@ -95,7 +97,11 @@ fun AboutScreen(
             // App Description
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -128,7 +134,11 @@ fun AboutScreen(
             // Features
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -177,7 +187,11 @@ fun AboutScreen(
             // Company Information
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -302,7 +316,11 @@ fun AboutScreen(
             // Contact Information
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -400,7 +418,11 @@ fun AboutScreen(
             // Legal Information
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -462,7 +484,11 @@ fun AboutScreen(
             // Development Team
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)

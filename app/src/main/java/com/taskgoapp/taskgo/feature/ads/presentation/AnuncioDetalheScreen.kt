@@ -1,6 +1,7 @@
 ﻿package com.taskgoapp.taskgo.feature.ads.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -14,6 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
@@ -55,7 +57,10 @@ fun AnuncioDetalheScreen(
 				fontSize = 14.sp
 			)
 
-			Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+			Card(
+				colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+				border = BorderStroke(1.dp, TaskGoBorder)
+			) {
 				Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
 					Text("Planos", color = TaskGoTextBlack, fontWeight = FontWeight.SemiBold)
 					Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

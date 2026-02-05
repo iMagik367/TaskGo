@@ -3,6 +3,7 @@ import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import Stripe from 'stripe';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
+import {ordersPath, purchaseOrdersPath, getUserLocationId} from './utils/firestorePaths';
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -128,8 +129,11 @@ async function handlePaymentIntentSucceeded(
 
   // Update order status based on payment type
   if (isProductPayment) {
-    // Product payment - update purchase_orders
-    await db.collection('purchase_orders').doc(orderId).update({
+    // CRÍTICO: Product payment - update na coleção por localização
+    const clientId = payment.clientId;
+    const locationId = await getUserLocationId(db, clientId);
+    const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+    await locationOrdersCollection.doc(orderId).update({
       status: 'PAID',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -146,8 +150,12 @@ async function handlePaymentIntentSucceeded(
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   } else {
-    // Service payment - update orders
-    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+    // Service payment - update orders na coleção por localização
+    // Obter locationId do clientId do payment
+    const clientId = payment.clientId;
+    const locationId = await getUserLocationId(db, clientId);
+    const locationOrdersCollection = ordersPath(db, locationId);
+    await locationOrdersCollection.doc(orderId).update({
       status: 'paid',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -217,12 +225,20 @@ async function handlePaymentIntentFailed(
     // Update order status
     const isProductPayment = paymentDoc.ref.parent.id === 'product_payments';
     if (isProductPayment) {
-      await db.collection('purchase_orders').doc(orderId).update({
+      // CRÍTICO: Product payment - update na coleção por localização
+      const clientId = payment.clientId;
+      const locationId = await getUserLocationId(db, clientId);
+      const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+      await locationOrdersCollection.doc(orderId).update({
         status: 'PENDING_PAYMENT',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     } else {
-      await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+      // Service payment - update orders na coleção por localização
+      const clientId = payment.clientId;
+      const locationId = await getUserLocationId(db, clientId);
+      const locationOrdersCollection = ordersPath(db, locationId);
+      await locationOrdersCollection.doc(orderId).update({
         status: 'payment_pending',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });

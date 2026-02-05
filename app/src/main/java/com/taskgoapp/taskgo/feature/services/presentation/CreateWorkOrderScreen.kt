@@ -1,6 +1,7 @@
 ﻿package com.taskgoapp.taskgo.feature.services.presentation
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +25,8 @@ import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.domain.repository.CategoriesRepository
+import com.taskgoapp.taskgo.core.model.fold
+import com.taskgoapp.taskgo.core.model.isSuccess
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,7 +75,7 @@ class CreateWorkOrderViewModel @Inject constructor(
         location: String,
         budget: Double?,
         dueDate: String?
-    ): Result<String> {
+    ): com.taskgoapp.taskgo.core.model.Result<String> {
         return try {
             android.util.Log.d("CreateWorkOrderVM", "🔵 Criando ordem de serviço...")
             android.util.Log.d("CreateWorkOrderVM", "   category: $category")
@@ -94,11 +97,9 @@ class CreateWorkOrderViewModel @Inject constructor(
             
             android.util.Log.d("CreateWorkOrderVM", "   Resultado da CF: isSuccess=${result.isSuccess}")
             
-            when {
-                result.isSuccess -> {
-                    val data = result.getOrNull()
-                    android.util.Log.d("CreateWorkOrderVM", "   Dados retornados: $data")
-                    val orderId = data?.get("orderId") as? String
+            return result.fold(
+                onSuccess = { data: Map<String, Any> ->
+                    val orderId = data["orderId"] as? String
                     if (orderId != null) {
                         android.util.Log.d("CreateWorkOrderVM", "✅ Ordem criada com sucesso: orderId=$orderId")
                         _uiState.value = _uiState.value.copy(
@@ -106,7 +107,7 @@ class CreateWorkOrderViewModel @Inject constructor(
                             success = true,
                             error = null
                         )
-                        Result.success(orderId)
+                        com.taskgoapp.taskgo.core.model.Result.Success(orderId)
                     } else {
                         android.util.Log.e("CreateWorkOrderVM", "❌ Resposta inválida: orderId não encontrado")
                         android.util.Log.e("CreateWorkOrderVM", "   Dados recebidos: $data")
@@ -114,27 +115,26 @@ class CreateWorkOrderViewModel @Inject constructor(
                             isLoading = false,
                             error = "Erro ao criar ordem: resposta inválida"
                         )
-                        Result.failure(Exception("Resposta inválida"))
+                        com.taskgoapp.taskgo.core.model.Result.Error(Exception("Resposta inválida"))
                     }
-                }
-                else -> {
-                    val exception = result.exceptionOrNull()
-                    val error = exception?.message ?: "Erro desconhecido"
+                },
+                onFailure = { exception: Throwable ->
+                    val error = exception.message ?: "Erro desconhecido"
                     android.util.Log.e("CreateWorkOrderVM", "❌ Erro ao criar ordem: $error", exception)
-                    android.util.Log.e("CreateWorkOrderVM", "   Exception type: ${exception?.javaClass?.simpleName}")
+                    android.util.Log.e("CreateWorkOrderVM", "   Exception type: ${exception.javaClass.simpleName}")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = error
                     )
-                    Result.failure(exception ?: Exception(error))
+                    com.taskgoapp.taskgo.core.model.Result.Error(exception)
                 }
-            }
+            )
         } catch (e: Exception) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 error = e.message ?: "Erro ao criar ordem"
             )
-            Result.failure(e)
+            com.taskgoapp.taskgo.core.model.Result.Error(e)
         }
     }
     
@@ -174,28 +174,12 @@ fun CreateWorkOrderScreen(
     
     var selectedCategories by remember { mutableStateOf<Set<String>>(emptySet()) }
     var description by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("") }
-    var city by remember { mutableStateOf("") }
-    var state by remember { mutableStateOf("") }
+    // REMOVIDO: address, city e state - localização será obtida automaticamente do perfil do usuário
     var budget by remember { mutableStateOf("") }
     var dueDate by remember { mutableStateOf<Date?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
     
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")) }
-    
-    // Load user address on first composition
-    LaunchedEffect(Unit) {
-        val userAddress = viewModel.getUserAddress()
-        if (userAddress != null && address.isEmpty()) {
-            address = userAddress
-            // Try to extract city and state from address
-            val parts = userAddress.split(",").map { it.trim() }
-            if (parts.size >= 2) {
-                city = parts[parts.size - 2]
-                state = parts[parts.size - 1]
-            }
-        }
-    }
     
     // Show success dialog
     LaunchedEffect(uiState.success) {
@@ -233,7 +217,8 @@ fun CreateWorkOrderScreen(
                 // Category Selection (Checkboxes)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                    colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -297,47 +282,12 @@ fun CreateWorkOrderScreen(
                     )
                 )
                 
-                // Address
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = { Text("Endereço *") },
-                    placeholder = { Text("Rua, número, bairro") },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TaskGoGreen,
-                        unfocusedBorderColor = TaskGoBorder
-                    )
-                )
+                // REMOVIDO: Campo de Endereço
+                // Localização será obtida automaticamente do perfil do usuário
                 
-                // City and State
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    OutlinedTextField(
-                        value = city,
-                        onValueChange = { city = it },
-                        label = { Text("Cidade *") },
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = TaskGoGreen,
-                            unfocusedBorderColor = TaskGoBorder
-                        )
-                    )
-                    
-                    OutlinedTextField(
-                        value = state,
-                        onValueChange = { state = it },
-                        label = { Text("Estado *") },
-                        placeholder = { Text("SP") },
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = TaskGoGreen,
-                            unfocusedBorderColor = TaskGoBorder
-                        )
-                    )
-                }
+                // REMOVIDO: Campos de Cidade e Estado
+                // A localização será obtida automaticamente do perfil do usuário
+                // O app detecta automaticamente quando o usuário muda de cidade
                 
                 // Budget
                 OutlinedTextField(
@@ -384,8 +334,9 @@ fun CreateWorkOrderScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
+                            containerColor = TaskGoBackgroundWhite
+                        ),
+                        border = BorderStroke(1.dp, TaskGoBorder)
                     ) {
                         Text(
                             text = error,
@@ -408,11 +359,10 @@ fun CreateWorkOrderScreen(
                         if (description.isBlank()) {
                             return@PrimaryButton
                         }
-                        if (address.isBlank() || city.isBlank() || state.isBlank()) {
-                            return@PrimaryButton
-                        }
                         
-                        val location = "$address, $city, $state"
+                        // CRÍTICO: Localização será obtida automaticamente do perfil do usuário pelo backend
+                        // Não enviar location - backend usa getUserLocation() do perfil
+                        val location = "" // Backend ignora e usa perfil do usuário
                         val budgetValue = budget.toDoubleOrNull()
                         val dueDateString = dueDate?.let { 
                             SimpleDateFormat("yyyy-MM-dd", Locale.US).format(it) 

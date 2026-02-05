@@ -37,7 +37,7 @@ class FirestoreMapLocationsRepository @Inject constructor(
      */
     fun observeProvidersWithLocation(): Flow<List<ProviderLocation>> = callbackFlow {
         val listenerRegistration = usersCollection
-            .whereEqualTo("role", "provider")
+            .whereEqualTo("role", "partner")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     android.util.Log.e("FirestoreMapLocationsRepository", "Erro ao observar providers: ${error.message}", error)
@@ -116,7 +116,7 @@ class FirestoreMapLocationsRepository @Inject constructor(
      */
     fun observeStoresWithLocation(): Flow<List<StoreLocation>> = callbackFlow {
         val listenerRegistration = usersCollection
-            .whereEqualTo("role", "store")
+            .whereEqualTo("role", "partner")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     android.util.Log.e("FirestoreMapLocationsRepository", "Erro ao observar stores: ${error.message}", error)
@@ -201,12 +201,12 @@ class FirestoreMapLocationsRepository @Inject constructor(
         return try {
             // Buscar todos os prestadores e lojas
             val providersSnapshot = usersCollection
-                .whereEqualTo("role", "provider")
+                .whereEqualTo("role", "partner")
                 .get()
                 .await()
             
             val storesSnapshot = usersCollection
-                .whereEqualTo("role", "store")
+                .whereEqualTo("role", "partner")
                 .get()
                 .await()
             

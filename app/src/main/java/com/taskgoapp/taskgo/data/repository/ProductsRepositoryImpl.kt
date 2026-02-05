@@ -21,6 +21,7 @@ class ProductsRepositoryImpl @Inject constructor(
 
     // Cache local desabilitado para produtos; fonte = Firestore
     override fun observeProducts(): Flow<List<Product>> = emptyFlow()
+    override fun observeProductsBySeller(sellerId: String): Flow<List<Product>> = emptyFlow()
     override fun observeProductErrors(): Flow<String> = emptyFlow()
     override suspend fun getProduct(id: String): Product? = null
     override suspend fun getMyProducts(): List<Product> = emptyList()

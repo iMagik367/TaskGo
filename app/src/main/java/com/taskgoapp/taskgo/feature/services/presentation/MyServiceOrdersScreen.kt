@@ -1,6 +1,7 @@
 package com.taskgoapp.taskgo.feature.services.presentation
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -118,8 +119,9 @@ fun MyServiceOrdersScreen(
                         .fillMaxWidth()
                         .padding(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Text(
                         text = uiState.error ?: "Erro ao carregar ordens",
@@ -193,7 +195,11 @@ private fun ServiceOrderCard(
             .fillMaxWidth()
             .clickable { onEditClick() },
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier

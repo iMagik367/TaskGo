@@ -6,6 +6,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+import com.taskgoapp.taskgo.core.model.fold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -74,7 +75,7 @@ class TwoFactorAuthViewModel @Inject constructor(
                 val result = functionsService.sendTwoFactorCode()
                 
                 result.fold(
-                    onSuccess = { data ->
+                    onSuccess = { data: Map<String, Any> ->
                         val method = data["method"] as? String ?: "email"
                         val message = data["message"] as? String ?: "Código enviado"
                         
@@ -84,7 +85,7 @@ class TwoFactorAuthViewModel @Inject constructor(
                             verificationMethod = message
                         )
                     },
-                    onFailure = { exception ->
+                    onFailure = { exception: Throwable ->
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             error = "Erro ao enviar código: ${exception.message}"
@@ -121,7 +122,7 @@ class TwoFactorAuthViewModel @Inject constructor(
                 val result = functionsService.verifyTwoFactorCode(code)
                 
                 result.fold(
-                    onSuccess = { data ->
+                    onSuccess = { data: Map<String, Any> ->
                         val verified = data["verified"] as? Boolean ?: false
                         if (verified) {
                             _uiState.value = _uiState.value.copy(
@@ -135,7 +136,7 @@ class TwoFactorAuthViewModel @Inject constructor(
                             )
                         }
                     },
-                    onFailure = { exception ->
+                    onFailure = { exception: Throwable ->
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             error = when {

@@ -89,19 +89,18 @@ class InitialDataSyncManager @Inject constructor(
             if (userFirestore != null) {
                 val accountType = when (userFirestore.role?.lowercase()) {
                     "partner" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO
-                    "provider" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
-                    "seller" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO // Legacy - migrar para PARCEIRO
                     "client" -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
                     else -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
                 }
                 
+                // LEI MÁXIMA DO TASKGO: Ler city/state APENAS da raiz do documento, NUNCA de address
                 val user = com.taskgoapp.taskgo.core.model.UserProfile(
                     id = userId,
                     name = userFirestore.displayName ?: "",
                     email = userFirestore.email,
                     phone = userFirestore.phone,
-                    city = userFirestore.address?.city,
-                    state = userFirestore.address?.state,
+                    city = userFirestore.city, // LEI MÁXIMA: Da raiz do documento
+                    state = userFirestore.state, // LEI MÁXIMA: Da raiz do documento
                     profession = null,
                     accountType = accountType,
                     rating = userFirestore.rating,

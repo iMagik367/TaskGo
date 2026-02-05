@@ -10,6 +10,7 @@ import com.taskgoapp.taskgo.core.security.FaceVerificationManager
 import com.taskgoapp.taskgo.data.repository.FirebaseStorageRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+import com.taskgoapp.taskgo.core.model.fold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -224,10 +225,10 @@ class IdentityVerificationViewModel @Inject constructor(
                     updatedAt = Date()
                 )
                 firestoreRepository.updateUser(updated).fold(
-                    onSuccess = {
+                    onSuccess = { _: Unit ->
                         onComplete(true)
                     },
-                    onFailure = {
+                    onFailure = { _: Throwable ->
                         onComplete(false)
                     }
                 )
@@ -321,7 +322,7 @@ class IdentityVerificationViewModel @Inject constructor(
                 }
                 
                 firestoreRepository.updateUser(updatedUser).fold(
-                    onSuccess = {
+                    onSuccess = { _: Unit ->
                         // Chamar Cloud Function para processar verificação facial
                         val verificationResult = functionsService.startIdentityVerification(
                             documentFrontUrl = documentFrontUrl,
@@ -331,7 +332,7 @@ class IdentityVerificationViewModel @Inject constructor(
                         )
                         
                         verificationResult.fold(
-                            onSuccess = { data ->
+                            onSuccess = { data: Map<String, Any> ->
                                 val success = data["success"] as? Boolean ?: false
                                 _uiState.value = _uiState.value.copy(
                                     isLoading = false,

@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.R
+import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.data.firestore.models.NotificationFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,11 +179,9 @@ private fun NotificationItemCard(
             .clickable { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (notification.read) 
-                MaterialTheme.colorScheme.surface 
-            else 
-                MaterialTheme.colorScheme.surfaceVariant
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier

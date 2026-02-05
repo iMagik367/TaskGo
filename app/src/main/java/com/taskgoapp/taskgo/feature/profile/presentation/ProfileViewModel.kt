@@ -46,6 +46,7 @@ data class ProfileState(
     // Novos campos
     val cpf: String = "",
     val rg: String = "",
+    val cnpj: String = "",
     val state: String = "",
     val country: String = "Brasil",
     val street: String = "",
@@ -129,13 +130,18 @@ class ProfileViewModel @Inject constructor(
                     // CRÍTICO: Usar apenas dados do Firestore do usuário atual
                     val finalAvatarUri = userFirestore.photoURL ?: currentUser.photoUrl?.toString()
                     
-                    val roleString = userFirestore.role?.lowercase() ?: ""
-                    val accountType = when (roleString) {
-                        "provider" -> AccountType.PARCEIRO // Legacy - migrar para partner
-                        "seller" -> AccountType.PARCEIRO // Legacy - migrar para partner
-                        "partner" -> AccountType.PARCEIRO // Novo role unificado
-                        else -> AccountType.CLIENTE
+                    // CRÍTICO: O role SEMPRE será "partner" ou "client" - garantido pelo sistema
+                    val accountType = if (userFirestore.role.lowercase() == "partner") {
+                        AccountType.PARCEIRO
+                    } else {
+                        AccountType.CLIENTE
                     }
+                    
+                    val userCity = userFirestore.city?.takeIf { it.isNotBlank() }
+                        ?: throw IllegalStateException("City não encontrado no perfil do usuário. O usuário deve ter city definido no cadastro.")
+                    
+                    val userState = userFirestore.state?.takeIf { it.isNotBlank() }
+                        ?: throw IllegalStateException("State não encontrado no perfil do usuário. O usuário deve ter state definido no cadastro.")
                     
                     // Atualizar estado com dados do Firestore (fonte de verdade)
                     _uiState.value = _uiState.value.copy(
@@ -145,11 +151,12 @@ class ProfileViewModel @Inject constructor(
                         email = (userFirestore.email ?: currentUser.email ?: "").ifBlank { currentUser.email ?: "" },
                         phone = userFirestore.phone ?: currentUser.phoneNumber ?: "",
                         avatarUri = finalAvatarUri,
-                        profileImages = emptyList(), // Não usar cache local
+                        profileImages = emptyList(),
                         cpf = userFirestore.cpf ?: "",
                         rg = userFirestore.rg ?: "",
-                        city = userFirestore.address?.city ?: "",
-                        state = userFirestore.address?.state ?: "",
+                        cnpj = userFirestore.cnpj ?: "",
+                        city = userCity,
+                        state = userState,
                         country = userFirestore.address?.country ?: "Brasil",
                         street = userFirestore.address?.street ?: "",
                         number = userFirestore.address?.number ?: "",
@@ -161,17 +168,9 @@ class ProfileViewModel @Inject constructor(
                         accountType = accountType
                     )
                 } else {
-                    // Se não existe no Firestore, usar dados do Firebase Auth
-                    Log.d(TAG, "Usuário não encontrado no Firestore, usando Firebase Auth")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        id = currentUser.uid,
-                        name = currentUser.displayName ?: "",
-                        email = currentUser.email ?: "",
-                        phone = currentUser.phoneNumber ?: "",
-                        avatarUri = currentUser.photoUrl?.toString(),
-                        profileImages = emptyList(), // Não usar cache local
-                        accountType = AccountType.CLIENTE
+                        error = "Perfil do usuário não encontrado no Firestore. O usuário deve ter um perfil válido com role e city/state definidos."
                     )
                 }
             } catch (e: Exception) {
@@ -195,9 +194,14 @@ class ProfileViewModel @Inject constructor(
     }
 
     private fun setFromUser(user: UserProfile) {
-        // Priorizar avatarUri do PreferencesManager se existir
         val savedAvatarUri = preferencesManager.getUserAvatarUri()
-        Log.d(TAG, "setFromUser - savedAvatarUri: $savedAvatarUri, user.avatarUri: ${user.avatarUri}")
+        
+        if (user.accountType == null) {
+            _uiState.value = _uiState.value.copy(
+                error = "AccountType não encontrado no perfil do usuário. O usuário deve ter um AccountType válido."
+            )
+            return
+        }
         
         _uiState.value = _uiState.value.copy(
             id = user.id,
@@ -205,6 +209,7 @@ class ProfileViewModel @Inject constructor(
             email = user.email,
             phone = user.phone.orEmpty(),
             city = user.city.orEmpty(),
+            state = user.state.orEmpty(),
             profession = user.profession.orEmpty(),
             accountType = user.accountType,
             rating = user.rating,
@@ -221,6 +226,7 @@ class ProfileViewModel @Inject constructor(
     fun onAccountTypeChange(v: AccountType) { _uiState.value = _uiState.value.copy(accountType = v) }
     fun onCpfChange(v: String) { _uiState.value = _uiState.value.copy(cpf = v) }
     fun onRgChange(v: String) { _uiState.value = _uiState.value.copy(rg = v) }
+    fun onCnpjChange(v: String) { _uiState.value = _uiState.value.copy(cnpj = v) }
     fun onStateChange(v: String) { _uiState.value = _uiState.value.copy(state = v) }
     fun onCountryChange(v: String) { _uiState.value = _uiState.value.copy(country = v) }
     fun onStreetChange(v: String) { _uiState.value = _uiState.value.copy(street = v) }
@@ -322,8 +328,6 @@ class ProfileViewModel @Inject constructor(
                 val existingUser = firestoreUserRepository.getUser(currentUser.uid)
                 val role = when (s.accountType) {
                     AccountType.PARCEIRO -> "partner" // Novo role unificado
-                    AccountType.PRESTADOR -> "partner" // Legacy - migrar para partner
-                    AccountType.VENDEDOR -> "partner" // Legacy - migrar para partner
                     AccountType.CLIENTE -> "client"
                 }
                 
@@ -333,9 +337,13 @@ class ProfileViewModel @Inject constructor(
                     phone = s.phone.ifBlank { null },
                     cpf = s.cpf.ifBlank { null },
                     rg = s.rg.ifBlank { null },
+                    cnpj = s.cnpj.ifBlank { null },
                     address = address,
                     photoURL = s.avatarUri,
                     role = role,
+                    // CRÍTICO: Lei 1 - Salvar city/state na raiz do documento para que apareçam no app
+                    city = s.city.takeIf { it.isNotBlank() },
+                    state = s.state.takeIf { it.isNotBlank() },
                     updatedAt = Date()
                 ) ?: UserFirestore(
                     uid = currentUser.uid,
@@ -344,9 +352,13 @@ class ProfileViewModel @Inject constructor(
                     phone = s.phone.ifBlank { null },
                     cpf = s.cpf.ifBlank { null },
                     rg = s.rg.ifBlank { null },
+                    cnpj = s.cnpj.ifBlank { null },
                     address = address,
                     photoURL = s.avatarUri,
                     role = role,
+                    // CRÍTICO: Lei 1 - Salvar city/state na raiz do documento para que apareçam no app
+                    city = s.city.takeIf { it.isNotBlank() },
+                    state = s.state.takeIf { it.isNotBlank() },
                     profileComplete = true,
                     verified = currentUser.isEmailVerified,
                     createdAt = Date(),
@@ -360,6 +372,7 @@ class ProfileViewModel @Inject constructor(
                     email = s.email,
                     phone = s.phone.ifBlank { null },
                     city = s.city.ifBlank { null },
+                    state = s.state.ifBlank { null },
                     profession = s.profession.ifBlank { null },
                     accountType = s.accountType,
                     rating = s.rating,

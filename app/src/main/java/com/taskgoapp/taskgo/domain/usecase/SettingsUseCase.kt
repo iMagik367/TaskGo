@@ -5,6 +5,9 @@ import com.google.gson.Gson
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 import com.taskgoapp.taskgo.domain.repository.PreferencesRepository
 import com.taskgoapp.taskgo.domain.repository.UserRepository
+import com.taskgoapp.taskgo.core.model.onSuccess
+import com.taskgoapp.taskgo.core.model.onFailure
+import com.taskgoapp.taskgo.core.model.fold
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import javax.inject.Inject
@@ -120,9 +123,9 @@ class SettingsUseCase @Inject constructor(
                     "sms" to sms
                 )
             )
-            result.onSuccess { data ->
+            result.onSuccess { data: Map<String, Any> ->
                 Log.d("SettingsUseCase", "Configurações de notificação sincronizadas via Cloud Function: $data")
-            }.onFailure { error ->
+            }.onFailure { error: Throwable ->
                 Log.e("SettingsUseCase", "Erro ao sincronizar notificações via Cloud Function: ${error.message}", error)
                 // Tratar erro específico do Secure Token API bloqueado
                 if (error.message?.contains("SecureToken") == true || error.message?.contains("securetoken") == true) {
@@ -179,10 +182,10 @@ class SettingsUseCase @Inject constructor(
             // Call Cloud Function to update preferences in Firestore
             val result = firebaseFunctionsService.updateUserPreferences(categoriesList)
             result.fold(
-                onSuccess = {
+                onSuccess = { _: Map<String, Any> ->
                     Log.d("SettingsUseCase", "Preferences synced to Firestore successfully")
                 },
-                onFailure = { error ->
+                onFailure = { error: Throwable ->
                     Log.e("SettingsUseCase", "Error syncing preferences to Firestore: ${error.message}", error)
                     // Don't throw - local save was successful, sync can fail silently
                 }
@@ -248,7 +251,7 @@ class SettingsUseCase @Inject constructor(
                     "thirdPartySharing" to thirdPartySharing
                 )
             )
-            result.onFailure { error ->
+            result.onFailure { error: Throwable ->
                 Log.e("SettingsUseCase", "Erro ao sincronizar privacidade via Cloud Function: ${error.message}", error)
             }
         } catch (e: Exception) {
@@ -259,39 +262,69 @@ class SettingsUseCase @Inject constructor(
     suspend fun syncRemoteSettings() {
         try {
             val result = firebaseFunctionsService.getUserSettings()
-            result.onSuccess { data ->
+            result.onSuccess { data: Map<String, Any> ->
                 val notificationSettings = data["notificationSettings"] as? Map<*, *>
                 val privacySettings = data["privacySettings"] as? Map<*, *>
                 val language = data["language"] as? String
                 val preferredCategories = data["preferredCategories"] as? List<*>
                 
                 notificationSettings?.let { settings ->
-                    (settings["promos"] as? Boolean)?.let { preferencesRepository.updatePromosEnabled(it) }
-                    (settings["sound"] as? Boolean)?.let { preferencesRepository.updateSoundEnabled(it) }
-                    (settings["push"] as? Boolean)?.let { preferencesRepository.updatePushEnabled(it) }
-                    (settings["lockscreen"] as? Boolean)?.let { preferencesRepository.updateLockscreenEnabled(it) }
-                    (settings["email"] as? Boolean)?.let { preferencesRepository.updateEmailNotificationsEnabled(it) }
-                    (settings["sms"] as? Boolean)?.let { preferencesRepository.updateSmsNotificationsEnabled(it) }
+                    (settings["promos"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePromosEnabled(it) }
+                    }
+                    (settings["sound"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updateSoundEnabled(it) }
+                    }
+                    (settings["push"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePushEnabled(it) }
+                    }
+                    (settings["lockscreen"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updateLockscreenEnabled(it) }
+                    }
+                    (settings["email"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updateEmailNotificationsEnabled(it) }
+                    }
+                    (settings["sms"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updateSmsNotificationsEnabled(it) }
+                    }
                 }
                 
                 privacySettings?.let { settings ->
-                    (settings["locationSharing"] as? Boolean)?.let { preferencesRepository.updatePrivacyLocationSharing(it) }
-                    (settings["profileVisible"] as? Boolean)?.let { preferencesRepository.updatePrivacyProfileVisible(it) }
-                    (settings["contactInfoSharing"] as? Boolean)?.let { preferencesRepository.updatePrivacyContactInfo(it) }
-                    (settings["analytics"] as? Boolean)?.let { preferencesRepository.updatePrivacyAnalytics(it) }
-                    (settings["personalizedAds"] as? Boolean)?.let { preferencesRepository.updatePrivacyPersonalizedAds(it) }
-                    (settings["dataCollection"] as? Boolean)?.let { preferencesRepository.updatePrivacyDataCollection(it) }
-                    (settings["thirdPartySharing"] as? Boolean)?.let { preferencesRepository.updatePrivacyThirdPartySharing(it) }
+                    (settings["locationSharing"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePrivacyLocationSharing(it) }
+                    }
+                    (settings["profileVisible"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePrivacyProfileVisible(it) }
+                    }
+                    (settings["contactInfoSharing"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePrivacyContactInfo(it) }
+                    }
+                    (settings["analytics"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePrivacyAnalytics(it) }
+                    }
+                    (settings["personalizedAds"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePrivacyPersonalizedAds(it) }
+                    }
+                    (settings["dataCollection"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePrivacyDataCollection(it) }
+                    }
+                    (settings["thirdPartySharing"] as? Boolean)?.let { 
+                        kotlinx.coroutines.runBlocking { preferencesRepository.updatePrivacyThirdPartySharing(it) }
+                    }
                 }
                 
-                language?.let { preferencesRepository.updateLanguage(it) }
+                language?.let { 
+                    kotlinx.coroutines.runBlocking { preferencesRepository.updateLanguage(it) }
+                }
                 
                 preferredCategories?.let { list ->
                     val json = list.filterIsInstance<String>()
                         .joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
-                    preferencesRepository.updateCategories(json)
+                    kotlinx.coroutines.runBlocking {
+                        preferencesRepository.updateCategories(json)
+                    }
                 }
-            }.onFailure { error ->
+            }.onFailure { error: Throwable ->
                 Log.e("SettingsUseCase", "Erro ao buscar configurações do usuário: ${error.message}", error)
                 // Tratar erro específico do Secure Token API bloqueado
                 if (error.message?.contains("SecureToken") == true || error.message?.contains("securetoken") == true) {

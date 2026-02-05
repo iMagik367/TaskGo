@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +26,7 @@ import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
 import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 
 data class ServiceHistoryItem(
     val id: String,
@@ -135,9 +137,10 @@ fun ServiceHistoryCard(
             .clickable { onServiceClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.White
+            containerColor = TaskGoBackgroundWhite
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -159,13 +162,9 @@ fun ServiceHistoryCard(
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = when (service.status) {
-                            ServiceStatus.COMPLETED -> Color(0xFFD4EDDA)
-                            ServiceStatus.IN_PROGRESS -> Color(0xFFFFF3CD)
-                            ServiceStatus.CANCELLED -> Color(0xFFF8D7DA)
-                            ServiceStatus.PENDING -> Color(0xFFE2E3E5)
-                        }
-                    )
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Text(
                         text = when (service.status) {

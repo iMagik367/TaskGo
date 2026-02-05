@@ -1,14 +1,14 @@
-import * as admin from 'firebase-admin';
 import {getFirestore} from '../utils/firestore';
 import * as functions from 'firebase-functions';
 import {AppError, handleError, assertAuthenticated} from '../utils/errors';
 import {validateAppCheck} from '../security/appCheck';
-import {getUserRole} from '../security/roles';
 import {COLLECTIONS} from '../utils/constants';
+import {getUserLocation, validateCityAndState, normalizeLocationId} from '../utils/location';
+import {servicesPath, getUserLocationId, createStandardPayload, createUpdatePayload} from '../utils/firestorePaths';
 
 /**
  * Cria um novo serviço
- * Apenas usuários com role "provider" ou "partner" podem criar serviços
+ * Apenas usuários com role "partner" podem criar serviços
  * Cloud Function é a autoridade - valida permissões e dados
  */
 export const createService = functions.https.onCall(
@@ -23,28 +23,15 @@ export const createService = functions.https.onCall(
       const userId = context.auth!.uid;
       const db = getFirestore();
 
-      // Verificar role do usuário (primeiro Custom Claims, depois documento)
-      let userRole: string;
-      try {
-        userRole = getUserRole(context);
-      } catch {
-        // Se não tiver em Custom Claims, verificar no documento
-        const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
-        if (!userDoc.exists) {
-          throw new AppError('not-found', 'User not found', 404);
-        }
-        userRole = userDoc.data()?.role || 'user';
-      }
-
-      // Apenas providers/partners podem criar serviços
-      const allowedRoles = ['provider', 'partner'];
-      if (!allowedRoles.includes(userRole)) {
-        throw new AppError(
-          'permission-denied',
-          `Only providers and partners can create services. Current role: ${userRole}`,
-          403,
-        );
-      }
+      // REMOVIDO: Parceiros não podem mais criar serviços individuais
+      // Parceiros apenas definem preferredCategories no perfil
+      // Esta função está desabilitada para parceiros
+      throw new AppError(
+        'permission-denied',
+        'Partners can no longer create individual services. ' +
+        'Please define your service categories in your profile (preferredCategories).',
+        403,
+      );
 
       // Validar dados de entrada
       const {
@@ -79,21 +66,89 @@ export const createService = functions.https.onCall(
         throw new AppError('not-found', 'User not found', 404);
       }
 
-      const userData = userDoc.data();
-      const userDocRole = userData?.role;
+      // Código removido - função desabilitada para parceiros
 
-      // Verificar consistência entre Custom Claims e documento
-      // Em produção, Custom Claims são a autoridade
-      if (userDocRole && !allowedRoles.includes(userDocRole)) {
-        throw new AppError(
-          'permission-denied',
-          'User role does not allow creating services',
-          403,
+      // CRÍTICO: Usar APENAS city/state do perfil do usuário (cadastro) - LEI MÁXIMA DO TASKGO
+      // GPS (latitude/longitude) é usado APENAS para coordenadas no mapa, NÃO para determinar city/state
+      let city: string;
+      let state: string;
+      let locationId: string;
+      
+      // PRIORIDADE 1: Usar city/state enviados pelo frontend (vêm do perfil do usuário)
+      if (data.city && data.state) {
+        const validated = validateCityAndState(data.city, data.state);
+        if (!validated.valid) {
+          throw new functions.https.HttpsError(
+            'invalid-argument',
+            `Invalid location data: ${validated.error}`,
+          );
+        }
+        city = validated.city!;
+        state = validated.state!;
+        locationId = normalizeLocationId(city, state);
+        
+        functions.logger.info('📍 createService: Usando city/state do perfil (enviado pelo frontend)', {
+          userId,
+          city,
+          state,
+          locationId,
+          latitude: data.latitude, // GPS apenas para coordenadas
+          longitude: data.longitude, // GPS apenas para coordenadas
+        });
+      } else {
+        // FALLBACK: Obter do perfil do usuário no Firestore (se frontend não enviou)
+        functions.logger.warn(
+          '📍 createService: Frontend não enviou city/state, obtendo do perfil',
+          {userId}
         );
+        const userLocation = await getUserLocation(db, userId);
+        city = userLocation.city;
+        state = userLocation.state;
+        
+        if (!city || !state) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Location not available. User must have city and state in their profile.',
+          );
+        }
+        
+        locationId = await getUserLocationId(db, userId);
+        
+        functions.logger.info(
+          '📍 createService: Usando city/state do perfil do Firestore',
+          {
+          userId,
+          city,
+          state,
+          locationId,
+        });
       }
 
-      // Criar dados do serviço
-      const serviceData = {
+      // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
+      const firestorePath = `locations/${locationId}/services`;
+      
+      functions.logger.info('📍 LOCATION TRACE', {
+        function: 'createService',
+        userId,
+        city: city,
+        state: state,
+        locationId,
+        firestorePath,
+        source: 'users/{userId} root fields (city, state)',
+        timestamp: new Date().toISOString(),
+      });
+
+      // CRÍTICO: Validar que city e state estão presentes e válidos
+      if (!city || !state || city.trim() === '' || state.trim() === '') {
+        const errorMsg = `User ${userId} does not have valid location information ` +
+          `(city='${city}', state='${state}'). ` +
+          'Cannot create service without valid location.';
+        functions.logger.error(errorMsg);
+        throw new functions.https.HttpsError('failed-precondition', errorMsg);
+      }
+
+      // Criar dados do serviço usando payload padrão
+      const serviceData = createStandardPayload({
         providerId: userId,
         title: title.trim(),
         description: description.trim(),
@@ -101,27 +156,32 @@ export const createService = functions.https.onCall(
         price: price || null,
         latitude: latitude || null,
         longitude: longitude || null,
-        active: active === true,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
+        city: city || '', // Adicionar cidade explicitamente
+        state: state || '', // Adicionar estado explicitamente
+        locationId: locationId, // CRÍTICO: Adicionar locationId para busca eficiente (SSR, reviews, etc)
+      }, active === true);
 
-      // Criar serviço na coleção pública (para queries eficientes)
-      const serviceRef = await db.collection(COLLECTIONS.SERVICES).add(serviceData);
+      // CRÍTICO: Salvar APENAS na coleção pública por localização
+      const locationServicesCollection = servicesPath(db, locationId);
+      const serviceRef = await locationServicesCollection.add(serviceData);
       const serviceId = serviceRef.id;
 
-      // Criar também na subcoleção do usuário (para organização)
-      await db
-        .collection(COLLECTIONS.USERS)
-        .doc(userId)
-        .collection('services')
-        .doc(serviceId)
-        .set(serviceData);
+      // 📍 PROOF: Logar path REAL onde o dado foi gravado
+      functions.logger.info('📍 BACKEND WRITE PROOF', {
+        function: 'createService',
+        serviceId,
+        actualFirestorePath: `locations/${locationId}/services/${serviceId}`,
+        collectionId: locationServicesCollection.id,
+        documentId: serviceId,
+        timestamp: new Date().toISOString(),
+      });
 
       functions.logger.info(`Service created: ${serviceId}`, {
         serviceId,
         providerId: userId,
         category,
+        location: `${city}, ${state}`,
+        locationCollection: `locations/${locationId}/services`,
         timestamp: new Date().toISOString(),
       });
 
@@ -159,8 +219,13 @@ export const updateService = functions.https.onCall(
         throw new AppError('invalid-argument', 'updates is required and must be an object', 400);
       }
 
-      // Buscar serviço
-      const serviceDoc = await db.collection(COLLECTIONS.SERVICES).doc(serviceId).get();
+      // Buscar serviço - precisa procurar em todas as localizações
+      // Obter locationId do usuário para buscar no path correto
+      const locationId = await getUserLocationId(db, userId);
+      
+      const locationServicesCollection = servicesPath(db, locationId);
+      const serviceDoc = await locationServicesCollection.doc(serviceId).get();
+      
       if (!serviceDoc.exists) {
         throw new AppError('not-found', 'Service not found', 404);
       }
@@ -174,9 +239,7 @@ export const updateService = functions.https.onCall(
 
       // Validar campos permitidos para atualização
       const allowedFields = ['title', 'description', 'category', 'price', 'latitude', 'longitude', 'active'];
-      const updateData: Record<string, unknown> = {
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
+      const updateDataRaw: Record<string, unknown> = {};
 
       for (const field of allowedFields) {
         if (updates[field] !== undefined) {
@@ -203,20 +266,15 @@ export const updateService = functions.https.onCall(
             throw new AppError('invalid-argument', 'active must be a boolean', 400);
           }
 
-          updateData[field] = updates[field];
+          updateDataRaw[field] = updates[field];
         }
       }
 
-      // Atualizar na coleção pública
-      await db.collection(COLLECTIONS.SERVICES).doc(serviceId).update(updateData);
+      // Criar payload de atualização padrão
+      const updateData = createUpdatePayload(updateDataRaw);
 
-      // Atualizar na subcoleção do usuário
-      await db
-        .collection(COLLECTIONS.USERS)
-        .doc(userId)
-        .collection('services')
-        .doc(serviceId)
-        .update(updateData);
+      // Atualizar APENAS na coleção pública por localização
+      await locationServicesCollection.doc(serviceId).update(updateData);
 
       functions.logger.info(`Service updated: ${serviceId}`, {
         serviceId,
@@ -254,8 +312,13 @@ export const deleteService = functions.https.onCall(
         throw new AppError('invalid-argument', 'serviceId is required', 400);
       }
 
-      // Buscar serviço
-      const serviceDoc = await db.collection(COLLECTIONS.SERVICES).doc(serviceId).get();
+      // Buscar serviço - precisa procurar em todas as localizações
+      // Obter locationId do usuário para buscar no path correto
+      const locationId = await getUserLocationId(db, userId);
+      
+      const locationServicesCollection = servicesPath(db, locationId);
+      const serviceDoc = await locationServicesCollection.doc(serviceId).get();
+      
       if (!serviceDoc.exists) {
         throw new AppError('not-found', 'Service not found', 404);
       }
@@ -267,16 +330,8 @@ export const deleteService = functions.https.onCall(
         throw new AppError('permission-denied', 'Only service owner can delete service', 403);
       }
 
-      // Deletar da coleção pública
-      await db.collection(COLLECTIONS.SERVICES).doc(serviceId).delete();
-
-      // Deletar da subcoleção do usuário
-      await db
-        .collection(COLLECTIONS.USERS)
-        .doc(userId)
-        .collection('services')
-        .doc(serviceId)
-        .delete();
+      // Deletar APENAS da coleção pública por localização
+      await locationServicesCollection.doc(serviceId).delete();
 
       functions.logger.info(`Service deleted: ${serviceId}`, {
         serviceId,

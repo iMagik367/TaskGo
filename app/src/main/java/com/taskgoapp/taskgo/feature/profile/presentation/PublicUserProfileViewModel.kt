@@ -7,9 +7,10 @@ import com.taskgoapp.taskgo.data.firestore.models.ServiceFirestore
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository
-import com.taskgoapp.taskgo.data.repository.FirestoreProductsRepository
+import com.taskgoapp.taskgo.data.repository.FirestoreProductsRepositoryImpl
 import com.taskgoapp.taskgo.data.repository.FirestoreReviewsRepository
 import com.taskgoapp.taskgo.data.firestore.models.ProductFirestore
+import com.taskgoapp.taskgo.data.mapper.ProductMapper.toFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -26,18 +27,18 @@ data class PublicUserProfileUiState(
 class PublicUserProfileViewModel @Inject constructor(
     private val userRepository: FirestoreUserRepository,
     private val servicesRepository: FirestoreServicesRepository,
-    private val firestoreProductsRepository: FirestoreProductsRepository,
+    private val firestoreProductsRepository: FirestoreProductsRepositoryImpl,
     private val reviewsRepository: FirestoreReviewsRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(PublicUserProfileUiState())
     val uiState: StateFlow<PublicUserProfileUiState> = _uiState.asStateFlow()
     
-    // Serviços (para PRESTADOR)
+    // Serviços (para PARCEIRO)
     private val _services = MutableStateFlow<List<ServiceFirestore>>(emptyList())
     val services: StateFlow<List<ServiceFirestore>> = _services.asStateFlow()
     
-    // Produtos (para VENDEDOR)
+    // Produtos (para PARCEIRO)
     private val _products = MutableStateFlow<List<ProductFirestore>>(emptyList())
     val products: StateFlow<List<ProductFirestore>> = _products.asStateFlow()
     
@@ -72,11 +73,10 @@ class PublicUserProfileViewModel @Inject constructor(
                     }
                     
                     // Usar o perfil encontrado na segunda tentativa
-                    val accountType = when (retryProfile.role.lowercase()) {
-                        "provider" -> AccountType.PARCEIRO // Legacy - migrar para partner
-                        "seller" -> AccountType.PARCEIRO // Legacy - migrar para partner
-                        "partner" -> AccountType.PARCEIRO // Novo role unificado
-                        else -> AccountType.CLIENTE
+                    val accountType = if (retryProfile.role.lowercase() == "partner") {
+                        AccountType.PARCEIRO
+                    } else {
+                        AccountType.CLIENTE
                     }
                     
                     _uiState.value = _uiState.value.copy(
@@ -91,11 +91,10 @@ class PublicUserProfileViewModel @Inject constructor(
                 }
                 
                 // Determinar tipo de conta
-                val accountType = when (profile.role.lowercase()) {
-                    "provider" -> AccountType.PARCEIRO // Legacy - migrar para partner
-                    "seller" -> AccountType.PARCEIRO // Legacy - migrar para partner
-                    "partner" -> AccountType.PARCEIRO // Novo role unificado
-                    else -> AccountType.CLIENTE
+                val accountType = if (profile.role.lowercase() == "partner") {
+                    AccountType.PARCEIRO
+                } else {
+                    AccountType.CLIENTE
                 }
                 
                 _uiState.value = _uiState.value.copy(
@@ -120,7 +119,7 @@ class PublicUserProfileViewModel @Inject constructor(
     private fun loadUserSpecificData(userId: String, accountType: AccountType) {
         // Carregar dados específicos baseado no tipo de conta em corrotinas separadas
         when (accountType) {
-            AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> {
+            AccountType.PARCEIRO -> {
                 // PARCEIRO: Observar tanto serviços quanto produtos (unificado)
                 // Observar serviços do parceiro
                 viewModelScope.launch {
@@ -141,7 +140,7 @@ class PublicUserProfileViewModel @Inject constructor(
                             emit(emptyList())
                         }
                         .collect { productsList ->
-                            _products.value = productsList
+                            _products.value = productsList.map { it.toFirestore() }
                         }
                 }
             }

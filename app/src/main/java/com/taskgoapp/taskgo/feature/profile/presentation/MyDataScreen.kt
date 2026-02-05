@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.profile.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -11,6 +12,7 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -21,7 +23,10 @@ import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.design.TGIcons
 import com.taskgoapp.taskgo.core.model.AccountType
+import com.taskgoapp.taskgo.core.model.fold
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
+import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -237,8 +242,9 @@ private fun ProfilePhotoSection(
 ) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -312,7 +318,11 @@ private fun PersonalInfoSection(
     onPhoneChange: (String) -> Unit
 ) {
     Card(
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -382,7 +392,11 @@ private fun AccountInfoSection(
     timeOnTaskGo: String
 ) {
     Card(
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -399,8 +413,6 @@ private fun AccountInfoSection(
                 label = stringResource(R.string.profile_account_type_label),
                 value = when (uiState.accountType) {
                     AccountType.PARCEIRO -> "Parceiro"
-                    AccountType.PRESTADOR -> "Prestador"
-                    AccountType.VENDEDOR -> "Vendedor"
                     AccountType.CLIENTE -> "Cliente"
                 }
             )
@@ -557,10 +569,12 @@ private fun DeleteAccountDialog(
 ) {
     val auth = FirebaseAuth.getInstance()
     val currentUser = auth.currentUser
+    val context = LocalContext.current
     val functionsService = remember {
-        com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService(
-            com.google.firebase.functions.FirebaseFunctions.getInstance()
-        )
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context.applicationContext as com.taskgoapp.taskgo.TaskGoApp,
+            com.taskgoapp.taskgo.di.FirebaseFunctionsServiceEntryPoint::class.java
+        ).firebaseFunctionsService()
     }
     var isDeleting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -600,7 +614,7 @@ private fun DeleteAccountDialog(
                             try {
                                 val deleteResult = functionsService.deleteUserAccount()
                                 deleteResult.fold(
-                                    onSuccess = {
+                                    onSuccess = { _: Map<String, Any> ->
                                         // Fazer logout após exclusão bem-sucedida
                                         auth.signOut()
                                         onConfirm()

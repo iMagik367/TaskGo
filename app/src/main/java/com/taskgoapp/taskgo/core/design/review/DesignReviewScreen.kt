@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.core.design.review
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,6 +17,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.taskgoapp.taskgo.R
+import com.taskgoapp.taskgo.core.theme.*
 
 data class RouteSpec(
     val name: String,
@@ -59,8 +61,9 @@ fun DesignReviewScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                )
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -159,11 +162,9 @@ fun ScreenshotItem(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) 
-                MaterialTheme.colorScheme.primaryContainer 
-            else 
-                MaterialTheme.colorScheme.surface
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),

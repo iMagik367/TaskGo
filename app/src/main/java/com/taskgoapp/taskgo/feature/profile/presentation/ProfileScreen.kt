@@ -1,6 +1,7 @@
 package com.taskgoapp.taskgo.feature.profile.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +26,8 @@ import coil.compose.AsyncImage
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextDark
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
+import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 import com.taskgoapp.taskgo.core.model.AccountType
 
 @Composable
@@ -109,7 +112,11 @@ private fun ProfileHeader(
             .fillMaxWidth()
             .padding(horizontal = 0.dp)
             .clickable { onHeaderClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier
@@ -238,7 +245,7 @@ private fun ProfileMenu(
     modifier: Modifier = Modifier
 ) {
     val menuItems = when (accountType) {
-        AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> listOf(
+        AccountType.PARCEIRO -> listOf(
             // Unificar menu items para Parceiro: Serviços + Produtos
             ProfileMenuItem(
                 title = "Meus Serviços",
@@ -283,7 +290,11 @@ private fun ProfileMenu(
     
     Card(
         modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column {
             menuItems.forEachIndexed { index, item ->

@@ -2,6 +2,7 @@ package com.taskgoapp.taskgo.feature.messages.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +32,8 @@ import com.taskgoapp.taskgo.core.theme.FigmaProductName
 import com.taskgoapp.taskgo.core.theme.FigmaSectionTitle
 import com.taskgoapp.taskgo.core.theme.FigmaStatusText
 import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundGray
+import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
@@ -138,13 +141,13 @@ fun MessagesScreen(
                         // Botão condicional baseado no tipo de conta
                         when (accountType) {
                             AccountType.PARCEIRO,
-                            AccountType.PRESTADOR -> {
+                            AccountType.PARCEIRO -> {
                                 PrimaryButton(
                                     text = stringResource(R.string.messages_find_service_orders),
                                     onClick = onNavigateToServiceOrders
                                 )
                             }
-                            AccountType.CLIENTE, AccountType.VENDEDOR -> {
+                            AccountType.CLIENTE -> {
                         PrimaryButton(
                                     text = stringResource(R.string.messages_find_providers),
                                     onClick = onNavigateToProviders
@@ -167,7 +170,11 @@ private fun MessageThreadCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),

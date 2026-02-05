@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.reviews.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -85,7 +86,11 @@ fun ReviewsScreen(
             } else if (uiState.reviews.isEmpty()) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = TaskGoBackgroundWhite
+                        ),
+                        border = BorderStroke(1.dp, TaskGoBorder)
                     ) {
                         Column(
                             modifier = Modifier

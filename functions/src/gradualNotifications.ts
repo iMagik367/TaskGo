@@ -2,6 +2,8 @@ import * as admin from 'firebase-admin';
 import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import {COLLECTIONS} from './utils/constants';
+import {ordersPath, productsPath, getUserLocationId} from './utils/firestorePaths';
+import {getUserLocation, normalizeLocationId} from './utils/location';
 
 type NotificationSettings = {
   pushNotifications?: boolean;
@@ -133,8 +135,11 @@ async function getProductNotifications(
     }
     
       // Buscar produtos com desconto nas categorias preferidas
+      // CRÍTICO: Buscar na coleção por localização
+      const locationId = await getUserLocationId(db, userId);
+      const locationProductsCollection = productsPath(db, locationId);
       for (const category of preferredCategories.slice(0, 3)) { // Limitar a 3 categorias
-        const productsSnapshot = await db.collection('products')
+        const productsSnapshot = await locationProductsCollection
         .where('category', '==', category)
         .where('discount', '>', 0)
         .where('active', '==', true)
@@ -229,10 +234,15 @@ async function getNearbyOrderNotifications(
     }
     
     // Buscar ordens recentes (últimas 24h) nas categorias preferidas
+    // CRÍTICO: Buscar na coleção por localização do usuário
+    const userLocation = await getUserLocation(db, userId);
+    const locationId = normalizeLocationId(userLocation.city, userLocation.state);
+    const locationOrdersCollection = ordersPath(db, locationId);
+    
     const oneDayAgo = admin.firestore.Timestamp.fromMillis(Date.now() - (24 * 60 * 60 * 1000));
     
     for (const category of preferredCategories.slice(0, 2)) {
-      const ordersSnapshot = await db.collection(COLLECTIONS.ORDERS)
+      const ordersSnapshot = await locationOrdersCollection
         .where('category', '==', category)
         .where('status', '==', 'pending')
         .where('createdAt', '>=', oneDayAgo)
@@ -335,7 +345,7 @@ async function getNearbyProviderNotifications(
     // Buscar prestadores nas categorias preferidas
     for (const category of preferredCategories.slice(0, 2)) {
       const providersSnapshot = await db.collection(COLLECTIONS.USERS)
-        .where('role', '==', 'provider')
+        .where('role', '==', 'partner')
         .where('active', '==', true)
         .limit(20)
         .get();

@@ -10,6 +10,7 @@ import com.taskgoapp.taskgo.data.repository.FirebaseStorageRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.domain.usecase.SettingsUseCase
+import com.taskgoapp.taskgo.core.model.fold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -121,8 +122,7 @@ class ServiceFormViewModel @Inject constructor(
                 
                 // Converter role (String) para AccountType (enum)
                 val accountType = when (user?.role) {
-                    "provider" -> com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR
-                    "seller" -> com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR
+                    "partner" -> com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO
                     "client" -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
                     else -> com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
                 }
@@ -183,7 +183,7 @@ class ServiceFormViewModel @Inject constructor(
                 state.category.isNotBlank()
         
         // Preço só é obrigatório se NÃO for prestador
-        val priceValid = if (state.accountType == com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR) {
+        val priceValid = if (state.accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO) {
             true // Prestadores não precisam de preço
         } else {
             state.price.isNotBlank() &&
@@ -226,7 +226,7 @@ class ServiceFormViewModel @Inject constructor(
                         imageIndex = index
                     )
                     result.fold(
-                        onSuccess = { url ->
+                        onSuccess = { url: String ->
                             imageUrls.add(url)
                             completedUploads++
                             _uiState.value = _uiState.value.copy(
@@ -250,7 +250,7 @@ class ServiceFormViewModel @Inject constructor(
                         videoIndex = index
                     )
                     result.fold(
-                        onSuccess = { url ->
+                        onSuccess = { url: String ->
                             videoUrls.add(url)
                             completedUploads++
                             _uiState.value = _uiState.value.copy(
@@ -268,23 +268,16 @@ class ServiceFormViewModel @Inject constructor(
                 val allImageUrls = _uiState.value.uploadedImageUrls + imageUrls
                 val allVideoUrls = _uiState.value.uploadedVideoUrls + videoUrls
 
-                // Capturar localização do usuário para filtrar por região
-                var latitude: Double? = null
-                var longitude: Double? = null
-                try {
-                    val location = locationManager.getCurrentLocation()
-                    location?.let {
-                        latitude = it.latitude
-                        longitude = it.longitude
-                        Log.d("ServiceFormViewModel", "Localização capturada: ($latitude, $longitude)")
-                    } ?: Log.w("ServiceFormViewModel", "Localização não disponível")
-                } catch (e: Exception) {
-                    Log.w("ServiceFormViewModel", "Erro ao capturar localização: ${e.message}")
-                }
+                // Obter GPS apenas para coordenadas (não para city/state)
+                // City/state vêm do perfil do usuário (cadastro)
+                val location = locationManager.getCurrentLocationGuaranteed()
+                val latitude: Double = location.latitude
+                val longitude: Double = location.longitude
+                Log.d("ServiceFormViewModel", "Localização capturada: ($latitude, $longitude)")
 
                 // Criar ou atualizar serviço
                 // Prestadores não têm preço, então usar 0.0
-                val priceValue = if (_uiState.value.accountType == com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR) {
+                val priceValue = if (_uiState.value.accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO) {
                     0.0
                 } else {
                     try {
@@ -334,7 +327,7 @@ class ServiceFormViewModel @Inject constructor(
                     // Criar novo serviço
                     val result = servicesRepository.createService(service)
                     result.fold(
-                        onSuccess = { newServiceId ->
+                        onSuccess = { newServiceId: String ->
                             Log.d("ServiceFormViewModel", "Serviço criado com sucesso: $newServiceId")
                             _uiState.value = _uiState.value.copy(
                                 isSaving = false,
@@ -356,7 +349,7 @@ class ServiceFormViewModel @Inject constructor(
                     // Atualizar serviço existente
                     val result = servicesRepository.updateService(serviceId, service)
                     result.fold(
-                        onSuccess = {
+                        onSuccess = { _: Unit ->
                             Log.d("ServiceFormViewModel", "Serviço atualizado com sucesso: $serviceId")
                             _uiState.value = _uiState.value.copy(
                                 isSaving = false,

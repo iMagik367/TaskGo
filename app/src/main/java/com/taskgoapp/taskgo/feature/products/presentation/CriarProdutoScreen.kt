@@ -25,7 +25,7 @@ fun CriarProdutoScreen(
     
     var nome by remember { mutableStateOf("") }
     var preco by remember { mutableStateOf("") }
-    var endereco by remember { mutableStateOf("") }
+    // REMOVIDO: endereco - localização será obtida automaticamente do perfil do usuário
     var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var showSuccessMessage by remember { mutableStateOf(false) }
 
@@ -92,22 +92,8 @@ fun CriarProdutoScreen(
                         )
                     }
 
-                    // Endereço
-                    Column {
-                        Text(
-                            text = "Endereço",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = endereco,
-                            onValueChange = { endereco = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            placeholder = { Text("Rua das Palmeiras, 123 São Paulo, SP") }
-                        )
-                    }
+                    // REMOVIDO: Campo de Endereço
+                    // Localização será obtida automaticamente do perfil do usuário
 
                     Spacer(modifier = Modifier.weight(1f))
 
@@ -128,7 +114,7 @@ fun CriarProdutoScreen(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         ),
-                        enabled = nome.isNotBlank() && preco.isNotBlank() && endereco.isNotBlank()
+                        enabled = nome.isNotBlank() && preco.isNotBlank()
                     ) {
                         Text(
                             text = "Criar Produto",

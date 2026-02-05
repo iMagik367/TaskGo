@@ -12,7 +12,7 @@ data class HomeBanner(
 ) {
     enum class Audience {
         CLIENTE,
-        PRESTADOR,
+        PARCEIRO,
         TODOS
     }
 }

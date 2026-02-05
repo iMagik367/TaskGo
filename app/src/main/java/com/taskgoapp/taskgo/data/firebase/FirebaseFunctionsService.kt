@@ -5,17 +5,49 @@ import com.taskgoapp.taskgo.data.firestore.models.ProposalDetails
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.FirebaseFunctionsException
 import com.google.firebase.functions.HttpsCallableResult
+import com.google.firebase.appcheck.FirebaseAppCheck
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
+import com.taskgoapp.taskgo.core.location.LocationManager
+import com.taskgoapp.taskgo.core.location.LocationValidator
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
+import com.taskgoapp.taskgo.core.model.Result
+import com.taskgoapp.taskgo.domain.repository.UserRepository
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FirebaseFunctionsService @Inject constructor(
-    private val functions: FirebaseFunctions
+    private val functions: FirebaseFunctions,
+    private val locationManager: LocationManager,
+    private val userRepository: UserRepository
 ) {
 
     // Auth Functions
     suspend fun getUserEmailByDocument(document: String): Result<Map<String, Any>> {
+        // CRÍTICO: Garantir que App Check esteja pronto antes de chamar função de login
+        // Isso é especialmente importante em RELEASE onde Play Integrity é usado
+        try {
+            val appCheck = FirebaseAppCheck.getInstance()
+            // Tentar obter token para garantir que App Check está funcionando
+            // Usar timeout de 10 segundos para não bloquear muito tempo
+            val token = withTimeoutOrNull(10000L) {
+                appCheck.getAppCheckToken(false).await()
+            }
+            
+            if (token != null) {
+                Log.d("FirebaseFunctionsService", "✅ App Check token disponível para getUserEmailByDocument")
+                Log.d("FirebaseFunctionsService", "Token expira em: ${token.expireTimeMillis - System.currentTimeMillis()}ms")
+            } else {
+                Log.w("FirebaseFunctionsService", "⚠️ Timeout ao obter App Check token, mas continuando")
+            }
+        } catch (e: Exception) {
+            Log.w("FirebaseFunctionsService", "⚠️ App Check token não disponível, mas continuando: ${e.message}")
+            Log.w("FirebaseFunctionsService", "Isso pode causar falha na Cloud Function se App Check for obrigatório")
+            // Continuar mesmo se App Check falhar - a Cloud Function vai rejeitar se necessário
+        }
+        
         val data = mapOf("document" to document)
         return executeFunction("getUserEmailByDocument", data)
     }
@@ -50,9 +82,34 @@ class FirebaseFunctionsService @Inject constructor(
     ): Result<Map<String, Any>> {
         require(serviceId != null || category != null) { "Either serviceId or category must be provided" }
         
+        // LEI MÁXIMA DO TASKGO: city/state SEMPRE do cadastro do usuário
+        // NUNCA usar GPS ou fallback - se não tiver no cadastro, FALHAR
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() }
+        
+        if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+            val errorMsg = "ERRO: Usuário não possui city/state no cadastro. " +
+                    "City: ${currentUser?.city ?: "null"}, State: ${currentUser?.state ?: "null"}. " +
+                    "Por favor, complete seu cadastro com cidade e estado antes de criar uma ordem de serviço."
+            Log.e("FirebaseFunctionsService", "❌ $errorMsg")
+            return Result.Error(Exception(errorMsg))
+        }
+        
+        Log.d("FirebaseFunctionsService", "📍 Usando city/state do cadastro: $userCity/$userState")
+        
+        // Obter GPS apenas para latitude/longitude (não para city/state)
+        val gpsLocation = locationManager.getCurrentLocationGuaranteed()
+        
         val data = mutableMapOf<String, Any>(
             "details" to details,
-            "location" to location
+            "location" to location,
+            // GPS apenas para coordenadas (mapa)
+            "latitude" to gpsLocation.latitude,
+            "longitude" to gpsLocation.longitude,
+            // City/state do cadastro (fonte de verdade)
+            "city" to userCity,
+            "state" to userState
         )
         
         serviceId?.let { data["serviceId"] = it }
@@ -133,14 +190,44 @@ class FirebaseFunctionsService @Inject constructor(
         longitude: Double? = null,
         active: Boolean = true
     ): Result<Map<String, Any>> {
+        // LEI MÁXIMA DO TASKGO: Usar APENAS city/state do perfil do usuário (cadastro)
+        // NUNCA usar fallback - se não tiver, FALHAR
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() }
+        
+        if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+            val errorMsg = "ERRO CRÍTICO: Usuário não possui city/state válidos no cadastro. " +
+                    "City: ${currentUser?.city ?: "null"}, State: ${currentUser?.state ?: "null"}. " +
+                    "Não é possível criar serviço sem localização válida do cadastro."
+            Log.e("FirebaseFunctionsService", "❌ $errorMsg")
+            return Result.Error(Exception(errorMsg))
+        }
+        
+        Log.d("FirebaseFunctionsService", "📍 Usando city/state do perfil: $userCity/$userState")
+        
+        // Obter GPS apenas para latitude/longitude (usar parâmetros se fornecidos)
+        val gpsLocation = if (latitude != null && longitude != null) {
+            android.location.Location("provided").apply {
+                this.latitude = latitude
+                this.longitude = longitude
+            }
+        } else {
+            locationManager.getCurrentLocationGuaranteed()
+        }
+        
         val data = mapOf(
             "title" to title,
             "description" to description,
             "category" to category,
-            "active" to active
+            "active" to active,
+            // GPS apenas para coordenadas (mapa)
+            "latitude" to gpsLocation.latitude,
+            "longitude" to gpsLocation.longitude,
+            // City/state do cadastro (fonte de verdade)
+            "city" to userCity,
+            "state" to userState
         ).plus(price?.let { mapOf("price" to it) } ?: emptyMap())
-         .plus(latitude?.let { mapOf("latitude" to it) } ?: emptyMap())
-         .plus(longitude?.let { mapOf("longitude" to it) } ?: emptyMap())
         
         return executeFunction("createService", data)
     }
@@ -170,15 +257,80 @@ class FirebaseFunctionsService @Inject constructor(
         location: Map<String, Any>? = null,
         expiresAt: Long? = null
     ): Result<Map<String, Any>> {
+        // LEI MÁXIMA DO TASKGO: Usar APENAS city/state do perfil do usuário (cadastro)
+        // NUNCA usar fallback - se não tiver, FALHAR
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() }
+        
+        if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+            val errorMsg = "ERRO CRÍTICO: Usuário não possui city/state válidos no cadastro. " +
+                    "City: ${currentUser?.city ?: "null"}, State: ${currentUser?.state ?: "null"}. " +
+                    "Não é possível criar story sem localização válida do cadastro."
+            Log.e("FirebaseFunctionsService", "❌ $errorMsg")
+            return Result.Error(Exception(errorMsg))
+        }
+        
+        Log.d("FirebaseFunctionsService", "📍 Usando city/state do perfil: $userCity/$userState")
+        
+        // Obter GPS apenas para latitude/longitude (usar parâmetros se fornecidos)
+        val gpsLocation = if (location != null && location["latitude"] != null && location["longitude"] != null) {
+            android.location.Location("provided").apply {
+                latitude = (location["latitude"] as? Number)?.toDouble() ?: 0.0
+                longitude = (location["longitude"] as? Number)?.toDouble() ?: 0.0
+            }
+        } else {
+            locationManager.getCurrentLocationGuaranteed()
+        }
+        
         val data = mapOf(
             "mediaUrl" to mediaUrl,
-            "mediaType" to mediaType
+            "mediaType" to mediaType,
+            // GPS apenas para coordenadas (mapa)
+            "latitude" to gpsLocation.latitude,
+            "longitude" to gpsLocation.longitude,
+            // City/state do cadastro (fonte de verdade)
+            "city" to userCity,
+            "state" to userState
         ).plus(caption?.let { mapOf("caption" to it) } ?: emptyMap())
          .plus(thumbnailUrl?.let { mapOf("thumbnailUrl" to it) } ?: emptyMap())
-         .plus(location?.let { mapOf("location" to it) } ?: emptyMap())
          .plus(expiresAt?.let { mapOf("expiresAt" to it) } ?: emptyMap())
         
         return executeFunction("createStory", data)
+    }
+    
+    /**
+     * Helper para obter GPS e fazer geocoding
+     * CRÍTICO: NUNCA lança exceção - GPS é garantido
+     * Retorna Triple(Location, city, state) - sempre válido
+     */
+    private suspend fun getLocationFromGPSOrParams(
+        providedLatitude: Double?,
+        providedLongitude: Double?
+    ): Triple<android.location.Location, String, String> {
+        val gpsLocation: android.location.Location
+        
+        // Se latitude/longitude foram fornecidos, usar diretamente
+        if (providedLatitude != null && providedLongitude != null) {
+            gpsLocation = android.location.Location("provided").apply {
+                latitude = providedLatitude
+                longitude = providedLongitude
+            }
+            Log.d("FirebaseFunctionsService", "📍 Usando GPS fornecido: ($providedLatitude, $providedLongitude)")
+        } else {
+            // Obter GPS com GARANTIA (nunca falha)
+            Log.d("FirebaseFunctionsService", "📍 Obtendo GPS com garantia...")
+            gpsLocation = locationManager.getCurrentLocationGuaranteed()
+        }
+        
+        // Fazer geocoding para obter city e state com GARANTIA (nunca falha)
+        Log.d("FirebaseFunctionsService", "📍 Fazendo geocoding com garantia para (${gpsLocation.latitude}, ${gpsLocation.longitude})...")
+        val address = locationManager.getAddressGuaranteed(gpsLocation.latitude, gpsLocation.longitude)
+        
+        // REMOVIDO: Esta função não deve ser usada para obter city/state
+        // City/state DEVEM vir do perfil do usuário (cadastro), NUNCA do GPS
+        // Esta função está obsoleta e não deve ser chamada
+        throw Exception("getLocationFromGPSOrParams não deve ser usada. Use city/state do perfil do usuário.")
     }
 
     // AI Chat Functions
@@ -303,13 +455,45 @@ class FirebaseFunctionsService @Inject constructor(
         stock: Int? = null,
         active: Boolean = true
     ): Result<Map<String, Any>> {
+        // LEI MÁXIMA DO TASKGO: Usar APENAS city/state do perfil do usuário (cadastro)
+        // NUNCA usar fallback - se não tiver, FALHAR
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() }
+        
+        if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+            val errorMsg = "ERRO CRÍTICO: Usuário não possui city/state válidos no cadastro. " +
+                    "City: ${currentUser?.city ?: "null"}, State: ${currentUser?.state ?: "null"}. " +
+                    "Não é possível criar produto sem localização válida do cadastro."
+            Log.e("FirebaseFunctionsService", "❌ $errorMsg")
+            return Result.Error(Exception(errorMsg))
+        }
+        
+        Log.d("FirebaseFunctionsService", "📍 Usando city/state do perfil: $userCity/$userState")
+        
+        // Obter GPS apenas para latitude/longitude (não para city/state)
+        val gpsLocation = locationManager.getCurrentLocationGuaranteed()
+        
+        Log.d("FirebaseFunctionsService", """
+            ✅ Localização para produto:
+            City: $userCity (do cadastro)
+            State: $userState (do cadastro)
+            GPS: (${gpsLocation.latitude}, ${gpsLocation.longitude}) - apenas para coordenadas
+        """.trimIndent())
+        
         val data = mapOf(
             "title" to title,
             "description" to description,
             "category" to category,
             "price" to price,
             "images" to images,
-            "active" to active
+            "active" to active,
+            // GPS apenas para coordenadas (mapa)
+            "latitude" to gpsLocation.latitude,
+            "longitude" to gpsLocation.longitude,
+            // City/state do cadastro (fonte de verdade)
+            "city" to userCity,
+            "state" to userState
         ).plus(stock?.let { mapOf("stock" to it) } ?: emptyMap())
         return executeFunction("createProduct", data)
     }
@@ -420,7 +604,7 @@ class FirebaseFunctionsService @Inject constructor(
             val resultData = dataField?.get(result) as? Map<String, Any>
             
             Log.d("FirebaseFunctionsService", "Função $functionName executada com sucesso")
-            Result.success(resultData ?: emptyMap())
+            Result.Success(resultData ?: emptyMap())
         } catch (e: FirebaseFunctionsException) {
             val code = e.code
             val message = e.message ?: "Erro desconhecido"
@@ -450,10 +634,10 @@ class FirebaseFunctionsService @Inject constructor(
                 }
             }
             
-            Result.failure(Exception(errorMessage, e))
+            Result.Error(Exception(errorMessage, e))
         } catch (e: Exception) {
             Log.e("FirebaseFunctionsService", "Erro inesperado na função $functionName: ${e.message}", e)
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 }

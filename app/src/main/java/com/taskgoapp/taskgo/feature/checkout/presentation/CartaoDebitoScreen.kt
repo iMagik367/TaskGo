@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.checkout.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -40,7 +41,12 @@ fun CartaoDebitoScreen(
     ) {
         Text(if(isAlt)"Adicionar cartão de débito" else "Cartão de débito", style = FigmaSectionTitle)
         Spacer(Modifier.height(14.dp))
-        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors=CardDefaults.cardColors(containerColor = bg)) {
+        Card(
+            Modifier.fillMaxWidth(), 
+            shape = RoundedCornerShape(14.dp), 
+            colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+            border = BorderStroke(1.dp, TaskGoBorder)
+        ) {
             Column(Modifier.padding(14.dp)) {
                 OutlinedTextField(
                     value = nome,

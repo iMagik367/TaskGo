@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.reviews.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,7 +66,11 @@ fun UserReviewsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier
@@ -267,7 +272,7 @@ val ReviewType.label: String
     get() = when (this) {
         ReviewType.PRODUCT -> "Produto"
         ReviewType.SERVICE -> "Serviço"
-        ReviewType.PROVIDER -> "Prestador"
+        ReviewType.PARTNER -> "Parceiro"
     }
 
 @Composable
@@ -411,7 +416,11 @@ private fun UserReviewsAsReviewerContent(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier
@@ -488,7 +497,7 @@ private fun UserReviewsAsReviewerContent(
             val groupedByType = typeFilter == null
             val productReviews = filteredReviews.filter { it.type == ReviewType.PRODUCT }
             val serviceReviews = filteredReviews.filter { it.type == ReviewType.SERVICE }
-            val providerReviews = filteredReviews.filter { it.type == ReviewType.PROVIDER }
+            val partnerReviews = filteredReviews.filter { it.type == ReviewType.PARTNER }
             
             if (groupedByType) {
                 if (productReviews.isNotEmpty()) {
@@ -515,14 +524,14 @@ private fun UserReviewsAsReviewerContent(
                     }
                 }
                 
-                if (providerReviews.isNotEmpty()) {
+                if (partnerReviews.isNotEmpty()) {
                     item {
-                        SectionHeader("Prestadores (${providerReviews.size})")
+                        SectionHeader("Parceiros (${partnerReviews.size})")
                     }
-                    items(providerReviews) { review ->
+                    items(partnerReviews) { review ->
                         ReviewCardWithTarget(
                             review = review,
-                            targetType = "Prestador"
+                            targetType = "Parceiro"
                         )
                     }
                 }
@@ -546,7 +555,11 @@ private fun ReviewCardWithTarget(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier
@@ -591,7 +604,11 @@ private fun EmptyReviewsState(
     message: String
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier

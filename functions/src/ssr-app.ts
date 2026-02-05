@@ -82,27 +82,59 @@ export const ssrAppPage = functions.https.onRequest(async (req, res) => {
     let image: string | undefined;
 
     if (kind === 'post') {
-      const doc = await db.collection('posts').doc(id).get();
-      if (!doc.exists) {
+      // CRÍTICO: Posts estão em locations/{locationId}/posts
+      // Como não temos locationId inicialmente, precisamos buscar em todas as localizações
+      // Mas agora os documentos têm locationId armazenado, então podemos usar diretamente quando encontrado
+      const locationsSnapshot = await db.collection('locations').limit(100).get();
+      let found = false;
+      
+      // Buscar post em todas as localizações
+      for (const locationDoc of locationsSnapshot.docs) {
+        const postDoc = await locationDoc.ref.collection('posts').doc(id).get();
+        if (postDoc.exists) {
+          const data = postDoc.data() || {};
+          // Usar locationId do documento se disponível, senão usar o locationId da coleção
+          // const postLocationId = data.locationId as string || locationDoc.id; // Não usado no momento
+          title = data.text || 'Post no TaskGo';
+          desc = data.userName ? `Post de ${data.userName}` : desc;
+          const media = Array.isArray(data.mediaUrls) ? data.mediaUrls : [];
+          image = media[0];
+          found = true;
+          break;
+        }
+      }
+      
+      if (!found) {
         res.status(404).send('Post não encontrado');
         return;
       }
-      const data = doc.data() || {};
-      title = data.text || 'Post no TaskGo';
-      desc = data.userName ? `Post de ${data.userName}` : desc;
-      const media = Array.isArray(data.mediaUrls) ? data.mediaUrls : [];
-      image = media[0];
     } else if (kind === 'product') {
-      const doc = await db.collection('products').doc(id).get();
-      if (!doc.exists) {
+      // CRÍTICO: Products estão em locations/{locationId}/products
+      // Como não temos locationId inicialmente, precisamos buscar em todas as localizações
+      // Mas agora os documentos têm locationId armazenado, então podemos usar diretamente quando encontrado
+      const locationsSnapshot = await db.collection('locations').limit(100).get();
+      let found = false;
+      
+      // Buscar produto em todas as localizações
+      for (const locationDoc of locationsSnapshot.docs) {
+        const productDoc = await locationDoc.ref.collection('products').doc(id).get();
+        if (productDoc.exists) {
+          const data = productDoc.data() || {};
+          // Usar locationId do documento se disponível, senão usar o locationId da coleção
+          // const productLocationId = data.locationId as string || locationDoc.id; // Não usado no momento
+          title = data.title || 'Produto no TaskGo';
+          desc = data.description || desc;
+          const imgs = Array.isArray(data.imageUrls) ? data.imageUrls : [];
+          image = imgs[0];
+          found = true;
+          break;
+        }
+      }
+      
+      if (!found) {
         res.status(404).send('Produto não encontrado');
         return;
       }
-      const data = doc.data() || {};
-      title = data.title || 'Produto no TaskGo';
-      desc = data.description || desc;
-      const imgs = Array.isArray(data.imageUrls) ? data.imageUrls : [];
-      image = imgs[0];
     } else if (kind === 'user') {
       const doc = await db.collection('users').doc(id).get();
       if (!doc.exists) {

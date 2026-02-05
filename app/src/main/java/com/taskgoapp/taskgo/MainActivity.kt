@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                     }, 5000)
                 }
             }
-        }, 2000) // Aguardar 2 segundos inicialmente
+        }, 5000) // Aguardar 5 segundos para garantir que Hilt está pronto
     }
 }
 

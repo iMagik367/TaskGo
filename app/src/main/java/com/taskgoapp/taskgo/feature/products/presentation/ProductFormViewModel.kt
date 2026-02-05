@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskgoapp.taskgo.core.model.Product
+import com.taskgoapp.taskgo.core.model.fold
 import com.taskgoapp.taskgo.core.validation.Validators
 import com.taskgoapp.taskgo.domain.repository.ProductsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -228,22 +229,21 @@ class ProductFormViewModel @Inject constructor(
                             imageIndex = index
                         )
                         result.fold(
-                            onSuccess = { url ->
+                            onSuccess = { url: String ->
                                 imageUrls.add(url)
                             },
-                            onFailure = { e ->
+                            onFailure = { e: Throwable ->
                                 throw e
                             }
                         )
                     }
                 }
                 
-                // Capturar localização (obrigatória)
-                val location = locationManager.getCurrentLocation()
-                val latitude: Double = location?.latitude
-                    ?: throw IllegalStateException("Localização não disponível. Ative o GPS e tente novamente.")
-                val longitude: Double = location?.longitude
-                    ?: throw IllegalStateException("Localização não disponível. Ative o GPS e tente novamente.")
+                // Obter GPS apenas para coordenadas (não para city/state)
+                // City/state vêm do perfil do usuário (cadastro)
+                val location = locationManager.getCurrentLocationGuaranteed()
+                val latitude: Double = location.latitude
+                val longitude: Double = location.longitude
                 
                 val currentUser = authRepository.getCurrentUser()
                 val product = Product(
@@ -312,11 +312,11 @@ class ProductFormViewModel @Inject constructor(
                 }
                 
                 createResult.fold(
-                    onSuccess = {
+                    onSuccess = { _: Map<String, Any> ->
                         Log.d("ProductFormViewModel", "Produto salvo com sucesso via Cloud Function")
                         _uiState.value = _uiState.value.copy(isSaving = false, saved = true)
                     },
-                    onFailure = { error ->
+                    onFailure = { error: Throwable ->
                         Log.e("ProductFormViewModel", "Erro ao salvar produto via Cloud Function: ${error.message}", error)
                         _uiState.value = _uiState.value.copy(
                             isSaving = false,

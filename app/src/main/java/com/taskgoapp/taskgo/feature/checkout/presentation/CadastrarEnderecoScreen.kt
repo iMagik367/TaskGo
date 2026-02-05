@@ -15,11 +15,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.taskgoapp.taskgo.core.location.LocationManager
+import dagger.hilt.android.EntryPointAccessors
 import com.taskgoapp.taskgo.core.permissions.PermissionHandler
 import com.taskgoapp.taskgo.core.permissions.rememberMultiplePermissionsLauncher
 import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.core.validation.CepService
 import com.taskgoapp.taskgo.core.validation.DocumentValidator
+import com.taskgoapp.taskgo.core.model.Result
+import com.taskgoapp.taskgo.core.model.onSuccess
+import com.taskgoapp.taskgo.core.model.onFailure
+import com.taskgoapp.taskgo.core.model.getDataOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
@@ -50,8 +55,7 @@ fun CadastrarEnderecoScreen(
     var rua by remember { mutableStateOf("") }
     var numero by remember { mutableStateOf("") }
     var bairro by remember { mutableStateOf("") }
-    var cidade by remember { mutableStateOf("") }
-    var estado by remember { mutableStateOf("") }
+    // REMOVIDO: cidade e estado - serão obtidos automaticamente do perfil do usuário
     var cep by remember { mutableStateOf("") }
     var complemento by remember { mutableStateOf("") }
     var nomeEndereco by remember { mutableStateOf("") }
@@ -63,9 +67,12 @@ fun CadastrarEnderecoScreen(
     val isError = variant == "invalid"
     val isEmpty = variant == "empty"
     
-    // LocationManager via Hilt (precisamos injetar diretamente via contexto por enquanto)
+    // LocationManager via Hilt EntryPoint
     val locationManager = remember {
-        LocationManager(context)
+        EntryPointAccessors.fromApplication(
+            context.applicationContext as com.taskgoapp.taskgo.TaskGoApp,
+            com.taskgoapp.taskgo.di.LocationManagerEntryPoint::class.java
+        ).locationManager()
     }
     
     // Verificar permissão de localização
@@ -82,18 +89,18 @@ fun CadastrarEnderecoScreen(
                 try {
                     // Verificar permissão antes de usar
                     if (PermissionHandler.hasLocationPermission(context)) {
-                    val address = locationManager.getCurrentAddress()
-                    address?.let {
-                        rua = it.thoroughfare ?: ""
-                        numero = it.subThoroughfare ?: ""
-                        bairro = it.subLocality ?: it.featureName ?: ""
-                        cidade = it.locality ?: ""
-                        estado = it.adminArea ?: ""
-                        cep = it.postalCode ?: ""
-                        locationError = null
-                    } ?: run {
-                        locationError = "Não foi possível obter o endereço da localização"
-                    }
+                        try {
+                            val location = locationManager.getCurrentLocationGuaranteed()
+                            val address = locationManager.getAddressGuaranteed(location.latitude, location.longitude)
+                            rua = address.thoroughfare ?: ""
+                            numero = address.subThoroughfare ?: ""
+                            bairro = address.subLocality ?: address.featureName ?: ""
+                            // REMOVIDO: cidade e estado - serão obtidos automaticamente do perfil
+                            cep = address.postalCode ?: ""
+                            locationError = null
+                        } catch (e: Exception) {
+                            locationError = "Erro ao obter localização: ${e.message}"
+                        }
                     } else {
                         locationError = "Permissão de localização não concedida"
                     }
@@ -120,18 +127,18 @@ fun CadastrarEnderecoScreen(
                 try {
                     // Verificar permissão antes de usar
                     if (PermissionHandler.hasLocationPermission(context)) {
-                    val address = locationManager.getCurrentAddress()
-                    address?.let {
-                        rua = it.thoroughfare ?: ""
-                        numero = it.subThoroughfare ?: ""
-                        bairro = it.subLocality ?: it.featureName ?: ""
-                        cidade = it.locality ?: ""
-                        estado = it.adminArea ?: ""
-                        cep = it.postalCode ?: ""
-                        locationError = null
-                    } ?: run {
-                        locationError = "Não foi possível obter o endereço da localização"
-                    }
+                        try {
+                            val location = locationManager.getCurrentLocationGuaranteed()
+                            val address = locationManager.getAddressGuaranteed(location.latitude, location.longitude)
+                            rua = address.thoroughfare ?: ""
+                            numero = address.subThoroughfare ?: ""
+                            bairro = address.subLocality ?: address.featureName ?: ""
+                            // REMOVIDO: cidade e estado - serão obtidos automaticamente do perfil
+                            cep = address.postalCode ?: ""
+                            locationError = null
+                        } catch (e: Exception) {
+                            locationError = "Erro ao obter localização: ${e.message}"
+                        }
                     } else {
                         locationError = "Permissão de localização não concedida"
                     }
@@ -240,20 +247,8 @@ fun CadastrarEnderecoScreen(
             isError = isEmpty && bairro.isEmpty(),
             modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
-            value = cidade,
-            onValueChange = { cidade = it },
-            label = { Text("Cidade*") },
-            isError = isEmpty && cidade.isEmpty(),
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = estado,
-            onValueChange = { estado = it },
-            label = { Text("Estado*") },
-            isError = isEmpty && estado.isEmpty(),
-            modifier = Modifier.fillMaxWidth()
-        )
+        // REMOVIDO: Campos de Cidade e Estado
+        // Localização será obtida automaticamente do perfil do usuário
         OutlinedTextField(
             value = cep,
             onValueChange = { newValue ->
@@ -275,8 +270,7 @@ fun CadastrarEnderecoScreen(
                                 onSuccess = { cepResult ->
                                     rua = cepResult.logradouro
                                     bairro = cepResult.bairro
-                                    cidade = cepResult.localidade
-                                    estado = cepResult.uf
+                                    // REMOVIDO: cidade e estado - serão obtidos automaticamente do perfil
                                     isLoadingCep = false
                                 },
                                 onFailure = { error ->
@@ -329,14 +323,12 @@ fun CadastrarEnderecoScreen(
                     complement = complemento.takeIf { it.isNotEmpty() },
                     neighborhood = bairro,
                     district = bairro,
-                    city = cidade,
-                    state = estado,
+                    // REMOVIDO: city e state - serão obtidos automaticamente do perfil
                     cep = cep.replace(Regex("[^0-9]"), ""),
                     zipCode = cep.replace(Regex("[^0-9]"), "")
                 )
             },
-            enabled = !uiState.isLoading && rua.isNotEmpty() && numero.isNotEmpty() && 
-                     cidade.isNotEmpty() && estado.isNotEmpty() && cep.isNotEmpty(),
+            enabled = !uiState.isLoading && rua.isNotEmpty() && numero.isNotEmpty() && cep.isNotEmpty(),
             modifier = Modifier.fillMaxWidth()
         ) {
             if (uiState.isLoading) {

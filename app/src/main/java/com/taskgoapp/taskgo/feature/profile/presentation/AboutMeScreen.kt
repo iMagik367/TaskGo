@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.profile.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +12,8 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,7 +62,7 @@ fun AboutMeScreen(
     val tabs = remember(uiState.accountType) {
         when (uiState.accountType) {
             AccountType.CLIENTE -> listOf("Dashboard")
-            AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> 
+            AccountType.PARCEIRO -> 
                 listOf("Dashboard", "Feed") // Parceiro tem Dashboard e Feed (com Stories e postagens)
             else -> listOf("Dashboard", "Feed") // Fallback para legacy
         }
@@ -157,7 +160,11 @@ fun AboutMeScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier
@@ -178,8 +185,6 @@ fun AboutMeScreen(
                             label = "Tipo da conta",
                             value = when (uiState.accountType) {
                                 com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> "Parceiro"
-                                com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR -> "Parceiro" // Legacy
-                                com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR -> "Parceiro" // Legacy
                                 else -> "Cliente"
                             }
                         )
@@ -267,16 +272,19 @@ fun AboutMeScreen(
                     }
                 }
                 1 -> {
-                    // Feed - mesclar design do dashboard com feed
+                    // Feed - mostrar apenas posts e stories próprios do usuário
                     val feedViewModel: FeedViewModel = hiltViewModel()
                     val storiesViewModel: StoriesViewModel = hiltViewModel()
-                    val feedUiState by feedViewModel.uiState.collectAsState()
-                    val storiesUiState by storiesViewModel.uiState.collectAsState()
+                    val userPosts by feedViewModel.userPosts.collectAsState()
+                    var userStories by remember { mutableStateOf<List<com.taskgoapp.taskgo.core.model.Story>>(emptyList()) }
                     
-                    // Carregar stories e feed quando a aba Feed for selecionada
-                    LaunchedEffect(Unit) {
-                        storiesViewModel.loadStories()
-                        feedViewModel.loadFeed()
+                    LaunchedEffect(currentUserId) {
+                        if (currentUserId.isNotBlank()) {
+                            storiesViewModel.observeUserStories(currentUserId)
+                                .collect { stories ->
+                                    userStories = stories
+                                }
+                        }
                     }
                     
                     LazyColumn(
@@ -348,8 +356,6 @@ fun AboutMeScreen(
                                         label = "Tipo da conta",
                                         value = when (uiState.accountType) {
                                             AccountType.PARCEIRO -> "Parceiro"
-                                            AccountType.PRESTADOR -> "Parceiro" // Legacy
-                                            AccountType.VENDEDOR -> "Parceiro" // Legacy
                                             else -> "Cliente"
                                         }
                                     )
@@ -393,9 +399,9 @@ fun AboutMeScreen(
                         // Conteúdo do Feed (sem topbar)
                         item {
                             com.taskgoapp.taskgo.feature.feed.presentation.components.InlinePostCreator(
-                                userAvatarUrl = feedUiState.currentUserAvatarUrl,
-                                userName = feedUiState.currentUserName,
-                                isLoading = feedUiState.isLoading,
+                                userAvatarUrl = uiState.avatarUri,
+                                userName = uiState.name,
+                                isLoading = false,
                                 onPostCreated = { text, mediaUris ->
                                     feedViewModel.createPost(text, mediaUris)
                                 },
@@ -408,10 +414,10 @@ fun AboutMeScreen(
                             var showCreateStory by remember { mutableStateOf(false) }
                             
                             com.taskgoapp.taskgo.feature.feed.presentation.components.StoriesSectionNew(
-                                currentUserAvatarUrl = feedUiState.currentUserAvatarUrl,
-                                currentUserName = feedUiState.currentUserName,
-                                currentUserId = feedViewModel.currentUserId,
-                                stories = storiesUiState.stories,
+                                currentUserAvatarUrl = uiState.avatarUri,
+                                currentUserName = uiState.name,
+                                currentUserId = currentUserId,
+                                stories = userStories,
                                 onCreateStoryClick = {
                                     showCreateStory = true
                                 },
@@ -439,8 +445,8 @@ fun AboutMeScreen(
                             )
                         }
                         
-                        // Posts
-                        if (feedUiState.posts.isEmpty()) {
+                        // Posts próprios
+                        if (userPosts.isEmpty()) {
                             item {
                                 Column(
                                     modifier = Modifier
@@ -455,7 +461,7 @@ fun AboutMeScreen(
                                         color = TaskGoTextGray
                                     )
                                     Text(
-                                        text = "Seja o primeiro a postar na sua região!",
+                                        text = "Crie seu primeiro post!",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = TaskGoTextGray
                                     )
@@ -463,25 +469,22 @@ fun AboutMeScreen(
                             }
                         } else {
                             items(
-                                items = feedUiState.posts,
+                                items = userPosts,
                                 key = { it.id }
                             ) { post ->
                                 PostCard(
                                     post = post,
-                                    onUserClick = { userId ->
-                                        // Navegar para perfil se necessário
-                                    },
+                                    onUserClick = null,
+                                    currentUserId = currentUserId,
                                     onLikeClick = {
                                         feedViewModel.likePost(post.id)
                                     },
                                     onUnlikeClick = {
                                         feedViewModel.unlikePost(post.id)
                                     },
-                                    onDeleteClick = if (post.userId == feedViewModel.currentUserId) {
-                                        {
-                                            feedViewModel.deletePost(post.id)
-                                        }
-                                    } else null,
+                                    onDeleteClick = {
+                                        feedViewModel.deletePost(post.id)
+                                    },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -523,7 +526,11 @@ private fun DashboardSection(
     if (metrics.isLoading) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Box(
                 modifier = Modifier
@@ -537,11 +544,15 @@ private fun DashboardSection(
         return
     }
     
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -556,7 +567,7 @@ private fun DashboardSection(
             )
             
             when (accountType) {
-                AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> {
+                AccountType.PARCEIRO -> {
                     // Unificar dashboards: Parceiro vê dashboard combinado de serviços + produtos
                     PartnerDashboard(metrics) // Dashboard unificado para Parceiro
                 }
@@ -941,8 +952,9 @@ private fun MetricCard(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = TaskGoGreen.copy(alpha = 0.1f)
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier

@@ -138,8 +138,8 @@ class ChatViewModel @Inject constructor(
             return
         }
         
-        // Provider vê botão "Aceitar Serviço"
-        if (userRole == "provider" && order.providerId == currentUserId) {
+        // Partner vê botão "Aceitar Serviço"
+        if (userRole == "partner" && order.providerId == currentUserId) {
             val alreadyAccepted = order.acceptedByProvider
             _uiState.value = _uiState.value.copy(
                 showAcceptButton = !alreadyAccepted,
@@ -169,7 +169,7 @@ class ChatViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isAccepting = true, error = null)
             
             try {
-                val result = if (currentUserRole == "provider") {
+                val result = if (currentUserRole == "partner") {
                     orderRepository.acceptServiceByProvider(order.id)
                 } else {
                     orderRepository.acceptQuoteByClient(order.id)

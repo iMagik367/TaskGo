@@ -1,3 +1,12 @@
+# Configurações do R8 para evitar crashes durante minificação
+# Desabilitar otimizações agressivas que podem causar crashes do daemon
+-optimizationpasses 1
+-dontoptimize
+-dontpreverify
+-repackageclasses ''
+-allowaccessmodification
+-mergeinterfacesaggressively
+
 # Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
@@ -248,3 +257,30 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# R8 Fix - Evitar ArrayIndexOutOfBoundsException e EXCEPTION_ACCESS_VIOLATION durante minificação
+# Regras específicas para proteger classes críticas sem usar regras muito amplas que causam bugs no R8
+
+# Proteger classes de localização que podem causar problemas durante análise estática
+-keep class com.taskgoapp.taskgo.core.location.LocationStateManager { *; }
+-keep class com.taskgoapp.taskgo.core.location.LocationValidator { *; }
+-keep class com.taskgoapp.taskgo.core.location.OperationalLocation { *; }
+-keep class com.taskgoapp.taskgo.core.firebase.LocationHelper { *; }
+-keepclassmembers class com.taskgoapp.taskgo.core.location.** { *; }
+-keepclassmembers class com.taskgoapp.taskgo.core.firebase.LocationHelper { *; }
+
+# Proteger classes de repositório de usuários que foram modificadas recentemente
+-keep class com.taskgoapp.taskgo.data.repository.FirestoreUserRepository { *; }
+-keepclassmembers class com.taskgoapp.taskgo.data.repository.FirestoreUserRepository { *; }
+
+# Proteger ViewModels de autenticação que foram modificadas recentemente
+-keep class com.taskgoapp.taskgo.feature.auth.presentation.LoginViewModel { *; }
+-keep class com.taskgoapp.taskgo.feature.auth.presentation.SignupViewModel { *; }
+-keepclassmembers class com.taskgoapp.taskgo.feature.auth.presentation.LoginViewModel { *; }
+-keepclassmembers class com.taskgoapp.taskgo.feature.auth.presentation.SignupViewModel { *; }
+
+# Proteger AccountTypeSelectionDialog que foi modificado recentemente
+-keep class com.taskgoapp.taskgo.core.design.AccountTypeSelectionDialog { *; }
+-keep class com.taskgoapp.taskgo.core.design.AccountTypeSelectionData { *; }
+-keepclassmembers class com.taskgoapp.taskgo.core.design.AccountTypeSelectionDialog { *; }
+-keepclassmembers class com.taskgoapp.taskgo.core.design.AccountTypeSelectionData { *; }

@@ -5,6 +5,7 @@ import Stripe from 'stripe';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
+import {purchaseOrdersPath, getUserLocationId} from './utils/firestorePaths';
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -29,15 +30,18 @@ export const createProductPaymentIntent = functions.https.onCall(async (data, co
       );
     }
 
-    // Get order details
-    const orderDoc = await db.collection('purchase_orders').doc(orderId).get();
+    // CRÍTICO: Buscar order na coleção por localização
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+    const orderDoc = await locationOrdersCollection.doc(orderId).get();
     if (!orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
 
     const order = orderDoc.data();
     
-    if (order?.clientId !== context.auth!.uid) {
+    if (order?.clientId !== userId) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Only the order client can create payment'
@@ -115,8 +119,8 @@ export const createProductPaymentIntent = functions.https.onCall(async (data, co
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection('purchase_orders').doc(orderId).update({
+    // Update order status - na coleção por localização
+    await locationOrdersCollection.doc(orderId).update({
       status: 'PAYMENT_PENDING',
       paymentIntentId: paymentIntent.id,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -199,8 +203,13 @@ export const confirmProductPayment = functions.https.onCall(async (data, context
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection('purchase_orders').doc(orderId).update({
+    // CRÍTICO: Buscar order na coleção por localização
+    const clientId = paymentData.clientId;
+    const locationId = await getUserLocationId(db, clientId);
+    const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+    
+    // Update order status - na coleção por localização
+    await locationOrdersCollection.doc(orderId).update({
       status: 'PAID',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -255,8 +264,11 @@ export const transferPaymentToSeller = functions.https.onCall(async (data, conte
       );
     }
 
-    // Get order
-    const orderDoc = await db.collection('purchase_orders').doc(orderId).get();
+    // CRÍTICO: Buscar order na coleção por localização
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+    const orderDoc = await locationOrdersCollection.doc(orderId).get();
     if (!orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
@@ -264,7 +276,7 @@ export const transferPaymentToSeller = functions.https.onCall(async (data, conte
     const order = orderDoc.data();
     
     // Verify that the caller is the seller
-    if (order?.storeId !== context.auth!.uid) {
+    if (order?.storeId !== userId) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Only the seller can confirm shipment and receive payment'
@@ -377,8 +389,8 @@ export const transferPaymentToSeller = functions.https.onCall(async (data, conte
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection('purchase_orders').doc(orderId).update({
+    // Update order status - na coleção por localização
+    await locationOrdersCollection.doc(orderId).update({
       status: 'SHIPPED',
       paymentTransferred: true,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -436,16 +448,31 @@ export const refundProductPayment = functions.https.onCall(async (data, context)
       );
     }
 
-    // Get order
-    const orderDoc = await db.collection('purchase_orders').doc(orderId).get();
-    if (!orderDoc.exists) {
+    // CRÍTICO: Buscar order na coleção por localização
+    // Precisamos buscar em todas as localizações pois não sabemos qual é
+    const userId = context.auth!.uid;
+    const locationsSnapshot = await db.collection('locations').limit(100).get();
+    let orderDoc: admin.firestore.DocumentSnapshot | null = null;
+    let locationOrdersCollection: admin.firestore.CollectionReference | null = null;
+    
+    for (const locationDoc of locationsSnapshot.docs) {
+      const locOrdersCollection = purchaseOrdersPath(db, locationDoc.id);
+      const doc = await locOrdersCollection.doc(orderId).get();
+      if (doc.exists) {
+        orderDoc = doc;
+        locationOrdersCollection = locOrdersCollection;
+        break;
+      }
+    }
+    
+    if (!orderDoc || !orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
 
     const order = orderDoc.data();
     
     // Only client or seller can request refund (before shipment)
-    if (order?.clientId !== context.auth!.uid && order?.storeId !== context.auth!.uid) {
+    if (order?.clientId !== userId && order?.storeId !== userId) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Only the client or seller can request refund'
@@ -523,12 +550,14 @@ export const refundProductPayment = functions.https.onCall(async (data, context)
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection('purchase_orders').doc(orderId).update({
-      status: 'CANCELLED',
-      refunded: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    // Update order status - na coleção por localização
+    if (locationOrdersCollection) {
+      await locationOrdersCollection.doc(orderId).update({
+        status: 'CANCELLED',
+        refunded: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
 
     // Create notifications
     await db.collection(COLLECTIONS.NOTIFICATIONS).add({

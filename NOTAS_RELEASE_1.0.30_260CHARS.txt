@@ -1,5 +1,0 @@
-Nova tela de perfil público unificada: visualize posts, serviços e produtos. Feed redesenhado com stories estilo Instagram e criação inline de posts. Navegação aprimorada para perfis a partir de posts. Correções e melhorias.
-
-
-
-

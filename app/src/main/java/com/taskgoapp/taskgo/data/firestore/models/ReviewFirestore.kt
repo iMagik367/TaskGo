@@ -16,6 +16,7 @@ data class ReviewFirestore(
     val updatedAt: Date? = null,
     val orderId: String? = null,
     val helpfulCount: Int = 0,
-    val verifiedPurchase: Boolean = false
+    val verifiedPurchase: Boolean = false,
+    val locationId: String? = null // CRÍTICO: locationId do produto/serviço para atualização eficiente de rating
 )
 

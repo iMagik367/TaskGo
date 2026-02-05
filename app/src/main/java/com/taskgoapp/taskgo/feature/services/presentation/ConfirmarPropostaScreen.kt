@@ -51,7 +51,13 @@ fun ConfirmarPropostaScreen(
         }
         Text(statusLabel, style=FigmaSectionTitle, color=statusColor)
         Spacer(Modifier.height(16.dp))
-        Card(Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
+        ) {
             Column(Modifier.padding(16.dp)) {
                 Text("Serviço: [Dados do serviço]", color=TaskGoTextBlack, style=FigmaProductName)
                 Text("Proposta: [Valor da proposta]", color=TaskGoTextBlack, style=FigmaPrice)

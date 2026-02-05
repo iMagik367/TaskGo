@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.reviews.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -57,7 +58,11 @@ fun CreateReviewScreen(
         ) {
             // Informações do target
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier
@@ -76,7 +81,7 @@ fun CreateReviewScreen(
                         text = when (type) {
                             ReviewType.PRODUCT -> "Produto"
                             ReviewType.SERVICE -> "Serviço"
-                            ReviewType.PROVIDER -> "Prestador"
+                            ReviewType.PARTNER -> "Parceiro"
                         },
                         style = FigmaProductDescription,
                         color = TaskGoTextGray
@@ -86,7 +91,11 @@ fun CreateReviewScreen(
             
             // Seleção de estrelas
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier
@@ -128,7 +137,11 @@ fun CreateReviewScreen(
             
             // Campo de comentário
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier
@@ -168,8 +181,9 @@ fun CreateReviewScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = TaskGoGreen.copy(alpha = 0.1f)
-                    )
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Row(
                         modifier = Modifier

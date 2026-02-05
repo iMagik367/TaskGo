@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.profile.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -153,7 +154,8 @@ fun ProviderProfileScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -267,7 +269,8 @@ fun ProviderProfileScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),

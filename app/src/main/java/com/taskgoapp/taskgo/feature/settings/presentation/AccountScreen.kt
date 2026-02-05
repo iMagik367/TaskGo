@@ -525,8 +525,9 @@ fun AccountScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = TaskGoSurface
-                    )
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Row(
                         modifier = Modifier
@@ -537,8 +538,6 @@ fun AccountScreen(
                         Text(
                             text = when (editedType) {
                                 AccountType.PARCEIRO -> "Parceiro"
-                                AccountType.PRESTADOR -> "Parceiro" // Legacy
-                                AccountType.VENDEDOR -> "Parceiro" // Legacy
                                 AccountType.CLIENTE -> stringResource(R.string.profile_account_type_client)
                             },
                             style = FigmaProductName,
@@ -550,7 +549,7 @@ fun AccountScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // Botão para gerenciar contas bancárias (apenas para parceiros/vendedores)
-                if (state.accountType == AccountType.PARCEIRO || state.accountType == AccountType.VENDEDOR || state.accountType == AccountType.PRESTADOR) {
+                if (state.accountType == AccountType.PARCEIRO) {
                     Button(
                         onClick = { onNavigateToBankAccounts() },
                         modifier = Modifier.fillMaxWidth(),
@@ -681,15 +680,15 @@ fun AccountScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // Opção Parceiro (unificação de Prestador e Vendedor)
-                        if (editedType != AccountType.PARCEIRO && editedType != AccountType.PRESTADOR && editedType != AccountType.VENDEDOR) {
+                        if (editedType != AccountType.PARCEIRO) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { selectedNewAccountType = AccountType.PARCEIRO },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (selectedNewAccountType == AccountType.PARCEIRO) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
+                                    containerColor = TaskGoBackgroundWhite
                                 ),
-                                border = if (selectedNewAccountType == AccountType.PARCEIRO) BorderStroke(2.dp, TaskGoGreen) else null
+                                border = if (selectedNewAccountType == AccountType.PARCEIRO) BorderStroke(2.dp, TaskGoGreen) else BorderStroke(1.dp, TaskGoBorder)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -727,9 +726,9 @@ fun AccountScreen(
                                     .fillMaxWidth()
                                     .clickable { selectedNewAccountType = AccountType.CLIENTE },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (selectedNewAccountType == AccountType.CLIENTE) TaskGoGreen.copy(alpha = 0.1f) else TaskGoSurface
+                                    containerColor = TaskGoBackgroundWhite
                                 ),
-                                border = if (selectedNewAccountType == AccountType.CLIENTE) BorderStroke(2.dp, TaskGoGreen) else null
+                                border = if (selectedNewAccountType == AccountType.CLIENTE) BorderStroke(2.dp, TaskGoGreen) else BorderStroke(1.dp, TaskGoBorder)
                             ) {
                                 Row(
                                     modifier = Modifier

@@ -1,6 +1,7 @@
 package com.taskgoapp.taskgo.feature.settings.presentation
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -32,10 +33,13 @@ fun ConfiguracoesScreen(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    
+    if (uiState.accountType == null) {
+        return
+    }
+    
     val accountType = uiState.accountType
-    val isPartner = accountType == AccountType.PARCEIRO || 
-                    accountType == AccountType.PRESTADOR || 
-                    accountType == AccountType.VENDEDOR
+    val isPartner = accountType == AccountType.PARCEIRO
     Scaffold(
         topBar = {
             AppTopBar(
@@ -54,8 +58,9 @@ fun ConfiguracoesScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = TaskGoSurface
-                )
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column {
                     Row(

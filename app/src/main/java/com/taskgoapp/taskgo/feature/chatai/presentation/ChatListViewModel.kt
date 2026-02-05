@@ -9,6 +9,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.taskgoapp.taskgo.feature.chatai.data.ChatSession
 import com.taskgoapp.taskgo.feature.chatai.data.ChatStorage
+import com.taskgoapp.taskgo.core.model.fold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,9 +56,9 @@ class ChatListViewModel @Inject constructor(
                 val firestoreChats = try {
                     val result = functionsService.listConversations(limit = 50)
                     result.fold(
-                        onSuccess = { data ->
+                        onSuccess = { data: Map<String, Any> ->
                             val conversations = data["conversations"] as? List<Map<String, Any>> ?: emptyList()
-                            conversations.mapNotNull { conv ->
+                            conversations.mapNotNull { conv: Map<String, Any> ->
                                 val id = conv["id"] as? String ?: return@mapNotNull null
                                 val lastMessage = conv["lastMessage"] as? String
                                 val updatedAtValue = conv["updatedAt"]
@@ -75,8 +76,8 @@ class ChatListViewModel @Inject constructor(
                                 )
                             }
                         },
-                        onFailure = {
-                            android.util.Log.w("ChatListViewModel", "Erro ao carregar conversas do Firestore: ${it.message}")
+                        onFailure = { error: Throwable ->
+                            android.util.Log.w("ChatListViewModel", "Erro ao carregar conversas do Firestore: ${error.message}")
                             emptyList()
                         }
                     )

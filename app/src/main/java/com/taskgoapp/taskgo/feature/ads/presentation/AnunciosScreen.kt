@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.ads.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -76,11 +77,9 @@ fun AnunciosScreen(
                 Card(
                     modifier = Modifier.weight(1f),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (selectedPlan == "Pequeno")
-                            MaterialTheme.colorScheme.primaryContainer
-                        else Color.White
+                        containerColor = TaskGoBackgroundWhite
                     ),
-                    border = if (selectedPlan == "Pequeno") null else null
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -103,11 +102,9 @@ fun AnunciosScreen(
                 Card(
                     modifier = Modifier.weight(1f),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (selectedPlan == "Grande")
-                            MaterialTheme.colorScheme.primaryContainer
-                        else Color.White
+                        containerColor = TaskGoBackgroundWhite
                     ),
-                    border = if (selectedPlan == "Grande") null else null
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),

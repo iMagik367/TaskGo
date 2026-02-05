@@ -12,6 +12,7 @@ data class StoryFirestore(
     val userId: String = "",
     val userName: String = "",
     val userAvatarUrl: String? = null,
+    val userRole: String? = null, // Role do autor da story (partner, client, etc)
     val mediaUrl: String = "",
     val mediaType: String = "", // "image" ou "video"
     val thumbnailUrl: String? = null,

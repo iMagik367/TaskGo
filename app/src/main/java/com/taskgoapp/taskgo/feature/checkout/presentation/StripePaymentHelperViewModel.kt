@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.taskgoapp.taskgo.core.payment.StripePaymentManager
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+import com.taskgoapp.taskgo.core.model.onSuccess
+import com.taskgoapp.taskgo.core.model.onFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,13 +26,13 @@ class StripePaymentHelperViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val result = functionsService.getStripePublishableKey()
-                result.onSuccess { data ->
+                result.onSuccess { data: Map<String, Any> ->
                     val publishableKey = data["publishableKey"] as? String
                     if (publishableKey != null) {
                         stripePaymentManager.initialize(activity, publishableKey)
                         _isInitialized.value = true
                     }
-                }.onFailure {
+                }.onFailure { _: Throwable ->
                     // Handle error
                 }
             } catch (e: Exception) {

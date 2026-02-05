@@ -6,6 +6,8 @@ import com.taskgoapp.taskgo.core.model.Address
 import com.taskgoapp.taskgo.core.model.Card
 import com.taskgoapp.taskgo.core.model.PaymentMethod
 import com.taskgoapp.taskgo.core.model.PaymentType
+import com.taskgoapp.taskgo.core.model.onSuccess
+import com.taskgoapp.taskgo.core.model.onFailure
 import com.taskgoapp.taskgo.core.payment.PaymentGateway
 import com.taskgoapp.taskgo.core.payment.PaymentGatewayRequest
 import com.taskgoapp.taskgo.domain.repository.AddressRepository
@@ -217,7 +219,7 @@ class CheckoutViewModel @Inject constructor(
                 )
             )
             result
-                .onSuccess { gatewayResult ->
+                .onSuccess { gatewayResult: com.taskgoapp.taskgo.core.payment.PaymentGatewayResult ->
                     // Se for cartão, precisamos apresentar o PaymentSheet
                     // Se for PIX, já está pronto para mostrar a tela de PIX
                     if (paymentType == PaymentType.CREDIT_CARD || paymentType == PaymentType.DEBIT_CARD) {

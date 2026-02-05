@@ -3,7 +3,8 @@ import * as functions from 'firebase-functions';
 import {AppError, handleError, assertAuthenticated} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
 import {getFirestore} from './utils/firestore';
-import {getLocationCollection, getUserLocation, normalizeLocationId} from './utils/location';
+import {getUserLocation, validateCityAndState, normalizeLocationId} from './utils/location';
+import {storiesPath, getUserLocationId, createStandardPayload} from './utils/firestorePaths';
 
 /**
  * Cloud Function para criar uma nova story
@@ -45,46 +46,75 @@ export const createStory = functions.https.onCall(
       const userData = userDoc.data();
       const userName = userData?.name || userData?.displayName || 'Usuário';
       const userAvatarUrl = userData?.avatarUrl || userData?.photoURL || null;
+      const userRole = userData?.role || 'user'; // Role do autor da story
 
-      // CRÍTICO: Obter localização do usuário para organizar por região
-      let storyCity = '';
-      let storyState = '';
+      // CRÍTICO: Usar APENAS city/state do perfil do usuário (cadastro) - LEI MÁXIMA DO TASKGO
+      // GPS (latitude/longitude) é usado APENAS para coordenadas no mapa, NÃO para determinar city/state
+      let storyCity: string;
+      let storyState: string;
+      let locationId: string;
       
-      // Tentar obter da localização fornecida primeiro
-      if (location && typeof location === 'object') {
-        storyCity = location.city || '';
-        storyState = location.state || '';
-      }
-      
-      // Se não tiver na localização, obter do perfil do usuário
-      if (!storyCity || !storyState) {
+      // PRIORIDADE 1: Usar city/state enviados pelo frontend (vêm do perfil do usuário)
+      if (data.city && data.state) {
+        const validated = validateCityAndState(data.city, data.state);
+        if (!validated.valid) {
+          throw new functions.https.HttpsError(
+            'invalid-argument',
+            `Invalid location data: ${validated.error}`,
+          );
+        }
+        storyCity = validated.city!;
+        storyState = validated.state!;
+        locationId = normalizeLocationId(storyCity, storyState);
+        
+        functions.logger.info('📍 createStory: Usando city/state do perfil (enviado pelo frontend)', {
+          userId,
+          city: storyCity,
+          state: storyState,
+          locationId,
+          latitude: data.latitude, // GPS apenas para coordenadas
+          longitude: data.longitude, // GPS apenas para coordenadas
+        });
+      } else {
+        // FALLBACK: Obter do perfil do usuário no Firestore (se frontend não enviou)
+        functions.logger.warn('📍 createStory: Frontend não enviou city/state, obtendo do perfil do usuário', {userId});
         const userLocation = await getUserLocation(db, userId);
-        storyCity = storyCity || userLocation.city;
-        storyState = storyState || userLocation.state;
-      }
+        storyCity = userLocation.city;
+        storyState = userLocation.state;
 
-      // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
-      const locationId = normalizeLocationId(storyCity || 'unknown', storyState || 'unknown');
+        // CRÍTICO: Validar que city e state estão presentes e válidos
+        if (!storyCity || !storyState || storyCity.trim() === '' || storyState.trim() === '') {
+          const errorMsg = `User ${userId} does not have valid location information ` +
+            `(city='${storyCity}', state='${storyState}'). ` +
+            'Cannot create story without valid location. ' +
+            'User must have city and state in their profile.';
+          functions.logger.error(errorMsg);
+          throw new functions.https.HttpsError('failed-precondition', errorMsg);
+        }
+
+        // Obter locationId
+        locationId = await getUserLocationId(db, userId);
+        
+        functions.logger.info('📍 createStory: Usando city/state do perfil do Firestore', {
+          userId,
+          city: storyCity,
+          state: storyState,
+          locationId,
+        });
+      }
       const firestorePath = `locations/${locationId}/stories`;
       
+      // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
       functions.logger.info('📍 LOCATION TRACE', {
         function: 'createStory',
         userId,
-        city: storyCity || 'unknown',
-        state: storyState || 'unknown',
+        city: storyCity,
+        state: storyState,
         locationId,
         firestorePath,
-        rawCity: storyCity || '',
-        rawState: storyState || '',
+        source: 'users/{userId} root fields (city, state)',
         timestamp: new Date().toISOString(),
       });
-
-      if (!storyCity || !storyState) {
-        functions.logger.warn(
-          `User ${userId} does not have location information. ` +
-          'Story will be saved in \'unknown\' location.'
-        );
-      }
 
       // Calcular expiresAt se não fornecido (24 horas a partir de agora)
       let expiresAtTimestamp: admin.firestore.Timestamp;
@@ -103,25 +133,29 @@ export const createStory = functions.https.onCall(
         );
       }
 
-      // Validar location se fornecido
+      // Validar location se fornecido (apenas para latitude/longitude, NÃO para city/state)
+      // Lei 9.3: city e state NUNCA vêm do cliente, apenas de users/{userId}
       let locationData: Record<string, unknown> | null = null;
       if (location) {
         if (typeof location !== 'object') {
           throw new AppError('invalid-argument', 'location must be an object', 400);
         }
+        // Usar apenas latitude e longitude do cliente (se fornecido)
+        // city e state vêm EXCLUSIVAMENTE de users/{userId}
         locationData = {
-          city: location.city || '',
-          state: location.state || '',
+          city: storyCity, // SEMPRE do users/{userId}
+          state: storyState, // SEMPRE do users/{userId}
           latitude: typeof location.latitude === 'number' ? location.latitude : 0,
           longitude: typeof location.longitude === 'number' ? location.longitude : 0,
         };
       }
 
-      // Criar dados da story
-      const storyData = {
+      // Criar dados da story usando payload padrão (stories não têm campo active)
+      const storyData = createStandardPayload({
         userId,
         userName,
         userAvatarUrl,
+        userRole: userRole, // CRÍTICO: Role do autor para filtrar stories de parceiros para clientes
         mediaUrl: mediaUrl.trim(),
         mediaType: mediaType.trim(),
         caption: caption && typeof caption === 'string' ? caption.trim() : '',
@@ -129,18 +163,16 @@ export const createStory = functions.https.onCall(
         location: locationData,
         city: storyCity || '', // Adicionar cidade explicitamente
         state: storyState || '', // Adicionar estado explicitamente
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        locationId: locationId, // CRÍTICO: Adicionar locationId para busca eficiente (SSR, etc)
         expiresAt: expiresAtTimestamp,
         viewsCount: 0,
-      };
+      }, undefined); // Stories não têm campo active
 
-      // CRÍTICO: Salvar na coleção pública por localização
-      const locationStoriesCollection = getLocationCollection(
-        db,
-        'stories',
-        storyCity || 'unknown',
-        storyState || 'unknown'
-      );
+      // Remover active do payload se foi adicionado (stories não têm active)
+      delete (storyData as Record<string, unknown>).active;
+
+      // CRÍTICO: Salvar APENAS na coleção pública por localização
+      const locationStoriesCollection = storiesPath(db, locationId);
       const storyRef = await locationStoriesCollection.add(storyData);
       const storyId = storyRef.id;
 
@@ -154,15 +186,12 @@ export const createStory = functions.https.onCall(
         timestamp: new Date().toISOString(),
       });
 
-      // Também salvar na coleção global para compatibilidade (será removido futuramente)
-      await db.collection('stories').doc(storyId).set(storyData);
-
       functions.logger.info(`Story created: ${storyId}`, {
         storyId,
         userId,
         mediaType,
-        location: `${storyCity || 'unknown'}, ${storyState || 'unknown'}`,
-        locationCollection: `locations/${normalizeLocationId(storyCity || 'unknown', storyState || 'unknown')}/stories`,
+        location: `${storyCity}, ${storyState}`,
+        locationCollection: `locations/${locationId}/stories`,
         timestamp: new Date().toISOString(),
       });
 
@@ -231,20 +260,7 @@ export const cleanupExpiredStories = functions.pubsub
         }
       }
 
-      // Também limpar da coleção global (compatibilidade)
-      const globalExpiredStoriesQuery = db.collection('stories')
-        .where('expiresAt', '<=', twentyFourHoursAgo)
-        .limit(500);
-
-      const globalSnapshot = await globalExpiredStoriesQuery.get();
-      if (!globalSnapshot.empty) {
-        const batch = db.batch();
-        globalSnapshot.docs.forEach((doc) => {
-          batch.delete(doc.ref);
-          totalDeletedCount++;
-        });
-        await batch.commit();
-      }
+      // Limpeza concluída - não há mais coleção global
 
       functions.logger.info(`Limpeza geral concluída: ${totalDeletedCount} stories expiradas removidas.`);
 

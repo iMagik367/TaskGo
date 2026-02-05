@@ -9,8 +9,7 @@ import com.taskgoapp.taskgo.domain.repository.ProductsRepository
 import com.taskgoapp.taskgo.domain.repository.ServiceRepository
 import com.taskgoapp.taskgo.domain.repository.CategoriesRepository
 import com.taskgoapp.taskgo.data.local.datastore.FilterPreferencesManager
-import com.taskgoapp.taskgo.core.location.LocationManager
-import com.taskgoapp.taskgo.core.location.calculateDistance
+// ✅ REMOVIDO: LocationManager e calculateDistance - não são mais usados
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -29,7 +28,7 @@ class UniversalSearchViewModel @Inject constructor(
     private val serviceRepository: ServiceRepository,
     private val categoriesRepository: CategoriesRepository,
     private val filterPreferencesManager: FilterPreferencesManager,
-    private val locationManager: LocationManager
+    // ✅ REMOVIDO: locationManager - não é mais usado
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UniversalSearchUiState())
@@ -143,8 +142,9 @@ class UniversalSearchViewModel @Inject constructor(
             }
         }
 
-        // Filtrar por raio usando GPS (será aplicado assincronamente quando necessário)
-        // TODO: Implementar filtro assíncrono quando necessário
+        // ✅ REMOVIDO: Filtro de raio GPS
+        // LEI MÁXIMA DO TASKGO: Produtos já vêm filtrados por city/state do Firestore
+        // NUNCA usar GPS para filtrar produtos - todos os produtos do mesmo city/state devem aparecer
 
         // Ordenar
         filtered = when (filters.sortBy) {
@@ -186,19 +186,7 @@ class UniversalSearchViewModel @Inject constructor(
             }
         }
 
-        // Filtrar por localização
-        filters.location?.let { location ->
-            if (location.city != null && location.city.isNotEmpty()) {
-                filtered = filtered.filter { service ->
-                    service.city.equals(location.city, ignoreCase = true)
-                }
-            }
-            if (location.state != null && location.state.isNotEmpty()) {
-                filtered = filtered.filter { service ->
-                    service.state.equals(location.state, ignoreCase = true)
-                }
-            }
-        }
+        // REMOVIDO: Filtro por localização manual - localização agora é automática do perfil do usuário
 
         // Filtrar por avaliação
         filters.minRating?.let { minRating ->

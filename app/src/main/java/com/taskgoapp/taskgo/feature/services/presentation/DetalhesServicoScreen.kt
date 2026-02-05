@@ -2,6 +2,7 @@ package com.taskgoapp.taskgo.feature.services.presentation
 
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -145,7 +146,11 @@ fun DetalhesServicoScreen(
                                 .fillMaxWidth()
                                 .height(300.dp)
                                 .padding(16.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = TaskGoBackgroundWhite
+                            ),
+                            border = BorderStroke(1.dp, TaskGoBorder)
                         ) {
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -174,7 +179,8 @@ fun DetalhesServicoScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp),
-                        colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                        border = BorderStroke(1.dp, TaskGoBorder)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -412,7 +418,8 @@ fun DetalhesServicoScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp),
-                        colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                        border = BorderStroke(1.dp, TaskGoBorder)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -582,7 +589,8 @@ private fun VideoThumbnailCard(
     Card(
         modifier = modifier.clickable { showVideoPlayer = true },
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundGray)
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),

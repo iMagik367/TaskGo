@@ -8,7 +8,9 @@ import com.taskgoapp.taskgo.data.firestore.models.BankAccount
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,27 +20,30 @@ class FirestoreBankAccountRepository @Inject constructor(
     private val firebaseAuth: FirebaseAuth
 ) {
     
-    private val collection = firestore.collection("bank_accounts")
-    
     /**
      * Observa todas as contas bancárias do usuário atual
-     * CRÍTICO: Sempre usa o userId do usuário autenticado
+     * CRÍTICO: Dados privados - salva em users/{userId}/bank_accounts (não em locations)
      */
     fun observeUserBankAccounts(): Flow<List<BankAccount>> = callbackFlow {
         // CRÍTICO: Sempre obter userId do usuário autenticado
         val currentUser = firebaseAuth.currentUser
         if (currentUser == null) {
-            android.util.Log.w("BankAccountRepo", "Usuário não autenticado ao observar contas bancárias")
+            Log.w("BankAccountRepo", "Usuário não autenticado ao observar contas bancárias")
             trySend(emptyList())
             close()
             return@callbackFlow
         }
         
         val authenticatedUserId = currentUser.uid
-        android.util.Log.d("BankAccountRepo", "Observando contas bancárias do usuário: $authenticatedUserId")
+        
+        // Dados privados: usar users/{userId}/bank_accounts (não locations)
+        val collection = firestore.collection("users")
+            .document(authenticatedUserId)
+            .collection("bank_accounts")
+        
+        Log.d("BankAccountRepo", "📍 Observando contas bancárias do usuário: $authenticatedUserId em users/$authenticatedUserId/bank_accounts")
         
         val listener = collection
-            .whereEqualTo("userId", authenticatedUserId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     android.util.Log.e("BankAccountRepo", "Erro ao observar contas bancárias: ${error.message}", error)
@@ -51,18 +56,18 @@ class FirestoreBankAccountRepository @Inject constructor(
                         val account = doc.toBankAccount(doc.id)
                         // Validação adicional: garantir que a conta pertence ao usuário autenticado
                         if (account.userId != authenticatedUserId) {
-                            android.util.Log.w("BankAccountRepo", "Conta bancária ${doc.id} pertence a outro usuário (${account.userId} != $authenticatedUserId), ignorando")
+                            Log.w("BankAccountRepo", "Conta bancária ${doc.id} pertence a outro usuário (${account.userId} != $authenticatedUserId), ignorando")
                             null
                         } else {
                             account
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("BankAccountRepo", "Erro ao converter conta bancária: ${e.message}", e)
+                        Log.e("BankAccountRepo", "Erro ao converter conta bancária: ${e.message}", e)
                         null
                     }
                 } ?: emptyList()
                 
-                android.util.Log.d("BankAccountRepo", "Contas bancárias observadas: ${accounts.size}")
+                Log.d("BankAccountRepo", "✅ Contas bancárias observadas: ${accounts.size} em users/$authenticatedUserId/bank_accounts")
                 trySend(accounts)
             }
         
@@ -71,46 +76,69 @@ class FirestoreBankAccountRepository @Inject constructor(
     
     /**
      * Obtém uma conta bancária por ID
+     * CRÍTICO: Dados privados - busca em users/{userId}/bank_accounts (não em locations)
      */
     suspend fun getBankAccount(accountId: String): BankAccount? {
         return try {
+            val currentUser = firebaseAuth.currentUser
+            if (currentUser == null) {
+                Log.w("BankAccountRepo", "Usuário não autenticado")
+                return null
+            }
+            
+            // Dados privados: usar users/{userId}/bank_accounts (não locations)
+            val collection = firestore.collection("users")
+                .document(currentUser.uid)
+                .collection("bank_accounts")
+            
+            Log.d("BankAccountRepo", "📍 Buscando conta bancária: $accountId em users/${currentUser.uid}/bank_accounts")
+            
             val doc = collection.document(accountId).get().await()
             if (doc.exists()) {
-                doc.toBankAccount(doc.id)
+                val account = doc.toBankAccount(doc.id)
+                Log.d("BankAccountRepo", "✅ Conta bancária encontrada: $accountId")
+                account
             } else {
+                Log.w("BankAccountRepo", "Conta bancária não encontrada: $accountId")
                 null
             }
         } catch (e: Exception) {
-            android.util.Log.e("BankAccountRepo", "Erro ao obter conta bancária: ${e.message}", e)
+            Log.e("BankAccountRepo", "Erro ao obter conta bancária: ${e.message}", e)
             null
         }
     }
     
     /**
      * Cria ou atualiza uma conta bancária
-     * CRÍTICO: Sempre usa o userId do usuário autenticado para garantir permissões corretas
+     * CRÍTICO: Dados privados - salva em users/{userId}/bank_accounts (não em locations)
      */
     suspend fun saveBankAccount(account: BankAccount): Result<String> {
         return try {
-            // CRÍTICO: Sempre obter userId do usuário autenticado (mesma lógica de produtos/serviços/feed)
+            // CRÍTICO: Sempre obter userId do usuário autenticado
             val currentUser = firebaseAuth.currentUser
             if (currentUser == null) {
-                android.util.Log.e("BankAccountRepo", "Usuário não autenticado")
+                Log.e("BankAccountRepo", "Usuário não autenticado")
                 return Result.failure(Exception("Usuário não autenticado"))
             }
             
             // Usar sempre o userId do usuário autenticado para garantir permissões corretas
             val authenticatedUserId = currentUser.uid
             
+            // Dados privados: usar users/{userId}/bank_accounts (não locations)
+            val collection = firestore.collection("users")
+                .document(authenticatedUserId)
+                .collection("bank_accounts")
+            
             // Se estiver editando, validar que a conta pertence ao usuário autenticado
             if (account.id.isNotBlank()) {
-                val existingAccount = getBankAccount(account.id)
-                if (existingAccount == null) {
-                    android.util.Log.e("BankAccountRepo", "Conta bancária não encontrada: ${account.id}")
+                val existingDoc = collection.document(account.id).get().await()
+                if (!existingDoc.exists()) {
+                    Log.e("BankAccountRepo", "Conta bancária não encontrada: ${account.id}")
                     return Result.failure(Exception("Conta bancária não encontrada"))
                 }
+                val existingAccount = existingDoc.toBankAccount(existingDoc.id)
                 if (existingAccount.userId != authenticatedUserId) {
-                    android.util.Log.e("BankAccountRepo", "Permissão negada: conta pertence a outro usuário (${existingAccount.userId} != $authenticatedUserId)")
+                    Log.e("BankAccountRepo", "Permissão negada: conta pertence a outro usuário (${existingAccount.userId} != $authenticatedUserId)")
                     return Result.failure(Exception("Permissão negada: você não pode editar esta conta bancária"))
                 }
             }
@@ -120,6 +148,8 @@ class FirestoreBankAccountRepository @Inject constructor(
                 userId = authenticatedUserId
             )
             val accountData = accountToSave.toMap().toMutableMap()
+            
+            Log.d("BankAccountRepo", "📍 Salvando conta bancária em users/$authenticatedUserId/bank_accounts")
             
             val docRef = if (account.id.isBlank()) {
                 // Nova conta - criar novo documento
@@ -133,16 +163,15 @@ class FirestoreBankAccountRepository @Inject constructor(
                 accountData["createdAt"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
             }
             
-            android.util.Log.d("BankAccountRepo", "Salvando conta bancária - userId: $authenticatedUserId, accountId: ${docRef.id}, isNew: ${account.id.isBlank()}")
+            Log.d("BankAccountRepo", "Salvando conta bancária - userId: $authenticatedUserId, accountId: ${docRef.id}, isNew: ${account.id.isBlank()}, path: users/$authenticatedUserId/bank_accounts/${docRef.id}")
             
             docRef.set(accountData, SetOptions.merge()).await()
             
-            android.util.Log.d("BankAccountRepo", "Conta bancária salva com sucesso: ${docRef.id}")
+            Log.d("BankAccountRepo", "✅ Conta bancária salva com sucesso: ${docRef.id} em users/$authenticatedUserId/bank_accounts")
             
             // Se esta é a conta padrão, remover padrão das outras
             if (account.isDefault) {
                 val otherDefaultAccounts = collection
-                    .whereEqualTo("userId", authenticatedUserId)
                     .whereEqualTo("isDefault", true)
                     .get()
                     .await()
@@ -150,7 +179,7 @@ class FirestoreBankAccountRepository @Inject constructor(
                     .filter { it.id != docRef.id }
                 
                 if (otherDefaultAccounts.isNotEmpty()) {
-                    android.util.Log.d("BankAccountRepo", "Removendo padrão de ${otherDefaultAccounts.size} outras contas")
+                    Log.d("BankAccountRepo", "Removendo padrão de ${otherDefaultAccounts.size} outras contas")
                     otherDefaultAccounts.forEach { doc ->
                         doc.reference.update("isDefault", false).await()
                     }
@@ -159,22 +188,22 @@ class FirestoreBankAccountRepository @Inject constructor(
             
             Result.success(docRef.id)
         } catch (e: Exception) {
-            android.util.Log.e("BankAccountRepo", "Erro ao salvar conta bancária: ${e.message}", e)
-            android.util.Log.e("BankAccountRepo", "Stack trace:", e)
+            Log.e("BankAccountRepo", "Erro ao salvar conta bancária: ${e.message}", e)
+            Log.e("BankAccountRepo", "Stack trace:", e)
             Result.failure(e)
         }
     }
     
     /**
      * Deleta uma conta bancária
-     * CRÍTICO: Valida que a conta pertence ao usuário autenticado
+     * CRÍTICO: Dados privados - deleta de users/{userId}/bank_accounts (não de locations)
      */
     suspend fun deleteBankAccount(accountId: String): Result<Unit> {
         return try {
             // CRÍTICO: Sempre obter userId do usuário autenticado
             val currentUser = firebaseAuth.currentUser
             if (currentUser == null) {
-                android.util.Log.e("BankAccountRepo", "Usuário não autenticado ao deletar conta")
+                Log.e("BankAccountRepo", "Usuário não autenticado ao deletar conta")
                 return Result.failure(Exception("Usuário não autenticado"))
             }
             
@@ -182,46 +211,69 @@ class FirestoreBankAccountRepository @Inject constructor(
             
             val account = getBankAccount(accountId)
             if (account == null) {
-                android.util.Log.e("BankAccountRepo", "Conta bancária não encontrada: $accountId")
+                Log.e("BankAccountRepo", "Conta bancária não encontrada: $accountId")
                 return Result.failure(Exception("Conta bancária não encontrada"))
             }
             
             if (account.userId != authenticatedUserId) {
-                android.util.Log.e("BankAccountRepo", "Permissão negada: conta pertence a outro usuário (${account.userId} != $authenticatedUserId)")
+                Log.e("BankAccountRepo", "Permissão negada: conta pertence a outro usuário (${account.userId} != $authenticatedUserId)")
                 return Result.failure(Exception("Sem permissão para deletar esta conta"))
             }
             
-            android.util.Log.d("BankAccountRepo", "Deletando conta bancária: $accountId")
+            // Dados privados: usar users/{userId}/bank_accounts (não locations)
+            val collection = firestore.collection("users")
+                .document(authenticatedUserId)
+                .collection("bank_accounts")
+            
+            Log.d("BankAccountRepo", "📍 Deletando conta bancária: $accountId de users/$authenticatedUserId/bank_accounts")
             collection.document(accountId).delete().await()
-            android.util.Log.d("BankAccountRepo", "Conta bancária deletada com sucesso: $accountId")
+            Log.d("BankAccountRepo", "✅ Conta bancária deletada com sucesso: $accountId")
             Result.success(Unit)
         } catch (e: Exception) {
-            android.util.Log.e("BankAccountRepo", "Erro ao deletar conta bancária: ${e.message}", e)
-            android.util.Log.e("BankAccountRepo", "Stack trace:", e)
+            Log.e("BankAccountRepo", "Erro ao deletar conta bancária: ${e.message}", e)
+            Log.e("BankAccountRepo", "Stack trace:", e)
             Result.failure(e)
         }
     }
     
     /**
      * Obtém a conta bancária padrão do usuário
+     * CRÍTICO: Dados privados - busca em users/{userId}/bank_accounts (não em locations)
      */
     suspend fun getDefaultBankAccount(): BankAccount? {
         return try {
             val currentUser = firebaseAuth.currentUser
-            if (currentUser == null) return null
+            if (currentUser == null) {
+                Log.w("BankAccountRepo", "Usuário não autenticado")
+                return null
+            }
+            
+            // Dados privados: usar users/{userId}/bank_accounts (não locations)
+            val collection = firestore.collection("users")
+                .document(currentUser.uid)
+                .collection("bank_accounts")
+            
+            Log.d("BankAccountRepo", "📍 Buscando conta bancária padrão em users/${currentUser.uid}/bank_accounts")
             
             val snapshot = collection
-                .whereEqualTo("userId", currentUser.uid)
                 .whereEqualTo("isDefault", true)
                 .limit(1)
                 .get()
                 .await()
             
-            snapshot.documents.firstOrNull()?.let { doc ->
+            val account = snapshot.documents.firstOrNull()?.let { doc ->
                 doc.toBankAccount(doc.id)
             }
+            
+            if (account != null) {
+                Log.d("BankAccountRepo", "✅ Conta bancária padrão encontrada: ${account.id}")
+            } else {
+                Log.d("BankAccountRepo", "Nenhuma conta bancária padrão encontrada")
+            }
+            
+            account
         } catch (e: Exception) {
-            android.util.Log.e("BankAccountRepo", "Erro ao obter conta padrão: ${e.message}", e)
+            Log.e("BankAccountRepo", "Erro ao obter conta padrão: ${e.message}", e)
             null
         }
     }

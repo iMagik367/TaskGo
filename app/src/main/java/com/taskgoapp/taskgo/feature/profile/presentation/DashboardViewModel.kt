@@ -6,7 +6,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreServicesRepository
-import com.taskgoapp.taskgo.data.repository.FirestoreProductsRepository
+import com.taskgoapp.taskgo.data.repository.FirestoreProductsRepositoryImpl
 import com.taskgoapp.taskgo.domain.repository.ProductsRepository
 import com.taskgoapp.taskgo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,7 +49,7 @@ class DashboardViewModel @Inject constructor(
     private val servicesRepository: FirestoreServicesRepository,
     private val orderRepository: FirestoreOrderRepository,
     private val productsRepository: ProductsRepository,
-    private val firestoreProductsRepository: FirestoreProductsRepository
+    private val firestoreProductsRepository: FirestoreProductsRepositoryImpl
 ) : ViewModel() {
     
     private val _metrics = MutableStateFlow(DashboardMetrics())
@@ -78,7 +78,7 @@ class DashboardViewModel @Inject constructor(
             
             try {
                 when (accountType) {
-                    AccountType.PARCEIRO, AccountType.PRESTADOR, AccountType.VENDEDOR -> {
+                    AccountType.PARCEIRO -> {
                         // Parceiro carrega métricas combinadas de serviços + produtos
                         loadPartnerMetrics(currentUser.uid)
                     }
@@ -96,7 +96,7 @@ class DashboardViewModel @Inject constructor(
     private suspend fun loadProviderMetrics(userId: String) {
         combine(
             servicesRepository.observeProviderServices(userId),
-            orderRepository.observeOrders(userId, "provider")
+            orderRepository.observeOrders(userId, "partner")
         ) { services, orders ->
             val completedOrders = orders.filter { it.status == "completed" || it.status == "accepted" }
             val proposalsSent = orders.count { it.proposalDetails != null }

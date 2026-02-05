@@ -1,6 +1,7 @@
 ﻿package com.taskgoapp.taskgo.feature.checkout.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -27,8 +28,9 @@ fun ConfirmacaoPixScreen(
                 .fillMaxWidth()
                 .padding(32.dp),
             colors = CardDefaults.cardColors(
-                containerColor = Color.White
-            )
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),

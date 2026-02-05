@@ -80,18 +80,19 @@ class RealtimeDatabaseRepository @Inject constructor(
      * DEPRECATED: Salva um pedido de compra (purchase_order) no Realtime Database
      * 
      * ATENÇÃO: Escrita direta em 'purchase_orders' está bloqueada por regras de segurança.
+     * CRÍTICO: Pedidos de produtos agora estão em 'locations/{locationId}/orders' (modelo canônico).
      * Use Cloud Functions apropriadas ao invés deste método.
      * 
      * Este método foi mantido apenas para compatibilidade, mas sempre falhará.
      */
     @Deprecated(
-        message = "Use Cloud Functions apropriadas ao invés de escrita direta",
+        message = "Use Cloud Functions apropriadas ao invés de escrita direta. Pedidos agora estão em locations/{locationId}/orders",
         level = DeprecationLevel.ERROR
     )
     suspend fun savePurchaseOrder(orderId: String, orderData: Map<String, Any>) {
-        android.util.Log.w("RealtimeDB", "⚠️ savePurchaseOrder está DEPRECATED. Use Cloud Functions apropriadas.")
+        android.util.Log.w("RealtimeDB", "⚠️ savePurchaseOrder está DEPRECATED. Use Cloud Functions apropriadas. Pedidos agora estão em locations/{locationId}/orders")
         throw UnsupportedOperationException(
-            "Escrita direta em 'purchase_orders' está bloqueada. Use Cloud Functions apropriadas."
+            "Escrita direta em 'purchase_orders' está bloqueada. Pedidos agora estão em 'locations/{locationId}/orders' (modelo canônico). Use Cloud Functions apropriadas."
         )
     }
     

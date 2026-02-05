@@ -23,6 +23,13 @@ object PrefsKeys {
     val THEME = stringPreferencesKey("theme") // "light","dark","system"
     val CATEGORIES = stringPreferencesKey("categories_json")
     
+    // GPS Cache - Última localização válida conhecida
+    val LAST_VALID_LATITUDE = doublePreferencesKey("last_valid_latitude")
+    val LAST_VALID_LONGITUDE = doublePreferencesKey("last_valid_longitude")
+    val LAST_VALID_CITY = stringPreferencesKey("last_valid_city")
+    val LAST_VALID_STATE = stringPreferencesKey("last_valid_state")
+    val LAST_VALID_LOCATION_TIMESTAMP = longPreferencesKey("last_valid_location_timestamp")
+    
     // Privacy
     val PRIVACY_LOCATION = booleanPreferencesKey("privacy_location")
     val PRIVACY_PROFILE_VISIBLE = booleanPreferencesKey("privacy_profile_visible")
@@ -50,7 +57,7 @@ object PrefsKeys {
 class PreferencesManager @Inject constructor(
     private val context: Context
 ) {
-    private val dataStore = context.dataStore
+    val dataStore = context.dataStore // Expor para LocationManager
 
     // Notification preferences
     val promosEnabled: Flow<Boolean> = dataStore.data.map { preferences ->

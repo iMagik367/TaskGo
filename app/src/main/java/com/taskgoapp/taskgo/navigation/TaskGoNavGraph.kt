@@ -597,6 +597,9 @@ fun TaskGoNavGraph(
                     },
                     onNavigateToSearch = {
                         navController.navigate("universal_search")
+                    },
+                    onNavigateToProviderProfile = { providerId ->
+                        navController.navigate("user_profile/$providerId")
                     }
                 )
             }
@@ -839,7 +842,7 @@ fun TaskGoNavGraph(
             val type = when (typeString) {
                 "PRODUCT" -> ReviewType.PRODUCT
                 "SERVICE" -> ReviewType.SERVICE
-                "PROVIDER" -> ReviewType.PROVIDER
+                "PARTNER" -> ReviewType.PARTNER
                 else -> ReviewType.PRODUCT
             }
             ReviewsScreen(
@@ -859,7 +862,7 @@ fun TaskGoNavGraph(
             val type = when (typeString) {
                 "PRODUCT" -> ReviewType.PRODUCT
                 "SERVICE" -> ReviewType.SERVICE
-                "PROVIDER" -> ReviewType.PROVIDER
+                "PARTNER" -> ReviewType.PARTNER
                 else -> ReviewType.PRODUCT
             }
             CreateReviewScreen(
@@ -879,7 +882,7 @@ fun TaskGoNavGraph(
             val type = when (typeString) {
                 "PRODUCT" -> ReviewType.PRODUCT
                 "SERVICE" -> ReviewType.SERVICE
-                "PROVIDER" -> ReviewType.PROVIDER
+                "PARTNER" -> ReviewType.PARTNER
                 else -> ReviewType.PRODUCT
             }
             CreateReviewScreen(
@@ -1397,7 +1400,7 @@ fun TaskGoNavGraph(
             LaunchedEffect(providerId, orderId) {
                 createReviewViewModel.initialize(
                     targetId = providerId,
-                    type = com.taskgoapp.taskgo.core.model.ReviewType.PROVIDER,
+                    type = com.taskgoapp.taskgo.core.model.ReviewType.PARTNER,
                     orderId = orderId
                 )
             }
@@ -1731,8 +1734,8 @@ fun TaskGoNavGraph(
         composable("meus_servicos") {
             MeusServicosScreen(
                 onBackClick = { navController.popBackStack() },
-                onCriarServico = { navController.navigate("service_form") },
-                onEditarServico = { serviceId -> navController.navigate("service_form/$serviceId") },
+                onCriarServico = { /* REMOVIDO: Parceiros não cadastram serviços */ },
+                onEditarServico = { /* REMOVIDO: Parceiros não cadastram serviços */ },
                 onViewService = { serviceId -> navController.navigate("service_detail/$serviceId") },
                 onOrderClick = { orderId -> navController.navigate("service_order_detail/$orderId") }
             )

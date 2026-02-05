@@ -9,11 +9,12 @@ import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.database.FirebaseDatabase
 import com.taskgoapp.taskgo.core.firebase.FirestoreHelper
-import com.taskgoapp.taskgo.core.location.LocationStateManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import android.content.Context
 import javax.inject.Singleton
 
 @Module
@@ -117,11 +118,35 @@ object FirebaseModule {
     
     @Provides
     @Singleton
-    fun provideLocationStateManager(
+    fun provideLocationUpdateService(
+        locationManager: com.taskgoapp.taskgo.core.location.LocationManager,
         userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository
-    ): LocationStateManager {
-        return LocationStateManager(userRepository)
+    ): com.taskgoapp.taskgo.core.location.LocationUpdateService {
+        return com.taskgoapp.taskgo.core.location.LocationUpdateService(locationManager, userRepository)
     }
+    
+    @Provides
+    @Singleton
+    fun provideOperationalLocationStore(
+        @ApplicationContext context: Context
+    ): com.taskgoapp.taskgo.core.location.OperationalLocationStore {
+        return com.taskgoapp.taskgo.core.location.OperationalLocationStore(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideLocationResolver(
+        operationalLocationStore: com.taskgoapp.taskgo.core.location.OperationalLocationStore,
+        locationManager: com.taskgoapp.taskgo.core.location.LocationManager,
+        userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository
+    ): com.taskgoapp.taskgo.core.location.LocationResolver {
+        return com.taskgoapp.taskgo.core.location.LocationResolver(
+            operationalLocationStore,
+            locationManager,
+            userRepository
+        )
+    }
+    
 }
 
 

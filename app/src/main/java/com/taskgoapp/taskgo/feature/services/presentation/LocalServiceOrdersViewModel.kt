@@ -90,35 +90,25 @@ class LocalServiceOrdersViewModel @Inject constructor(
     }
     
     private fun loadUserLocation() {
-        viewModelScope.launch {
-            try {
-                val location = locationManager.getCurrentLocation()
-                if (location != null) {
-                    val address = locationManager.getAddressFromLocation(
-                        location.latitude,
-                        location.longitude
-                    )
-                    _userLocation.value = address?.locality to address?.adminArea
-                } else {
-                    // Usar localização do perfil do usuário como fallback
-                    loadUserLocationFromProfile()
-                }
-            } catch (e: Exception) {
-                // Usar localização do perfil do usuário como fallback
-                loadUserLocationFromProfile()
-            }
-        }
-    }
-    
-    private fun loadUserLocationFromProfile() {
+        // LEI MÁXIMA DO TASKGO: Usar APENAS city/state do perfil do usuário (cadastro)
+        // NUNCA usar GPS para city/state - GPS apenas para coordenadas (mapa)
         viewModelScope.launch {
             try {
                 userRepository.observeCurrentUser().collect { user ->
-                    // UserProfile agora tem state diretamente (adicionado na versão 88)
-                    _userLocation.value = user?.city to user?.state
+                    val userCity = user?.city?.takeIf { it.isNotBlank() }
+                    val userState = user?.state?.takeIf { it.isNotBlank() }
+                    
+                    if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+                        android.util.Log.e("LocalServiceOrdersViewModel", "❌ ERRO CRÍTICO: Usuário não possui city/state válidos no cadastro. " +
+                                "City: ${user?.city ?: "null"}, State: ${user?.state ?: "null"}")
+                        _userLocation.value = null to null
+                    } else {
+                        _userLocation.value = userCity to userState
+                        android.util.Log.d("LocalServiceOrdersViewModel", "📍 Localização do perfil: city=$userCity, state=$userState")
+                    }
                 }
             } catch (e: Exception) {
-                // Se não conseguir obter localização, usar null
+                android.util.Log.e("LocalServiceOrdersViewModel", "Erro ao obter localização do perfil: ${e.message}", e)
                 _userLocation.value = null to null
             }
         }

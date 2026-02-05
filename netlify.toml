@@ -1,0 +1,39 @@
+[build]
+  # Diretório base do projeto
+  base = "."
+  
+  # Comando de build (se necessário)
+  command = "cd backend && npm install && npm run build"
+  
+  # Diretório de publicação (para frontend, se houver)
+  publish = "public"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Netlify Functions
+[functions]
+  # Diretório onde as functions serão criadas
+  directory = "netlify/functions"
+  
+  # Timeout máximo (26 segundos é o máximo no plano gratuito)
+  node_bundler = "esbuild"
+
+# Redirects e rewrites
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+  force = true
+
+# Headers de segurança
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+
+# Variáveis de ambiente (definir no Netlify Dashboard)
+# DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+# STRIPE_SECRET_KEY, etc.

@@ -32,9 +32,7 @@ fun BottomNavigationBar(
     // Determinar label da aba Produtos: "Loja" para Cliente e Parceiro, "Produtos" para outros
     val productsLabel = when (accountType) {
         com.taskgoapp.taskgo.core.model.AccountType.CLIENTE,
-        com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO,
-        com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR,
-        com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR -> "Loja"
+        com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> "Loja"
         else -> "Produtos"
     }
     

@@ -11,13 +11,16 @@ import com.taskgoapp.taskgo.data.firestore.models.PostLocation as PostLocationFi
 import com.taskgoapp.taskgo.data.mapper.PostMapper
 import com.taskgoapp.taskgo.domain.repository.FeedRepository
 import com.taskgoapp.taskgo.core.firebase.LocationHelper
-import com.taskgoapp.taskgo.core.location.LocationStateManager
-import com.taskgoapp.taskgo.core.location.LocationState
+import com.taskgoapp.taskgo.core.location.LocationManager
+import com.taskgoapp.taskgo.core.location.LocationValidator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.CoroutineScope
@@ -32,11 +35,11 @@ import javax.inject.Singleton
 class FirestoreFeedRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val authRepository: FirebaseAuthRepository,
-    private val locationStateManager: LocationStateManager
+    private val locationManager: LocationManager,
+    private val userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository
 ) : FeedRepository {
     
-    // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
-    private val postsCollection = firestore.collection("posts")
+    // REMOVIDO: Coleção global - posts estão apenas em locations/{locationId}/posts
     private val currentUserId: String?
         get() = authRepository.getCurrentUser()?.uid
     
@@ -44,38 +47,125 @@ class FirestoreFeedRepository @Inject constructor(
     private fun getUserPostsCollection(userId: String) = 
         firestore.collection("users").document(userId).collection("posts")
     
+    
     override fun observeFeedPosts(
         userLatitude: Double,
         userLongitude: Double,
         radiusKm: Double
-    ): Flow<List<Post>> = locationStateManager.locationState
-        .flatMapLatest { locationState ->
-            when (locationState) {
-                is LocationState.Loading -> {
-                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeFeedPosts")
-                    flowOf(emptyList())
-                }
-                is LocationState.Error -> {
-                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeFeedPosts")
-                    flowOf(emptyList())
-                }
-                is LocationState.Ready -> {
-                    // ✅ Localização pronta - fazer query Firestore
-                    val locationId = locationState.locationId
-                    
-                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
-                    if (locationId == "unknown" || locationId.isBlank()) {
-                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeFeedPosts")
-                        flowOf(emptyList())
-                    } else {
-                        observeFeedPostsFromFirestore(locationState, userLatitude, userLongitude, radiusKm)
+    ): Flow<List<Post>> = callbackFlow {
+        var listenerRegistration: ListenerRegistration? = null
+        try {
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            val collectionToUse = LocationHelper.getLocationCollection(firestore, "posts", userCity, userState)
+            
+            listenerRegistration = collectionToUse
+                .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(100)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        trySend(emptyList())
+                        return@addSnapshotListener
                     }
+                    
+                    val posts = snapshot?.documents?.mapNotNull { doc ->
+                        try {
+                            val data = doc.data ?: return@mapNotNull null
+                            val locationData = data["location"] as? Map<*, *>
+                            val location = if (locationData != null) {
+                                PostLocationFirestore(
+                                    city = locationData["city"] as? String ?: "",
+                                    state = locationData["state"] as? String ?: "",
+                                    latitude = (locationData["latitude"] as? Number)?.toDouble() ?: 0.0,
+                                    longitude = (locationData["longitude"] as? Number)?.toDouble() ?: 0.0
+                                )
+                            } else null
+                            val createdAt = (data["createdAt"] as? com.google.firebase.Timestamp)?.toDate()
+                            val updatedAt = (data["updatedAt"] as? com.google.firebase.Timestamp)?.toDate()
+                            val postFirestore = PostFirestore(
+                                id = doc.id,
+                                userId = data["userId"] as? String ?: "",
+                                userName = data["userName"] as? String ?: "",
+                                userAvatarUrl = data["userAvatarUrl"] as? String,
+                                userRole = data["userRole"] as? String, // Role do autor
+                                text = data["text"] as? String ?: "",
+                                mediaUrls = (data["mediaUrls"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+                                mediaTypes = (data["mediaTypes"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+                                location = location,
+                                createdAt = createdAt,
+                                updatedAt = updatedAt,
+                                likesCount = (data["likesCount"] as? Number)?.toInt() ?: 0,
+                                commentsCount = (data["commentsCount"] as? Number)?.toInt() ?: 0,
+                                likedBy = (data["likedBy"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+                                tags = (data["tags"] as? List<*>)?.mapNotNull { it as? String }
+                            )
+                            
+                            // REGRA DE NEGÓCIO: Filtrar posts baseado no AccountType do usuário atual
+                            // - CLIENTE: vê apenas posts de parceiros (role = partner)
+                            // - PARCEIRO: vê todos os posts (próprios + de outros parceiros)
+                            val currentUserAccountType = currentUser.accountType
+                            val postAuthorRole = postFirestore.userRole?.lowercase() ?: ""
+                            
+                            when (currentUserAccountType) {
+                                com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> {
+                                    // Cliente vê apenas posts de parceiros
+                                    if (postAuthorRole != "partner") {
+                                        return@mapNotNull null
+                                    }
+                                }
+                                com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> {
+                                    // Parceiro vê todos os posts (próprios + de outros parceiros)
+                                    // Não filtrar
+                                }
+                                else -> {
+                                    // Outros tipos: não filtrar
+                                }
+                            }
+                            
+                            with(PostMapper) { postFirestore.toModel(currentUserId) }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } ?: emptyList()
+                    
+                    trySend(posts)
                 }
+        } catch (e: Exception) {
+            trySend(emptyList())
+            null
+        }
+        awaitClose { 
+            try {
+                listenerRegistration?.remove()
+            } catch (e: Exception) {
+                // Ignorar erro ao remover listener
             }
         }
+    }
+    
+    private suspend fun getLocationForOperation(): Triple<String, String, String> {
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+        
+        if (userCity.isBlank() || userState.isBlank()) {
+            throw Exception("City e state são obrigatórios")
+        }
+        
+        val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+        return Triple(userCity, userState, locationId)
+    }
     
     private fun observeFeedPostsFromFirestore(
-        locationState: LocationState.Ready,
+        userCity: String,
+        userState: String,
         userLatitude: Double,
         userLongitude: Double,
         radiusKm: Double
@@ -83,21 +173,26 @@ class FirestoreFeedRepository @Inject constructor(
         val listenerRegistration: ListenerRegistration
         
         try {
-            // ✅ Usar coleção por localização
+            // ✅ Usar coleção por localização (posts, não feed)
+            val (userCity, userState, _) = getLocationForOperation()
             val collectionToUse = LocationHelper.getLocationCollection(
                 firestore,
-                "feed",
-                locationState.city,
-                locationState.state
+                "posts",
+                userCity,
+                userState
             )
             
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
             Log.d("FirestoreFeedRepository", """
                 📍 Querying Firestore with location:
-                City: ${locationState.city}
-                State: ${locationState.state}
-                LocationId: ${locationState.locationId}
-                Firestore Path: locations/${locationState.locationId}/feed
+                City: $userCity
+                State: $userState
+                LocationId: $locationId
+                Firestore Path: locations/$locationId/posts
             """.trimIndent())
+            
+            // ✅ CRÍTICO: Logar criação do listener
+            Log.d("FirestoreFeedRepository", "🔵 CRIANDO LISTENER para locations/$locationId/posts")
             
             // Buscar todos os posts ordenados por data de criação (mais recentes primeiro)
             // O filtro por distância será feito em memória após buscar os posts
@@ -105,10 +200,31 @@ class FirestoreFeedRepository @Inject constructor(
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .limit(100) // Limitar a 100 posts por vez para performance
                 .addSnapshotListener { snapshot, error ->
+                    // ✅ CRÍTICO: Logar TODOS os snapshots recebidos
+                    Log.d("FirestoreFeedRepository", """
+                        🔵 SNAPSHOT RECEBIDO:
+                        Path: locations/$locationId/posts
+                        HasError: ${error != null}
+                        Error: ${error?.message ?: "null"}
+                        SnapshotNull: ${snapshot == null}
+                        SnapshotEmpty: ${snapshot?.isEmpty ?: "null"}
+                        SnapshotSize: ${snapshot?.size() ?: "null"}
+                        DocumentsCount: ${snapshot?.documents?.size ?: "null"}
+                    """.trimIndent())
                     if (error != null) {
                         android.util.Log.e("FirestoreFeedRepository", "Erro ao observar posts: ${error.message}", error)
                         trySend(emptyList())
                         return@addSnapshotListener
+                    }
+                    
+                    // Buscar AccountType do usuário atual uma vez para usar no filtro
+                    // Usar runBlocking pois estamos dentro de um callback (não coroutine)
+                    val currentUserForFilter = try {
+                        kotlinx.coroutines.runBlocking {
+                            userRepository.observeCurrentUser().first()
+                        }
+                    } catch (e: Exception) {
+                        null
                     }
                     
                     val posts = snapshot?.documents?.mapNotNull { doc ->
@@ -128,11 +244,12 @@ class FirestoreFeedRepository @Inject constructor(
                             val createdAt = (postData["createdAt"] as? com.google.firebase.Timestamp)?.toDate()
                             val updatedAt = (postData["updatedAt"] as? com.google.firebase.Timestamp)?.toDate()
                             
-                            PostFirestore(
+                            val postFirestore = PostFirestore(
                                 id = doc.id,
                                 userId = postData["userId"] as? String ?: "",
                                 userName = postData["userName"] as? String ?: "",
                                 userAvatarUrl = postData["userAvatarUrl"] as? String,
+                                userRole = postData["userRole"] as? String, // Role do autor
                                 text = postData["text"] as? String ?: "",
                                 mediaUrls = (postData["mediaUrls"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                                 mediaTypes = (postData["mediaTypes"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
@@ -144,32 +261,40 @@ class FirestoreFeedRepository @Inject constructor(
                                 likedBy = (postData["likedBy"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                                 tags = (postData["tags"] as? List<*>)?.mapNotNull { it as? String }
                             )
+                            
+                            // REGRA DE NEGÓCIO: Filtrar posts baseado no AccountType do usuário atual
+                            // - CLIENTE: vê apenas posts de parceiros (role = partner)
+                            // - PARCEIRO: vê todos os posts (próprios + de outros parceiros)
+                            val currentUserAccountType = currentUserForFilter?.accountType
+                            val postAuthorRole = postFirestore.userRole?.lowercase() ?: ""
+                            
+                            when (currentUserAccountType) {
+                                com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> {
+                                    // Cliente vê apenas posts de parceiros
+                                    if (postAuthorRole != "partner") {
+                                        return@mapNotNull null
+                                    }
+                                }
+                                com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> {
+                                    // Parceiro vê todos os posts (próprios + de outros parceiros)
+                                    // Não filtrar
+                                }
+                                else -> {
+                                    // Outros tipos: não filtrar
+                                }
+                            }
+                            
+                            postFirestore
                         } catch (e: Exception) {
                             android.util.Log.e("FirestoreFeedRepository", "Erro ao converter post: ${e.message}", e)
                             null
                         }
                     } ?: emptyList()
                     
-                    // Filtrar por distância usando fórmula de Haversine
-                    val userLocation = PostLocationFirestore(
-                        city = "",
-                        state = "",
-                        latitude = userLatitude,
-                        longitude = userLongitude
-                    )
-                    
-                    // Filtrar por distância usando fórmula de Haversine
-                    val filteredPosts = posts.filter { post ->
-                        post.location?.let { postLocation ->
-                            val distance = calculateDistance(
-                                userLocation.latitude,
-                                userLocation.longitude,
-                                postLocation.latitude,
-                                postLocation.longitude
-                            )
-                            distance <= radiusKm
-                        } ?: false // Excluir posts sem localização
-                    }
+                    // ✅ REMOVIDO: Filtro por GPS - mostrar TODOS os posts do city_state
+                    // Os posts já estão filtrados por localização (locations/{locationId}/posts)
+                    // Não precisamos filtrar por distância GPS - todos os posts do mesmo city_state devem aparecer
+                    val filteredPosts = posts
                     
                     // Processar posts de forma assíncrona para evitar bloqueio da thread
                     // Usar CoroutineScope para executar funções suspend sem bloquear
@@ -221,7 +346,10 @@ class FirestoreFeedRepository @Inject constructor(
                                     .thenByDescending { it.first.createdAt?.time ?: 0L })
                                 .map { it.first }
                             
-                            trySend(sortedPosts)
+                            // ✅ CRÍTICO: Logar antes de enviar
+                            Log.d("FirestoreFeedRepository", "🔵 ENVIANDO ${sortedPosts.size} posts para o Flow")
+                            val sent = trySend(sortedPosts)
+                            Log.d("FirestoreFeedRepository", "🔵 trySend result: isSuccess=${sent.isSuccess}, isClosed=${sent.isClosed}")
                         } catch (e: Exception) {
                             android.util.Log.e("FirestoreFeedRepository", "Erro ao processar feed personalizado: ${e.message}", e)
                             // Em caso de erro, enviar posts filtrados sem personalização
@@ -230,12 +358,17 @@ class FirestoreFeedRepository @Inject constructor(
                                     post.toModel(currentUserId)
                                 }
                             }
+                            Log.d("FirestoreFeedRepository", "🔵 ENVIANDO ${fallbackPosts.size} posts (fallback) para o Flow")
                             trySend(fallbackPosts)
                         }
                     }
                 }
             
+            // ✅ CRÍTICO: Logar após criar listener
+            Log.d("FirestoreFeedRepository", "✅ LISTENER CRIADO com sucesso para locations/$locationId/posts")
+            
             awaitClose {
+                Log.d("FirestoreFeedRepository", "🔴 REMOVENDO LISTENER para locations/$locationId/posts")
                 listenerRegistration.remove()
             }
         } catch (e: Exception) {
@@ -247,7 +380,15 @@ class FirestoreFeedRepository @Inject constructor(
     
     override suspend fun getPostById(postId: String): Post? {
         return try {
-            val doc = postsCollection.document(postId).get().await()
+            // Obter locationId para buscar post (GPS é garantido, nunca null)
+            val (userCity, userState, _) = getLocationForOperation()
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            val doc = locationCollection.document(postId).get().await()
             if (!doc.exists()) {
                 return null
             }
@@ -255,7 +396,7 @@ class FirestoreFeedRepository @Inject constructor(
             val postData = doc.data ?: return null
             val locationData = postData["location"] as? Map<*, *>
             
-            val location = if (locationData != null) {
+            val postLocation = if (locationData != null) {
                 PostLocationFirestore(
                     city = locationData["city"] as? String ?: "",
                     state = locationData["state"] as? String ?: "",
@@ -275,7 +416,7 @@ class FirestoreFeedRepository @Inject constructor(
                 text = postData["text"] as? String ?: "",
                 mediaUrls = (postData["mediaUrls"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                 mediaTypes = (postData["mediaTypes"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
-                location = location,
+                location = postLocation,
                 createdAt = createdAt,
                 updatedAt = updatedAt,
                 likesCount = (postData["likesCount"] as? Number)?.toInt() ?: 0,
@@ -297,7 +438,21 @@ class FirestoreFeedRepository @Inject constructor(
         val listenerRegistration: ListenerRegistration
         
         try {
-            listenerRegistration = postsCollection
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            listenerRegistration = locationCollection
                 .whereEqualTo("userId", userId)
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .addSnapshotListener { snapshot, error ->
@@ -324,11 +479,12 @@ class FirestoreFeedRepository @Inject constructor(
                             val createdAt = (postData["createdAt"] as? com.google.firebase.Timestamp)?.toDate()
                             val updatedAt = (postData["updatedAt"] as? com.google.firebase.Timestamp)?.toDate()
                             
-                            PostFirestore(
+                            val postFirestore = PostFirestore(
                                 id = doc.id,
                                 userId = postData["userId"] as? String ?: "",
                                 userName = postData["userName"] as? String ?: "",
                                 userAvatarUrl = postData["userAvatarUrl"] as? String,
+                                userRole = postData["userRole"] as? String, // Role do autor
                                 text = postData["text"] as? String ?: "",
                                 mediaUrls = (postData["mediaUrls"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                                 mediaTypes = (postData["mediaTypes"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
@@ -340,6 +496,30 @@ class FirestoreFeedRepository @Inject constructor(
                                 likedBy = (postData["likedBy"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                                 tags = (postData["tags"] as? List<*>)?.mapNotNull { it as? String }
                             )
+                            
+                            // REGRA DE NEGÓCIO: Filtrar posts baseado no AccountType do usuário atual
+                            // - CLIENTE: vê apenas posts de parceiros (role = partner)
+                            // - PARCEIRO: vê todos os posts (próprios + de outros parceiros)
+                            val currentUserAccountType = currentUser.accountType
+                            val postAuthorRole = postFirestore.userRole?.lowercase() ?: ""
+                            
+                            when (currentUserAccountType) {
+                                com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> {
+                                    // Cliente vê apenas posts de parceiros
+                                    if (postAuthorRole != "partner") {
+                                        return@mapNotNull null
+                                    }
+                                }
+                                com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> {
+                                    // Parceiro vê todos os posts (próprios + de outros parceiros)
+                                    // Não filtrar
+                                }
+                                else -> {
+                                    // Outros tipos: não filtrar
+                                }
+                            }
+                            
+                            postFirestore
                         } catch (e: Exception) {
                             android.util.Log.e("FirestoreFeedRepository", "Erro ao converter post: ${e.message}", e)
                             null
@@ -375,38 +555,111 @@ class FirestoreFeedRepository @Inject constructor(
                 ?: return Result.Error(Exception("Usuário não autenticado"))
             
             // Buscar dados do usuário para incluir no post
-            val userDoc = firestore.collection("users").document(userId).get().await()
-            val userData = userDoc.data
-            val userName = userData?.get("displayName") as? String ?: "Usuário"
-            val userAvatarUrl = userData?.get("photoURL") as? String
+            // CRÍTICO: Buscar em locations/{locationId}/users primeiro, depois fallback para users global
+            val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() }
             
-            // Converter PostLocation do domínio para Firestore
-            val locationFirestore = with(PostMapper) {
-                location.toFirestore()
+            var userName = currentUser?.name ?: "Usuário"
+            var userAvatarUrl = currentUser?.avatarUri
+            // UserProfile não tem campo role, buscar do Firestore
+            var userRole = "user"
+            
+            // Buscar role do Firestore (UserProfile não tem campo role)
+            // Primeiro tentar em locations/{locationId}/users
+            if (userCity != null && userState != null) {
+                try {
+                    val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+                    val locationUserDoc = firestore.collection("locations").document(locationId)
+                        .collection("users").document(userId).get().await()
+                    if (locationUserDoc.exists()) {
+                        val locationUserData = locationUserDoc.data
+                        userName = locationUserData?.get("displayName") as? String ?: userName
+                        userAvatarUrl = locationUserData?.get("photoURL") as? String ?: userAvatarUrl
+                        userRole = locationUserData?.get("role") as? String ?: userRole
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("FirestoreFeedRepository", "Erro ao buscar em locations: ${e.message}")
+                }
             }
             
-            // CRÍTICO: Extrair cidade e estado da localização para salvar na coleção correta
-            val city = locationFirestore.city
-            val state = locationFirestore.state
+            // Fallback final: buscar em users global
+            if (userRole == "user") {
+                try {
+                    val userDoc = firestore.collection("users").document(userId).get().await()
+                    val userData = userDoc.data
+                    if (userData != null) {
+                        userName = userData["displayName"] as? String ?: userName
+                        userAvatarUrl = userData["photoURL"] as? String ?: userAvatarUrl
+                        userRole = userData["role"] as? String ?: userRole
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("FirestoreFeedRepository", "Erro ao buscar em users global: ${e.message}")
+                }
+            }
             
-            if (city.isBlank() || state.isBlank()) {
-                android.util.Log.w("FirestoreFeedRepository", "⚠️ Post sem localização completa (city=$city, state=$state), será salvo em 'unknown'")
+            // LEI MÁXIMA DO TASKGO: Usar APENAS city/state do perfil do usuário (cadastro)
+            // NUNCA usar GPS para city/state - GPS apenas para coordenadas (mapa)
+            // userCity e userState já foram obtidos acima
+            if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+                val errorMsg = "ERRO CRÍTICO: Usuário não possui city/state válidos no cadastro. " +
+                        "City: ${userCity ?: "null"}, State: ${userState ?: "null"}. " +
+                        "Não é possível criar post sem localização válida do cadastro."
+                android.util.Log.e("FirestoreFeedRepository", "❌ $errorMsg")
+                return com.taskgoapp.taskgo.core.model.Result.Error(Exception(errorMsg))
+            }
+            
+            android.util.Log.d("FirestoreFeedRepository", "📍 Usando city/state do perfil: $userCity/$userState")
+            
+            // Obter GPS apenas para coordenadas (mapa) - NÃO para city/state
+            val gpsLocation = locationManager.getCurrentLocationGuaranteed()
+            
+            // Normalizar locationId
+            val locationId = try {
+                LocationHelper.normalizeLocationId(userCity, userState)
+            } catch (e: Exception) {
+                android.util.Log.e("FirestoreFeedRepository", "❌ Erro ao normalizar locationId: ${e.message}", e)
+                throw Exception("Erro ao normalizar locationId para city=$userCity, state=$userState: ${e.message}")
+            }
+            
+            val validatedCity = userCity
+            val validatedState = userState
+            
+            android.util.Log.d("FirestoreFeedRepository", """
+                ✅ Localização obtida e validada:
+                City: $validatedCity
+                State: $validatedState
+                LocationId: $locationId
+                GPS: (${gpsLocation.latitude}, ${gpsLocation.longitude})
+            """.trimIndent())
+            
+            // Converter PostLocation do domínio para Firestore (usando GPS obtido)
+            val postLocation = PostLocation(
+                city = validatedCity,
+                state = validatedState,
+                latitude = gpsLocation.latitude,
+                longitude = gpsLocation.longitude
+            )
+            val locationFirestore = with(PostMapper) {
+                postLocation.toFirestore()
             }
             
             val postData = hashMapOf<String, Any>(
                 "userId" to userId,
                 "userName" to userName,
                 "userAvatarUrl" to (userAvatarUrl ?: ""),
+                "userRole" to userRole, // CRÍTICO: Role do autor para filtrar posts de parceiros para clientes
                 "text" to text,
                 "mediaUrls" to mediaUrls,
                 "mediaTypes" to mediaTypes,
-                "city" to city, // Adicionar cidade explicitamente
-                "state" to state, // Adicionar estado explicitamente
+                "city" to validatedCity, // City obtido do perfil do usuário (cadastro)
+                "state" to validatedState, // State obtido do perfil do usuário (cadastro)
+                "locationId" to locationId, // CRÍTICO: Adicionar locationId para busca eficiente (SSR, etc)
                 "location" to hashMapOf(
-                    "city" to locationFirestore.city,
-                    "state" to locationFirestore.state,
-                    "latitude" to locationFirestore.latitude,
-                    "longitude" to locationFirestore.longitude
+                    "city" to validatedCity,
+                    "state" to validatedState,
+                    "latitude" to gpsLocation.latitude,
+                    "longitude" to gpsLocation.longitude
                 ),
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp(),
@@ -421,22 +674,11 @@ class FirestoreFeedRepository @Inject constructor(
             val postId = docRef.id
             
             // CRÍTICO: Salvar na coleção pública por localização
-            try {
-                val locationId = LocationHelper.normalizeLocationId(city.ifBlank { "unknown" }, state.ifBlank { "unknown" })
-                val locationPostsCollection = firestore.collection("locations").document(locationId).collection("posts")
-                locationPostsCollection.document(postId).set(postData).await()
-                android.util.Log.d("FirestoreFeedRepository", "✅ Post salvo na coleção por localização: locations/$locationId/posts")
-            } catch (e: Exception) {
-                android.util.Log.e("FirestoreFeedRepository", "❌ Erro ao salvar post na coleção por localização: ${e.message}", e)
-            }
+            val locationPostsCollection = firestore.collection("locations").document(locationId).collection("posts")
+            locationPostsCollection.document(postId).set(postData).await()
+            android.util.Log.d("FirestoreFeedRepository", "✅ Post salvo na coleção por localização: locations/$locationId/posts")
             
-            // Também salvar na coleção global para compatibilidade (será removido futuramente)
-            try {
-                postsCollection.document(postId).set(postData).await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreFeedRepository", "Erro ao salvar post na coleção global: ${e.message}")
-                // Não falhar se pública falhar, mas logar o erro
-            }
+            // REMOVIDO: Salvamento na coleção global - posts estão apenas em locations/{locationId}/posts
             
             Result.Success(postId)
         } catch (e: Exception) {
@@ -447,7 +689,14 @@ class FirestoreFeedRepository @Inject constructor(
     
     override suspend fun likePost(postId: String, userId: String): Result<Unit> {
         return try {
-            val postRef = postsCollection.document(postId)
+            val (userCity, userState, _) = getLocationForOperation()
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            val postRef = locationCollection.document(postId)
             
             // Usar transação para garantir atomicidade
             firestore.runTransaction { transaction ->
@@ -479,7 +728,14 @@ class FirestoreFeedRepository @Inject constructor(
     
     override suspend fun unlikePost(postId: String, userId: String): Result<Unit> {
         return try {
-            val postRef = postsCollection.document(postId)
+            val (userCity, userState, _) = getLocationForOperation()
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            val postRef = locationCollection.document(postId)
             
             firestore.runTransaction { transaction ->
                 val postDoc = transaction.get(postRef)
@@ -517,31 +773,27 @@ class FirestoreFeedRepository @Inject constructor(
             val userPostsCollection = getUserPostsCollection(userId)
             val userPostDoc = userPostsCollection.document(postId).get().await()
             
-            // Se não existe na subcoleção, verificar na coleção pública
-            if (!userPostDoc.exists()) {
-                val postDoc = postsCollection.document(postId).get().await()
-                val postData = postDoc.data
-                
-                if (!postDoc.exists() || postData?.get("userId") != userId) {
-                    return Result.Error(Exception("Post não encontrado ou você não tem permissão para excluir"))
-                }
-                
-                // Se existe apenas na coleção pública, deletar apenas dela
-                postsCollection.document(postId).delete().await()
-            } else {
-                // Se existe na subcoleção do usuário, deletar de ambas
-                // Deletar da subcoleção primeiro (fonte de verdade)
-                // A Cloud Function vai sincronizar e deletar da coleção pública automaticamente
-                userPostsCollection.document(postId).delete().await()
-                
-                // Também deletar da coleção pública para garantir sincronização imediata
-                try {
-                    postsCollection.document(postId).delete().await()
-                } catch (e: Exception) {
-                    android.util.Log.w("FirestoreFeedRepository", "Erro ao deletar post da coleção pública: ${e.message}")
-                    // Não falhar se pública falhar, a Cloud Function vai fazer a limpeza
-                }
+            // Obter locationId para buscar post (GPS é garantido, nunca null)
+            val (userCity, userState, _) = getLocationForOperation()
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            val postDoc = locationCollection.document(postId).get().await()
+            
+            if (!postDoc.exists()) {
+                return Result.Error(Exception("Post não encontrado"))
             }
+            
+            val postData = postDoc.data
+            if (postData?.get("userId") != userId) {
+                return Result.Error(Exception("Você não tem permissão para excluir este post"))
+            }
+            
+            // Deletar da coleção por localização
+            locationCollection.document(postId).delete().await()
             
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -576,14 +828,37 @@ class FirestoreFeedRepository @Inject constructor(
     }
     
     // Helper para obter subcoleção de comentários de um post
-    private fun getPostCommentsCollection(postId: String) = 
-        postsCollection.document(postId).collection("comments")
+    // Comentários são subcoleções do post, então precisamos do postId e localização
+    private suspend fun getPostCommentsCollection(postId: String) = run {
+        val (city, state, _) = getLocationForOperation()
+        val locationCollection = LocationHelper.getLocationCollection(
+            firestore,
+            "posts",
+            city,
+            state
+        )
+        locationCollection.document(postId).collection("comments")
+    }
     
     override fun observePostComments(postId: String): Flow<List<com.taskgoapp.taskgo.feature.feed.presentation.components.CommentItem>> = callbackFlow {
         val listenerRegistration: ListenerRegistration
         
         try {
-            val commentsCollection = getPostCommentsCollection(postId)
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            val commentsCollection = locationCollection.document(postId).collection("comments")
             
             listenerRegistration = commentsCollection
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.ASCENDING)
@@ -665,6 +940,17 @@ class FirestoreFeedRepository @Inject constructor(
             
             // Atualizar contador de comentários do post
             try {
+                val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            if (userCity.isNotBlank() && userState.isNotBlank()) {
+                val postsCollection = LocationHelper.getLocationCollection(
+                    firestore,
+                    "posts",
+                    userCity,
+                    userState
+                )
                 val postRef = postsCollection.document(postId)
                 firestore.runTransaction { transaction ->
                     val postDoc = transaction.get(postRef)
@@ -676,9 +962,11 @@ class FirestoreFeedRepository @Inject constructor(
                         ))
                     }
                 }.await()
+            } else {
+                android.util.Log.w("FirestoreFeedRepository", "Usuário não tem city/state para atualizar contador")
+            }
             } catch (e: Exception) {
                 android.util.Log.w("FirestoreFeedRepository", "Erro ao atualizar contador de comentários: ${e.message}")
-                // Não falhar se não conseguir atualizar o contador
             }
             
             android.util.Log.d("FirestoreFeedRepository", "Comentário criado com sucesso: $commentId")
@@ -711,17 +999,29 @@ class FirestoreFeedRepository @Inject constructor(
             
             // Atualizar contador de comentários do post
             try {
-                val postRef = postsCollection.document(postId)
-                firestore.runTransaction { transaction ->
-                    val postDoc = transaction.get(postRef)
-                    if (postDoc.exists()) {
-                        val currentCount = (postDoc.data?.get("commentsCount") as? Number)?.toInt() ?: 0
-                        transaction.update(postRef, mapOf(
-                            "commentsCount" to (currentCount - 1).coerceAtLeast(0),
-                            "updatedAt" to FieldValue.serverTimestamp()
-                        ))
-                    }
-                }.await()
+                val currentUser = userRepository.observeCurrentUser().first()
+                val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+                val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+                
+                if (userCity.isNotBlank() && userState.isNotBlank()) {
+                    val postsCollection = LocationHelper.getLocationCollection(
+                        firestore,
+                        "posts",
+                        userCity,
+                        userState
+                    )
+                    val postRef = postsCollection.document(postId)
+                    firestore.runTransaction { transaction ->
+                        val postDoc = transaction.get(postRef)
+                        if (postDoc.exists()) {
+                            val currentCount = (postDoc.data?.get("commentsCount") as? Number)?.toInt() ?: 0
+                            transaction.update(postRef, mapOf(
+                                "commentsCount" to (currentCount - 1).coerceAtLeast(0),
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            ))
+                        }
+                    }.await()
+                }
             } catch (e: Exception) {
                 android.util.Log.w("FirestoreFeedRepository", "Erro ao atualizar contador de comentários: ${e.message}")
             }
@@ -835,14 +1135,23 @@ class FirestoreFeedRepository @Inject constructor(
             val userId = currentUserId
                 ?: return Result.Error(Exception("Usuário não autenticado"))
             
+            // Obter locationId para buscar post (GPS é garantido, nunca null)
+            val (userCity, userState, _) = getLocationForOperation()
+            
             // Buscar dados do usuário
             val userDoc = firestore.collection("users").document(userId).get().await()
             val userData = userDoc.data
             val userName = userData?.get("displayName") as? String ?: "Usuário"
             val userAvatarUrl = userData?.get("photoURL") as? String
             
-            val ratingsCollection = firestore
-                .collection("posts")
+            // CRÍTICO: Buscar na coleção regional
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            val ratingsCollection = locationCollection
                 .document(postId)
                 .collection("ratings")
             
@@ -893,8 +1202,18 @@ class FirestoreFeedRepository @Inject constructor(
         return try {
             val userId = currentUserId ?: return null
             
-            val ratingsCollection = firestore
-                .collection("posts")
+            // Obter locationId para buscar post (GPS é garantido, nunca null)
+            val (userCity, userState, _) = getLocationForOperation()
+            
+            // CRÍTICO: Buscar na coleção regional
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            
+            val ratingsCollection = locationCollection
                 .document(postId)
                 .collection("ratings")
             
@@ -929,8 +1248,14 @@ class FirestoreFeedRepository @Inject constructor(
     
     private suspend fun updatePostRatingAverage(postId: String) {
         try {
-            val ratingsCollection = firestore
-                .collection("posts")
+            val (userCity, userState, _) = getLocationForOperation()
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "posts",
+                userCity,
+                userState
+            )
+            val ratingsCollection = locationCollection
                 .document(postId)
                 .collection("ratings")
             
@@ -943,7 +1268,7 @@ class FirestoreFeedRepository @Inject constructor(
                 val average = ratingsList.average()
                 val count = ratingsList.size
                 
-                postsCollection.document(postId).update(
+                locationCollection.document(postId).update(
                     mapOf(
                         "ratingAverage" to average,
                         "ratingCount" to count,

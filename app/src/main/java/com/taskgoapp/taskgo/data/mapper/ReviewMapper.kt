@@ -12,7 +12,7 @@ object ReviewMapper {
             type = when (this.type) {
                 "PRODUCT" -> ReviewType.PRODUCT
                 "SERVICE" -> ReviewType.SERVICE
-                "PROVIDER" -> ReviewType.PROVIDER
+                "PARTNER" -> ReviewType.PARTNER
                 else -> ReviewType.PRODUCT
             },
             targetId = this.targetId,
@@ -36,7 +36,7 @@ object ReviewMapper {
             type = when (this.type) {
                 ReviewType.PRODUCT -> "PRODUCT"
                 ReviewType.SERVICE -> "SERVICE"
-                ReviewType.PROVIDER -> "PROVIDER"
+                ReviewType.PARTNER -> "PARTNER"
             },
             targetId = this.targetId,
             reviewerId = this.reviewerId,
@@ -49,7 +49,8 @@ object ReviewMapper {
             updatedAt = this.updatedAt?.let { java.util.Date(it) },
             orderId = this.orderId,
             helpfulCount = this.helpfulCount,
-            verifiedPurchase = this.verifiedPurchase
+            verifiedPurchase = this.verifiedPurchase,
+            locationId = null // Será preenchido em createReview se for PRODUCT ou SERVICE
         )
     }
 }

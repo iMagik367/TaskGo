@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.feature.orders.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +17,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.data.firestore.models.PurchaseOrderFirestore
+import com.taskgoapp.taskgo.core.model.onSuccess
+import com.taskgoapp.taskgo.core.model.onFailure
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,8 +81,9 @@ fun ShipmentScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = TaskGoSurface
-                    )
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -431,9 +435,9 @@ class ShipmentViewModel @Inject constructor(
             
             // Transferir pagamento para o vendedor após confirmação de envio
             val transferResult = functionsService.transferPaymentToSeller(orderId)
-            transferResult.onSuccess {
+            transferResult.onSuccess { _: Map<String, Any> ->
                 android.util.Log.d("ShipmentVM", "Pagamento transferido com sucesso para o vendedor")
-            }.onFailure { error ->
+            }.onFailure { error: Throwable ->
                 android.util.Log.e("ShipmentVM", "Erro ao transferir pagamento: ${error.message}", error)
                 // Não lançar exceção aqui - o envio foi confirmado, apenas logar o erro
             }
@@ -472,9 +476,9 @@ class ShipmentViewModel @Inject constructor(
             
             // Transferir pagamento para o vendedor após confirmação de entrega local
             val transferResult = functionsService.transferPaymentToSeller(orderId)
-            transferResult.onSuccess {
+            transferResult.onSuccess { _: Map<String, Any> ->
                 android.util.Log.d("ShipmentVM", "Pagamento transferido com sucesso para o vendedor")
-            }.onFailure { error ->
+            }.onFailure { error: Throwable ->
                 android.util.Log.e("ShipmentVM", "Erro ao transferir pagamento: ${error.message}", error)
                 // Não lançar exceção aqui - a entrega foi confirmada, apenas logar o erro
             }

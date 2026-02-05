@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.settings.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -37,7 +38,11 @@ fun SuporteScreen(
         ) {
             // Opção: Chat AI TaskGo
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Row(
                     modifier = Modifier
@@ -70,7 +75,11 @@ fun SuporteScreen(
 
             // Opção: Sobre o TaskGo
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Row(
                     modifier = Modifier

@@ -15,6 +15,7 @@ import com.taskgoapp.taskgo.core.ai.ImageData
 import com.taskgoapp.taskgo.core.ai.TextToSpeechManager
 import com.taskgoapp.taskgo.feature.chatai.data.ChatAttachment
 import com.taskgoapp.taskgo.feature.chatai.data.ChatStorage
+import com.taskgoapp.taskgo.core.model.fold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 import android.util.Base64 as AndroidBase64
 import javax.inject.Inject
 
@@ -76,7 +78,7 @@ class ChatAIViewModel @Inject constructor(
             try {
                 val historyResult = functionsService.getConversationHistory(chatId)
                 historyResult.fold(
-                    onSuccess = { data ->
+                    onSuccess = { data: Map<String, Any> ->
                         // Se houver mensagens no Firestore, usar elas (mais atualizadas)
                         val firestoreMessages = (data["messages"] as? List<Map<String, Any>>)?.mapNotNull { msgData ->
                             try {
@@ -156,7 +158,7 @@ class ChatAIViewModel @Inject constructor(
                     // Criar nova conversa no Firestore - BLOQUEAR se falhar
                     val createResult = functionsService.createConversation()
                     createResult.fold(
-                        onSuccess = { data ->
+                        onSuccess = { data: Map<String, Any> ->
                             conversationId = data["conversationId"] as? String
                             if (conversationId != null) {
                                 _uiState.value = _uiState.value.copy(chatId = conversationId)
@@ -165,13 +167,14 @@ class ChatAIViewModel @Inject constructor(
                                 throw IllegalStateException("Conversa criada mas conversationId é null")
                             }
                         },
-                        onFailure = { error ->
+                        onFailure = { error: Throwable ->
                             android.util.Log.e("ChatAIViewModel", "Erro ao criar conversa no Firestore: ${error.message}", error)
                             _uiState.value = _uiState.value.copy(
                                 isLoading = false,
                                 error = "Erro ao criar conversa: ${error.message ?: "Erro desconhecido"}"
                             )
-                            return@launch // Bloquear envio se não conseguir criar conversa
+                            // Bloquear envio se não conseguir criar conversa - não usar return@launch dentro de fold
+                            return@fold
                         }
                     )
                 }
@@ -188,7 +191,7 @@ class ChatAIViewModel @Inject constructor(
                 // Usar Cloud Function aiChatProxy que salva automaticamente no Firestore
                 val chatResult = functionsService.aiChatProxy(text, conversationId)
                 chatResult.fold(
-                    onSuccess = { data ->
+                    onSuccess = { data: Map<String, Any> ->
                         val responseText = data["response"] as? String ?: ""
                         val returnedConversationId = data["conversationId"] as? String
                         
@@ -295,11 +298,11 @@ class ChatAIViewModel @Inject constructor(
                 setVoiceState(VoiceState.RECORDING)
                 val result = audioRecorderManager.startRecording()
                 result.fold(
-                    onSuccess = { file ->
+                    onSuccess = { file: File ->
                         // Gravação iniciada com sucesso
                         android.util.Log.d("ChatAIViewModel", "Gravação iniciada: ${file.absolutePath}")
                     },
-                    onFailure = { error ->
+                    onFailure = { error: Throwable ->
                         android.util.Log.e("ChatAIViewModel", "Erro ao iniciar gravação: ${error.message}", error)
                         setVoiceState(VoiceState.IDLE)
                         _uiState.value = _uiState.value.copy(
@@ -333,14 +336,14 @@ class ChatAIViewModel @Inject constructor(
                 
                 val result = audioRecorderManager.stopRecording()
                 result.fold(
-                    onSuccess = { audioFile ->
+                    onSuccess = { audioFile: File? ->
                         if (audioFile != null && audioFile.exists()) {
                             // Converter áudio para texto
                             android.util.Log.d("ChatAIViewModel", "Convertendo áudio para texto: ${audioFile.absolutePath}")
                             val speechResult = speechToTextService.recognizeSpeech(audioFile)
                             
                             speechResult.fold(
-                                onSuccess = { transcript ->
+                                onSuccess = { transcript: String ->
                                     android.util.Log.d("ChatAIViewModel", "Transcrição: $transcript")
                                     // Enviar mensagem como texto
                                     if (transcript.isNotBlank()) {

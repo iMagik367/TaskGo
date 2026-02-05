@@ -28,6 +28,8 @@ import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.data.local.datastore.PreferencesManager
 import com.taskgoapp.taskgo.core.security.LGPDComplianceManager
 import com.taskgoapp.taskgo.core.security.PDFExporter
+import com.taskgoapp.taskgo.core.model.fold
+import dagger.hilt.android.EntryPointAccessors
 import com.google.firebase.auth.FirebaseAuth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -68,10 +70,9 @@ fun SecuritySettingsScreen(
     }
     
     val lgpdManager = remember(context) {
-        com.taskgoapp.taskgo.core.security.LGPDComplianceManager(
-            context,
-            com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
-        )
+        val app = context.applicationContext as com.taskgoapp.taskgo.TaskGoApp
+        EntryPointAccessors.fromApplication(app, com.taskgoapp.taskgo.di.LGPDEntryPoint::class.java)
+            .lgpdComplianceManager()
     }
     val pdfExporter = remember(context) {
         com.taskgoapp.taskgo.core.security.PDFExporter(context)
@@ -105,7 +106,11 @@ fun SecuritySettingsScreen(
             // Verificação de Identidade
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -145,7 +150,11 @@ fun SecuritySettingsScreen(
             // Autenticação de Duas Etapas
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -198,7 +207,11 @@ fun SecuritySettingsScreen(
             // Gerenciamento de Proteção de Dados (LGPD)
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -239,17 +252,18 @@ fun SecuritySettingsScreen(
                                         try {
                                             // Primeiro, obter os dados
                                             val dataResult = lgpdManager.exportUserData(currentUser.uid)
-                                            dataResult.fold(
-                                                onSuccess = { export ->
-                                                    // Gerar PDF
+                                            when {
+                                                dataResult.isSuccess -> {
+                                                    val export = dataResult.getOrNull()!!
+                                                    // Gerar PDF - precisa estar em coroutine (já estamos em launch)
                                                     val pdfResult = pdfExporter.exportUserDataToPDF(
                                                         currentUser.uid,
                                                         export.data
                                                     )
                                                     pdfResult.fold(
-                                                        onSuccess = { pdfFile ->
+                                                        onSuccess = { pdfFile: java.io.File ->
                                                             // Compartilhar o arquivo
-                                                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                                                                 val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                                                                     FileProvider.getUriForFile(
                                                                         context,
@@ -267,13 +281,14 @@ fun SecuritySettingsScreen(
                                                             showExportMessage = "PDF exportado com sucesso!\nLocalização: ${pdfFile.absolutePath}"
                                                             isExporting = false
                                                         },
-                                                        onFailure = { error ->
+                                                        onFailure = { error: Throwable ->
                                                             showExportMessage = "Erro ao gerar PDF: ${error.message}"
                                                             isExporting = false
                                                         }
                                                     )
-                                                },
-                                                onFailure = { error ->
+                                                }
+                                                dataResult.isFailure -> {
+                                                    val error = dataResult.exceptionOrNull()!!
                                                     showExportMessage = "Erro ao obter dados: ${error.message}"
                                                     isExporting = false
                                                     // Tratar erro específico do Secure Token API bloqueado
@@ -281,7 +296,7 @@ fun SecuritySettingsScreen(
                                                         android.util.Log.w("SecuritySettingsScreen", "Firebase Secure Token API bloqueado. Verifique configurações do Google Cloud.")
                                                     }
                                                 }
-                                            )
+                                            }
                                         } catch (e: Exception) {
                                             showExportMessage = "Erro: ${e.message}"
                                             isExporting = false
@@ -525,9 +540,10 @@ fun SecuritySettingsScreen(
                                     persistentScope.launch {
                                         try {
                                             // 1. Chamar Cloud Function para deletar dados
-                                            val functionsService = com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService(
-                                                com.google.firebase.functions.FirebaseFunctions.getInstance()
-                                            )
+                                            val functionsService = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                                                context.applicationContext as com.taskgoapp.taskgo.TaskGoApp,
+                                                com.taskgoapp.taskgo.di.FirebaseFunctionsServiceEntryPoint::class.java
+                                            ).firebaseFunctionsService()
                                             val deleteResult = functionsService.deleteUserAccount()
                                             
                                             // Fazer logout IMEDIATAMENTE antes mesmo de aguardar resultado
@@ -546,7 +562,7 @@ fun SecuritySettingsScreen(
                                             }
                                             
                                             deleteResult.fold(
-                                                onSuccess = { data ->
+                                                onSuccess = { data: Map<String, Any> ->
                                                     val message = data["message"] as? String ?: "Conta excluída com sucesso"
                                                     android.util.Log.d("SecuritySettingsScreen", message)
                                                     // Mensagem não precisa ser mostrada, pois já navegamos para login

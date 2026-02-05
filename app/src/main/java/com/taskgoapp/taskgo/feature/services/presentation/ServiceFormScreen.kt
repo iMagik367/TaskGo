@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -140,7 +141,7 @@ fun ServiceFormScreen(
             )
 
             // Categoria principal (para compatibilidade) - APENAS se NÃO for prestador
-            if (uiState.accountType != AccountType.PRESTADOR) {
+            if (uiState.accountType != AccountType.PARCEIRO) {
                 var expanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(
                     expanded = expanded,
@@ -180,7 +181,8 @@ fun ServiceFormScreen(
             // Categorias que o prestador oferece (checkboxes)
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -218,7 +220,7 @@ fun ServiceFormScreen(
             }
 
             // Preço (não exibir para prestadores)
-            if (uiState.accountType != com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR) {
+            if (uiState.accountType != com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO) {
                 OutlinedTextField(
                     value = uiState.price,
                     onValueChange = { newValue ->
@@ -239,7 +241,8 @@ fun ServiceFormScreen(
             // Imagens
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -261,7 +264,8 @@ fun ServiceFormScreen(
             // Vídeos
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = TaskGoSurface)
+                colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -319,7 +323,8 @@ fun ServiceFormScreen(
             uiState.error?.let { error ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = TaskGoError.copy(alpha = 0.1f))
+                    colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Text(
                         text = error,

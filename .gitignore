@@ -70,3 +70,21 @@ keystore.properties
 *-firebase-adminsdk-*.json
 firebase-adminsdk-*.json
 service-account-*.json
+
+# Arquivos de configuração com chaves sensíveis
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Arquivos de configuração do backend
+backend/.env
+backend/.env.local
+backend/.env.*.local
+
+# Arquivos temporários e de build
+*.tmp
+.tmp/
+compile_output.txt
+build_output*.txt
+bundle_*.txt

@@ -98,37 +98,25 @@ class ServicesViewModel @Inject constructor(
     }
     
     private fun loadUserLocation() {
-        viewModelScope.launch {
-            try {
-                // Tentar obter localização GPS primeiro
-                val location = locationManager.getCurrentLocation()
-                if (location != null) {
-                    val address = locationManager.getAddressFromLocation(
-                        location.latitude,
-                        location.longitude
-                    )
-                    _userCity.value = address?.locality
-                    _userState.value = address?.adminArea
-                    android.util.Log.d("ServicesViewModel", "📍 Localização GPS obtida: city=${_userCity.value}, state=${_userState.value}")
-                } else {
-                    // Fallback: usar localização do perfil
-                    loadUserLocationFromProfile()
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("ServicesViewModel", "Erro ao obter localização GPS: ${e.message}", e)
-                loadUserLocationFromProfile()
-            }
-        }
-    }
-    
-    private fun loadUserLocationFromProfile() {
+        // LEI MÁXIMA DO TASKGO: Usar APENAS city/state do perfil do usuário (cadastro)
+        // NUNCA usar GPS para city/state - GPS apenas para coordenadas (mapa)
         viewModelScope.launch {
             try {
                 userRepository.observeCurrentUser().collect { user ->
-                    _userCity.value = user?.city
-                    // UserProfile agora tem state diretamente (adicionado na versão 88)
-                    _userState.value = user?.state
-                    android.util.Log.d("ServicesViewModel", "Localizacao do perfil obtida: city=${_userCity.value}, state=${_userState.value}")
+                    val userCity = user?.city?.takeIf { it.isNotBlank() }
+                    val userState = user?.state?.takeIf { it.isNotBlank() }
+                    
+                    if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+                        android.util.Log.e("ServicesViewModel", "❌ ERRO CRÍTICO: Usuário não possui city/state válidos no cadastro. " +
+                                "City: ${user?.city ?: "null"}, State: ${user?.state ?: "null"}. " +
+                                "O usuário DEVE completar o cadastro com cidade e estado.")
+                        // Não definir como null - manter valores anteriores ou lançar erro
+                        throw Exception("Usuário não possui city/state no cadastro. Complete seu perfil.")
+                    }
+                    
+                    _userCity.value = userCity
+                    _userState.value = userState
+                    android.util.Log.d("ServicesViewModel", "📍 Localização do perfil obtida: city=$userCity, state=$userState")
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ServicesViewModel", "Erro ao obter localizacao do perfil: ${e.message}", e)
@@ -143,13 +131,13 @@ class ServicesViewModel @Inject constructor(
         _userCity,
         _userState
     ) { accountType, category, preferredCategoriesList, userCity, userState ->
-        if (accountType == AccountType.PARCEIRO || accountType == AccountType.PRESTADOR) { // Suporta legacy PRESTADOR
+        if (accountType == AccountType.PARCEIRO 
+            && userCity != null && userState != null) { // Suporta legacy PRESTADOR
             // CRÍTICO: Usar cidade e estado para observar ordens da região correta
             
             // Se há categorias preferidas e nenhuma categoria específica foi selecionada,
             // filtrar ordens por preferredCategories
             if (category != null && category.isNotBlank()) {
-                // ✅ observeLocalServiceOrders agora usa LocationStateManager automaticamente
                 orderRepository.observeLocalServiceOrders(category = category)
             } else if (preferredCategoriesList.isNotEmpty()) {
                 // Filtrar ordens pelas categorias preferidas do Parceiro
@@ -174,12 +162,16 @@ class ServicesViewModel @Inject constructor(
             
             var filtered = orders
             
-            // Filtrar por categorias preferidas
-            if ((accountTypeValue == AccountType.PARCEIRO || accountTypeValue == AccountType.PRESTADOR) 
+            // CRÍTICO: Filtrar ordens por preferredCategories do parceiro
+            // REGRA: Parceiro vê apenas ordens nas categorias que ele escolheu no cadastro
+            if (accountTypeValue == AccountType.PARCEIRO 
                 && selectedCategory == null 
                 && preferredCategoriesList.isNotEmpty()) {
                 filtered = filtered.filter { order -> 
-                    preferredCategoriesList.contains(order.category) 
+                    val orderCategory = order.category?.lowercase() ?: ""
+                    preferredCategoriesList.any { preferredCategory ->
+                        preferredCategory.lowercase() == orderCategory
+                    }
                 }
             }
             
@@ -281,17 +273,19 @@ class ServicesViewModel @Inject constructor(
         emptyList()
     )
     
+    private val _selectedCategoryForProviders = MutableStateFlow<String?>(null)
+    
     // Prestadores filtrados por categoria (para cliente/vendedor)
     val filteredProviders: StateFlow<List<com.taskgoapp.taskgo.data.firestore.models.UserFirestore>> = combine(
         _allProviders,
-        filterState
-    ) { providers, filters ->
-        if (filters.selectedCategories.isEmpty()) {
+        _selectedCategoryForProviders
+    ) { providers, selectedCategory ->
+        if (selectedCategory == null) {
             emptyList()
         } else {
             providers.filter { provider ->
                 provider.preferredCategories?.any { category ->
-                    filters.selectedCategories.contains(category)
+                    category.equals(selectedCategory, ignoreCase = true)
                 } == true
             }
         }
@@ -350,6 +344,7 @@ class ServicesViewModel @Inject constructor(
     
     fun updateSelectedCategory(category: String?) {
         _selectedCategoryForOrders.value = category
+        _selectedCategoryForProviders.value = category
     }
 
     private fun applyFiltersSync(
@@ -375,23 +370,8 @@ class ServicesViewModel @Inject constructor(
             }
         }
 
-        // Filtrar por localização
-        filters.location?.let { location ->
-            if (location.city != null && location.city.isNotEmpty()) {
-                filtered = filtered.filter { order ->
-                    order.city.equals(location.city, ignoreCase = true)
-                }
-            }
-            if (location.state != null && location.state.isNotEmpty()) {
-                filtered = filtered.filter { order ->
-                    order.state.equals(location.state, ignoreCase = true)
-                }
-            }
-            
-            // Filtrar por raio usando GPS (será aplicado assincronamente quando necessário)
-            // Por enquanto, apenas filtra por cidade se especificada
-            // TODO: Implementar filtro assíncrono quando necessário usando LaunchedEffect
-        }
+        // REMOVIDO: Filtro por localização manual
+        // Localização sempre automática do perfil do usuário
 
         // Filtrar por avaliação
         filters.minRating?.let { minRating ->

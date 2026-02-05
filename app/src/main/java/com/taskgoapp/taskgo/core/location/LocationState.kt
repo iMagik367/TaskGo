@@ -2,40 +2,42 @@ package com.taskgoapp.taskgo.core.location
 
 /**
  * Estado global de localização do usuário
- * Fonte única de verdade para city, state e locationId
+ * Fonte única de verdade para localização operacional
  * 
- * ✅ Ready: Localização está pronta e válida
+ * ✅ Ready: Localização está pronta e válida (contém OperationalLocation)
  * ⏳ Loading: Localização ainda não está disponível
- * ❌ Error: Erro ao obter localização
+ * ❌ Error: Erro ao obter localização (não bloqueia o app)
  */
 sealed class LocationState {
     /**
      * Localização ainda não está disponível
-     * Nenhuma query Firestore por localização deve ocorrer
+     * O app pode iniciar em Loading e rapidamente mudar para Ready
      */
     object Loading : LocationState()
     
     /**
      * Localização está pronta e válida
-     * Todos os valores (city, state, locationId) estão resolvidos
+     * Contém OperationalLocation que é a fonte única de verdade
      */
     data class Ready(
-        val city: String,
-        val state: String,
-        val locationId: String
+        val location: OperationalLocation
     ) : LocationState() {
         init {
-            require(city.isNotBlank()) { "City cannot be blank in LocationState.Ready" }
-            require(state.isNotBlank()) { "State cannot be blank in LocationState.Ready" }
-            require(locationId.isNotBlank() && locationId != "unknown") { 
-                "LocationId cannot be blank or 'unknown' in LocationState.Ready" 
+            require(location.locationId.isNotBlank()) { 
+                "LocationId cannot be blank in LocationState.Ready" 
+            }
+            require(location.locationId != "unknown") { 
+                "LocationId cannot be 'unknown' in LocationState.Ready" 
+            }
+            require(location.locationId != "unknown_unknown") { 
+                "LocationId cannot be 'unknown_unknown' in LocationState.Ready" 
             }
         }
     }
     
     /**
      * Erro ao obter localização
-     * Nenhuma query Firestore por localização deve ocorrer
+     * NÃO bloqueia o app - apenas informa que houve problema
      */
     data class Error(val reason: String) : LocationState()
 }

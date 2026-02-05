@@ -4,7 +4,14 @@ import * as functions from 'firebase-functions';
 import {COLLECTIONS, ORDER_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
-import {parseLocation, getLocationCollection, getUserLocation, normalizeLocationId} from './utils/location';
+import {getUserLocation, normalizeLocationId, validateCityAndState} from './utils/location';
+import {
+  ordersPath,
+  servicesPath,
+  getUserLocationId,
+  createStandardPayload,
+  createUpdatePayload,
+} from './utils/firestorePaths';
 
 type OrderDocument = {
   clientId: string;
@@ -41,6 +48,25 @@ export const createOrder = functions.https.onCall(async (data, context) => {
     const db = getFirestore();
     const {serviceId, category, details, location, budget, dueDate} = data;
     
+    // CRÍTICO: Apenas clientes podem criar ordens de serviço
+    const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User not found');
+    }
+    
+    const userData = userDoc.data();
+    const userRole = userData?.role || 'user';
+    const accountType = userData?.accountType || 'CLIENTE';
+    
+    // Apenas clientes podem criar ordens
+    if (userRole === 'partner' ||
+        accountType === 'PARCEIRO' || accountType === 'PRESTADOR') {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only clients can create service orders. Partners cannot create orders.'
+      );
+    }
+    
     functions.logger.info(`Creating order for user ${userId}`, {
       serviceId: serviceId || null,
       category: category || null,
@@ -58,62 +84,116 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       );
     }
 
-    if (!details || !location) {
+    if (!details) {
       throw new functions.https.HttpsError(
         'invalid-argument',
-        'Details and location are required'
+        'Details are required'
       );
     }
-
-    // CRÍTICO: Extrair cidade e estado da localização para organizar por região
-    const {city, state} = parseLocation(location);
     
-    // Se não conseguir extrair da localização, tentar obter do perfil do usuário
-    let finalCity = city;
-    let finalState = state;
+    // CRÍTICO: Usar APENAS city/state do perfil do usuário (cadastro) - LEI MÁXIMA DO TASKGO
+    // GPS (latitude/longitude) é usado APENAS para coordenadas no mapa, NÃO para determinar city/state
+    let finalCity: string;
+    let finalState: string;
+    let locationId: string;
     
-    if (!finalCity || !finalState) {
+    // PRIORIDADE 1: Usar city/state enviados pelo frontend (vêm do perfil do usuário)
+    if (data.city && data.state) {
+      const validated = validateCityAndState(data.city, data.state);
+      if (!validated.valid) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          `Invalid location data: ${validated.error}`,
+        );
+      }
+      finalCity = validated.city!;
+      finalState = validated.state!;
+      locationId = normalizeLocationId(finalCity, finalState);
+      
+      functions.logger.info('📍 createOrder: Usando city/state do perfil (enviado pelo frontend)', {
+        userId,
+        city: finalCity,
+        state: finalState,
+        locationId,
+        latitude: data.latitude, // GPS apenas para coordenadas
+        longitude: data.longitude, // GPS apenas para coordenadas
+      });
+    } else {
+      // FALLBACK: Obter do perfil do usuário no Firestore (se frontend não enviou)
+      functions.logger.warn('📍 createOrder: Frontend não enviou city/state, obtendo do perfil do usuário', {userId});
       const userLocation = await getUserLocation(db, userId);
-      finalCity = finalCity || userLocation.city;
-      finalState = finalState || userLocation.state;
-    }
+      finalCity = userLocation.city;
+      finalState = userLocation.state;
+      
+      if (!finalCity || !finalState) {
+        functions.logger.warn('📍 createOrder: Usuário sem localização no perfil', {
+          userId,
+          city: finalCity || 'empty',
+          state: finalState || 'empty',
+        });
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Location not available. User must have city and state in their profile.'
+        );
+      }
 
-    // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
-    const locationId = normalizeLocationId(finalCity || 'unknown', finalState || 'unknown');
+      // Obter locationId
+      locationId = await getUserLocationId(db, userId);
+      
+      functions.logger.info('📍 createOrder: Usando city/state do perfil do Firestore', {
+        userId,
+        city: finalCity,
+        state: finalState,
+        locationId,
+      });
+    }
     const firestorePath = `locations/${locationId}/orders`;
     
+    // CRÍTICO: Validar que city e state estão presentes e válidos
+    if (!finalCity || !finalState || finalCity.trim() === '' || finalState.trim() === '') {
+      const errorMsg = `User ${userId} does not have valid location information ` +
+        `(city='${finalCity}', state='${finalState}'). ` +
+        'Cannot create order without valid location.';
+      functions.logger.error(errorMsg);
+      throw new functions.https.HttpsError('failed-precondition', errorMsg);
+    }
+    
+    // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização
     functions.logger.info('📍 LOCATION TRACE', {
-      function: 'onServiceOrderCreated',
+      function: 'createOrder',
       userId,
-      city: finalCity || 'unknown',
-      state: finalState || 'unknown',
+      city: finalCity,
+      state: finalState,
       locationId,
       firestorePath,
-      rawCity: finalCity || '',
-      rawState: finalState || '',
-      originalLocation: location,
-      parsedCity: city,
-      parsedState: state,
+      rawCity: finalCity,
+      rawState: finalState,
+      originalLocation: location || '',
       timestamp: new Date().toISOString(),
     });
 
-    const orderData: OrderDocument = {
+    // Criar dados do pedido usando payload padrão (orders não têm campo active)
+    const orderDataRaw: Record<string, unknown> = {
       clientId: context.auth!.uid,
       details,
       location,
       city: finalCity, // Adicionar cidade explicitamente
       state: finalState, // Adicionar estado explicitamente
+      locationId: locationId, // CRÍTICO: Adicionar locationId para busca eficiente (SSR, reviews, etc)
       budget: budget || null,
       dueDate: dueDate || null,
       status: ORDER_STATUS.PENDING,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+
+    const orderData = createStandardPayload(orderDataRaw, undefined); // Orders não têm campo active
+    // Remover active do payload se foi adicionado
+    delete (orderData as Record<string, unknown>).active;
 
     // If serviceId is provided, create order for specific service
     if (serviceId) {
-      // Verify service exists
-      const serviceDoc = await db.collection(COLLECTIONS.SERVICES).doc(serviceId).get();
+      // Verify service exists - buscar na coleção por localização
+      const locationServicesCollection = servicesPath(db, locationId);
+      const serviceDoc = await locationServicesCollection.doc(serviceId).get();
       if (!serviceDoc.exists) {
         throw new functions.https.HttpsError('not-found', 'Service not found');
       }
@@ -130,13 +210,13 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       orderData.serviceId = serviceId;
       orderData.category = service?.category || category;
 
-      // CRÍTICO: Salvar na coleção pública por localização
-      const locationOrdersCollection = getLocationCollection(db, COLLECTIONS.ORDERS, finalCity, finalState);
+      // CRÍTICO: Salvar APENAS na coleção pública por localização
+      const locationOrdersCollection = ordersPath(db, locationId);
       const orderRef = await locationOrdersCollection.add(orderData);
       
       // 📍 PROOF: Logar path REAL onde o dado foi gravado
       functions.logger.info('📍 BACKEND WRITE PROOF', {
-        function: 'onServiceOrderCreated (specific service)',
+        function: 'createOrder (specific service)',
         orderId: orderRef.id,
         actualFirestorePath: `locations/${locationId}/orders/${orderRef.id}`,
         collectionId: locationOrdersCollection.id,
@@ -144,17 +224,14 @@ export const createOrder = functions.https.onCall(async (data, context) => {
         timestamp: new Date().toISOString(),
       });
       
-      // Também salvar na coleção global para compatibilidade (será removido futuramente)
-      await db.collection(COLLECTIONS.ORDERS).doc(orderRef.id).set(orderData);
-      
       functions.logger.info(`Order document created in Firestore: ${orderRef.id}`, {
         orderId: orderRef.id,
         clientId: userId,
-        providerId: orderData.providerId || null,
+        providerId: (orderData as OrderDocument).providerId || null,
         serviceId: serviceId,
         status: ORDER_STATUS.PENDING,
         location: `${finalCity}, ${finalState}`,
-        locationCollection: `locations/${normalizeLocationId(finalCity, finalState)}/orders`,
+        locationCollection: `locations/${locationId}/orders`,
       });
       
       // Create notification for specific provider
@@ -182,22 +259,19 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       // No providerId - this is an open order
       orderData.providerId = null;
 
-      // CRÍTICO: Salvar na coleção pública por localização
-      const locationOrdersCollection = getLocationCollection(db, COLLECTIONS.ORDERS, finalCity, finalState);
+      // CRÍTICO: Salvar APENAS na coleção pública por localização
+      const locationOrdersCollection = ordersPath(db, locationId);
       const orderRef = await locationOrdersCollection.add(orderData);
       
       // 📍 PROOF: Logar path REAL onde o dado foi gravado
       functions.logger.info('📍 BACKEND WRITE PROOF', {
-        function: 'onServiceOrderCreated (open order)',
+        function: 'createOrder (open order)',
         orderId: orderRef.id,
         actualFirestorePath: `locations/${locationId}/orders/${orderRef.id}`,
         collectionId: locationOrdersCollection.id,
         documentId: orderRef.id,
         timestamp: new Date().toISOString(),
       });
-      
-      // Também salvar na coleção global para compatibilidade (será removido futuramente)
-      await db.collection(COLLECTIONS.ORDERS).doc(orderRef.id).set(orderData);
 
       functions.logger.info(`✅ Open order created successfully for category ${category}: ${orderRef.id}`, {
         orderId: orderRef.id,
@@ -205,7 +279,7 @@ export const createOrder = functions.https.onCall(async (data, context) => {
         category: category,
         status: ORDER_STATUS.PENDING,
         location: `${finalCity}, ${finalState}`,
-        locationCollection: `locations/${normalizeLocationId(finalCity, finalState)}/orders`,
+        locationCollection: `locations/${locationId}/orders`,
       });
       return {orderId: orderRef.id};
     }
@@ -215,12 +289,12 @@ export const createOrder = functions.https.onCall(async (data, context) => {
       'Either serviceId or category must be provided'
     );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : 'Error occurred';
     const errorStack = error instanceof Error ? error.stack : undefined;
     functions.logger.error('❌ Error creating order:', {
       error: errorMessage,
       stack: errorStack,
-      userId: context.auth?.uid || 'unknown',
+      userId: context.auth?.uid || '',
       data: data,
     });
     throw handleError(error);
@@ -248,7 +322,14 @@ export const updateOrderStatus = functions.https.onCall(async (data, context) =>
       );
     }
 
-    const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
+    // Buscar pedido - precisa procurar em todas as localizações
+    // Primeiro, obter localização do usuário para buscar no path correto
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    
+    const locationOrdersCollection = ordersPath(db, locationId);
+    const orderDoc = await locationOrdersCollection.doc(orderId).get();
+    
     if (!orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
@@ -279,21 +360,24 @@ export const updateOrderStatus = functions.https.onCall(async (data, context) =>
       );
     }
 
-    const updateData: Record<string, unknown> = {
+    const updateDataRaw: Record<string, unknown> = {
       status,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
     if (status === ORDER_STATUS.PROPOSED && proposalDetails && isProvider) {
-      updateData.proposalDetails = proposalDetails;
-      updateData.proposedAt = admin.firestore.FieldValue.serverTimestamp();
+      updateDataRaw.proposalDetails = proposalDetails;
+      updateDataRaw.proposedAt = admin.firestore.FieldValue.serverTimestamp();
     }
 
     if (status === ORDER_STATUS.ACCEPTED && isClient) {
-      updateData.acceptedAt = admin.firestore.FieldValue.serverTimestamp();
+      updateDataRaw.acceptedAt = admin.firestore.FieldValue.serverTimestamp();
     }
 
-    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update(updateData);
+    // Criar payload de atualização padrão
+    const updateData = createUpdatePayload(updateDataRaw);
+
+    // Atualizar APENAS na coleção pública por localização
+    await locationOrdersCollection.doc(orderId).update(updateData);
 
     // Create appropriate notification
     const notifications = [];
@@ -347,20 +431,23 @@ export const getMyOrders = functions.https.onCall(async (data, context) => {
     const db = getFirestore();
     const {role, status} = data;
 
-    const ordersQuery = db.collection(COLLECTIONS.ORDERS);
+    // CRÍTICO: Obter localização do usuário para buscar orders na coleção correta
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    const locationOrdersCollection = ordersPath(db, locationId);
     
     let query: admin.firestore.Query;
     if (role === 'client') {
-      query = ordersQuery.where('clientId', '==', context.auth!.uid);
-    } else if (role === 'provider') {
-      query = ordersQuery.where('providerId', '==', context.auth!.uid);
+      query = locationOrdersCollection.where('clientId', '==', userId);
+    } else if (role === 'partner') {
+      query = locationOrdersCollection.where('providerId', '==', userId);
     } else {
       // Get all orders for user (both client and provider)
-      const clientOrders = await ordersQuery
-        .where('clientId', '==', context.auth!.uid)
+      const clientOrders = await locationOrdersCollection
+        .where('clientId', '==', userId)
         .get();
-      const providerOrders = await ordersQuery
-        .where('providerId', '==', context.auth!.uid)
+      const providerOrders = await locationOrdersCollection
+        .where('providerId', '==', userId)
         .get();
       
       const orders = [
@@ -392,9 +479,10 @@ export const getMyOrders = functions.https.onCall(async (data, context) => {
  * Trigger: Notify providers when a new service order is created
  * This function is triggered when a new order is created in Firestore
  * It finds all providers in the same category and region, then sends push notifications
+ * CRÍTICO: Trigger agora escuta em locations/{locationId}/orders/{orderId}
  */
 export const onServiceOrderCreated = functions.firestore
-  .document('orders/{orderId}')
+  .document('locations/{locationId}/orders/{orderId}')
   .onCreate(async (snapshot, context) => {
     const orderId = context.params.orderId;
     const orderData = snapshot.data();
@@ -417,12 +505,27 @@ export const onServiceOrderCreated = functions.firestore
       let serviceTitle = 'serviço';
 
       // If no category on order, try to get from service
+      // CRÍTICO: Buscar serviço na coleção por localização
       if (!finalCategory && serviceId) {
-        const serviceDoc = await db.collection(COLLECTIONS.SERVICES).doc(serviceId).get();
-        if (serviceDoc.exists) {
-          const service = serviceDoc.data();
-          finalCategory = service?.category;
-          serviceTitle = service?.title || serviceTitle;
+        // Obter locationId do order (já tem city/state no orderData)
+        const orderCity = orderData?.city || '';
+        const orderState = orderData?.state || '';
+        
+        // CRÍTICO: Validar localização antes de buscar serviço
+        if (!orderCity || !orderState || orderCity.trim() === '' || orderState.trim() === '') {
+          functions.logger.warn(
+            `Order ${orderId}: Cannot fetch service category - missing location ` +
+            `(city='${orderCity}', state='${orderState}')`
+          );
+        } else {
+          const orderLocationId = normalizeLocationId(orderCity, orderState);
+          const locationServicesCollection = servicesPath(db, orderLocationId);
+          const serviceDoc = await locationServicesCollection.doc(serviceId).get();
+          if (serviceDoc.exists) {
+            const service = serviceDoc.data();
+            finalCategory = service?.category;
+            serviceTitle = service?.title || serviceTitle;
+          }
         }
       }
       
@@ -450,8 +553,17 @@ export const onServiceOrderCreated = functions.firestore
       functions.logger.info(`Order ${orderId}: category=${finalCategory}, city=${city}, state=${state}`);
 
       // Find all providers with services in this category
-      // We'll search for services with matching category
-      const servicesSnapshot = await db.collection(COLLECTIONS.SERVICES)
+      // CRÍTICO: Buscar serviços na coleção por localização
+      if (!city || !state || city.trim() === '' || state.trim() === '') {
+        functions.logger.error(
+          `Order ${orderId}: Localização inválida (city='${city}', state='${state}'). ` +
+          'Não é possível processar ordem sem localização válida.'
+        );
+        return null;
+      }
+      const orderLocationId = normalizeLocationId(city, state);
+      const locationServicesCollection = servicesPath(db, orderLocationId);
+      const servicesSnapshot = await locationServicesCollection
         .where('category', '==', finalCategory)
         .where('active', '==', true)
         .get();
@@ -476,17 +588,35 @@ export const onServiceOrderCreated = functions.firestore
       }
 
       // Filter providers by location (city/state)
+      // CRÍTICO: Buscar parceiros em locations/{locationId}/users
       const matchingProviders: string[] = [];
       
+      // Buscar parceiros na coleção por localização
+      const locationUsersCollection = db.collection('locations').doc(orderLocationId).collection('users');
+      const providersSnapshot = await locationUsersCollection
+        .where('role', '==', 'partner')
+        .get();
+      
+      const providerMap = new Map<string, admin.firestore.DocumentData>();
+      providersSnapshot.forEach((doc) => {
+        providerMap.set(doc.id, doc.data());
+      });
+      
       for (const providerId of providerIds) {
-        const userDoc = await db.collection(COLLECTIONS.USERS).doc(providerId).get();
-        if (!userDoc.exists) continue;
-
-        const userData = userDoc.data();
+        // Buscar primeiro em locations/{locationId}/users
+        let userData = providerMap.get(providerId);
+        
+        // Fallback: buscar em users global (legacy)
+        if (!userData) {
+          const userDoc = await db.collection(COLLECTIONS.USERS).doc(providerId).get();
+          if (!userDoc.exists) continue;
+          userData = userDoc.data();
+        }
+        
         const userRole = userData?.role;
         
-        // Only notify providers
-        if (userRole !== 'provider') continue;
+        // Only notify partners
+        if (userRole !== 'partner') continue;
 
         // Check if provider has this category in their preferences
         const preferredCategories = userData?.preferredCategories || [];
@@ -512,20 +642,10 @@ export const onServiceOrderCreated = functions.firestore
           }
         }
 
-        // Check if provider has location information
-        const userAddress = userData?.address;
-        let providerCity = '';
-        let providerState = '';
-
-        if (userAddress) {
-          // Address can be an object with city and state fields
-          providerCity = userAddress.city || userAddress.cityName || '';
-          providerState = userAddress.state || userAddress.stateName || '';
-        } else {
-          // Fallback: try to get from user profile fields
-          providerCity = userData?.city || '';
-          providerState = userData?.state || '';
-        }
+        // Lei 1: city e state DEVEM estar na raiz do documento users/{userId}
+        // NÃO usar address.city ou address.state como fonte - isso viola a Lei 1
+        const providerCity = userData?.city || '';
+        const providerState = userData?.state || '';
 
         // Match by city and state if both are available
         // If only city is available, match by city

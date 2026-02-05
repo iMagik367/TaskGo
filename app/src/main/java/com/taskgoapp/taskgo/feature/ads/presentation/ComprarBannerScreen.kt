@@ -1,6 +1,7 @@
 ﻿package com.taskgoapp.taskgo.feature.ads.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.taskgoapp.taskgo.core.design.AppTopBar
 import com.taskgoapp.taskgo.core.theme.TaskGoBackgroundWhite
+import com.taskgoapp.taskgo.core.theme.TaskGoBorder
 import com.taskgoapp.taskgo.core.theme.TaskGoGreen
 import com.taskgoapp.taskgo.core.theme.TaskGoTextBlack
 import com.taskgoapp.taskgo.core.theme.TaskGoTextGray
@@ -46,7 +48,10 @@ fun ComprarBannerScreen(
 				style = MaterialTheme.typography.headlineSmall,
 				fontWeight = FontWeight.Bold
 			)
-			Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+			Card(
+				colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+				border = BorderStroke(1.dp, TaskGoBorder)
+			) {
 				Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
 					Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
 						Text("Pequeno", color = TaskGoTextGray)

@@ -27,10 +27,49 @@ fun OrderChatNavigationScreen(
             // Instanciar repositories diretamente
             val firestore = com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
             val authRepository = FirebaseAuthRepository(com.google.firebase.auth.FirebaseAuth.getInstance())
-            val orderRepository = FirestoreOrderRepository(firestore, authRepository)
-            val userRepository = FirestoreUserRepository(firestore)
+            val firestoreUserRepository = FirestoreUserRepository(firestore)
             
-            val threadId = messagesViewModel.getOrCreateThreadForOrder(orderId, orderRepository, userRepository)
+            // FirestoreOrderRepository precisa de UserRepository, mas getOrCreateThreadForOrder precisa de FirestoreUserRepository
+            // Vamos usar UserRepositoryImpl via Hilt - mas como não temos acesso direto, vamos criar um wrapper simples
+            val authUser = authRepository.getCurrentUser()
+            val userRepositoryWrapper = object : com.taskgoapp.taskgo.domain.repository.UserRepository {
+                override fun observeCurrentUser() = kotlinx.coroutines.flow.flow {
+                    val uid = authUser?.uid
+                    if (uid != null) {
+                        firestoreUserRepository.observeUser(uid).collect { userFirestore ->
+                            if (userFirestore != null) {
+                                emit(with(com.taskgoapp.taskgo.data.mapper.UserMapper) { userFirestore.toModel() })
+                            } else {
+                                emit(null)
+                            }
+                        }
+                    } else {
+                        emit(null)
+                    }
+                }
+                override suspend fun updateUser(user: com.taskgoapp.taskgo.core.model.UserProfile) {
+                    // Converter UserProfile para UserFirestore manualmente
+                    val userFirestore = com.taskgoapp.taskgo.data.firestore.models.UserFirestore(
+                        uid = user.id,
+                        email = user.email,
+                        displayName = user.name,
+                        photoURL = user.avatarUri,
+                        phone = user.phone,
+                        city = user.city,
+                        state = user.state,
+                        role = user.accountType?.name ?: "client",
+                        createdAt = null,
+                        updatedAt = null
+                    )
+                    firestoreUserRepository.updateUser(userFirestore).getOrThrow()
+                }
+                override suspend fun updateAvatar(avatarUri: String) {
+                    android.util.Log.w("OrderChatNavigation", "updateAvatar não implementado")
+                }
+            }
+            
+            val orderRepository = FirestoreOrderRepository(firestore, authRepository, userRepositoryWrapper)
+            val threadId = messagesViewModel.getOrCreateThreadForOrder(orderId, orderRepository, firestoreUserRepository)
             onNavigateToChat(threadId)
         } catch (exception: Exception) {
             android.util.Log.e("OrderChatNavigation", "Erro ao obter/criar thread: ${exception.message}", exception)

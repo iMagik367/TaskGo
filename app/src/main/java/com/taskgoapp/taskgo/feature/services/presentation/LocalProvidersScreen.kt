@@ -3,6 +3,7 @@ package com.taskgoapp.taskgo.feature.services.presentation
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.*
@@ -46,6 +47,7 @@ fun LocalProvidersScreen(
     onNavigateToServiceDetail: (String) -> Unit,
     onNavigateToCreateWorkOrder: () -> Unit,
     onBackClick: () -> Unit,
+    onNavigateToProviderProfile: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     android.util.Log.d("LocalProvidersScreen", "=== Iniciando LocalProvidersScreen ===")
@@ -257,7 +259,8 @@ fun LocalProvidersScreen(
                                                 onProviderClick = { 
                                                     android.util.Log.d("LocalProvidersScreen", "Banner grande clicado: ${provider.id}")
                                                     onNavigateToServiceDetail(provider.id) 
-                                                }
+                                                },
+                                                onNavigateToProfile = onNavigateToProviderProfile
                                             )
                                         } else {
                                             android.util.Log.e("LocalProvidersScreen", "Índice fora dos limites: $index")
@@ -295,7 +298,8 @@ fun LocalProvidersScreen(
                                                 onProviderClick = { 
                                                     android.util.Log.d("LocalProvidersScreen", "Banner pequeno clicado: ${provider.id}")
                                                     onNavigateToServiceDetail(provider.id)
-                                                }
+                                                },
+                                                onNavigateToProfile = onNavigateToProviderProfile
                                             )
                                         } else {
                                             android.util.Log.e("LocalProvidersScreen", "Índice fora dos limites: $index")
@@ -333,7 +337,11 @@ private fun LocalProvidersCategoryCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onCategoryClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier
@@ -407,6 +415,7 @@ enum class BannerType {
 private fun LargeBannerCard(
     provider: ProviderBanner,
     onProviderClick: () -> Unit,
+    onNavigateToProfile: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -415,7 +424,11 @@ private fun LargeBannerCard(
             .height(400.dp)
             .clickable { onProviderClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Imagem de fundo ou placeholder
@@ -437,7 +450,10 @@ private fun LargeBannerCard(
                         text = provider.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = TaskGoTextDark
+                        color = TaskGoTextDark,
+                        modifier = Modifier.clickable(enabled = onNavigateToProfile != null) {
+                            onNavigateToProfile?.invoke(provider.id)
+                        }
                     )
                     Text(
                         text = provider.category,
@@ -477,6 +493,7 @@ private fun LargeBannerCard(
 private fun SmallBannerCard(
     provider: ProviderBanner,
     onProviderClick: () -> Unit,
+    onNavigateToProfile: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -485,7 +502,11 @@ private fun SmallBannerCard(
             .height(180.dp)
             .clickable { onProviderClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier
@@ -500,7 +521,10 @@ private fun SmallBannerCard(
                     fontWeight = FontWeight.Bold,
                     color = TaskGoTextDark,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(enabled = onNavigateToProfile != null) {
+                        onNavigateToProfile?.invoke(provider.id)
+                    }
                 )
                 Text(
                     text = provider.category,

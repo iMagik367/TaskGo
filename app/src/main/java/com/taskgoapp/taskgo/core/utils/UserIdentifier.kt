@@ -33,7 +33,7 @@ object UserIdentifier {
         }
         
         // 3. Categorias de serviços (apenas para parceiros)
-        if (user.role == "partner" || user.role == "provider" || user.role == "seller") {
+        if (user.role == "partner") {
             val categoriesId = generateCategoriesId(user.preferredCategories)
             if (categoriesId.isNotEmpty()) {
                 components.add("cats:$categoriesId")
@@ -47,19 +47,18 @@ object UserIdentifier {
     
     /**
      * Gera ID de localização baseado em cidade/estado ou coordenadas
+     * Lei 1: Ler city/state APENAS da raiz do documento users/{userId}
      */
     private fun generateLocationId(user: UserFirestore): String {
-        // Priorizar cidade/estado do endereço
-        val address = user.address
-        if (address != null) {
-            val city = address.city?.trim()?.lowercase() ?: ""
-            val state = address.state?.trim()?.lowercase() ?: ""
-            if (city.isNotEmpty() && state.isNotEmpty()) {
-                return "${city}_${state}"
-            }
+        // Lei 1: Ler city/state APENAS da raiz do documento (user.city, user.state)
+        // NÃO usar address.city ou address.state - isso viola a Lei 1
+        val city = user.city?.trim()?.lowercase() ?: ""
+        val state = user.state?.trim()?.lowercase() ?: ""
+        if (city.isNotEmpty() && state.isNotEmpty()) {
+            return "${city}_${state}"
         }
         
-        // Se não tiver endereço, retornar vazio (não usar coordenadas para ID de localização)
+        // Se não tiver city/state na raiz, retornar vazio (não usar coordenadas para ID de localização)
         // Coordenadas são muito específicas e mudam frequentemente
         return ""
     }
@@ -127,7 +126,7 @@ object UserIdentifier {
             components.add("geo:${generateGeohashId(latitude, longitude)}")
         }
         
-        if (role == "partner" || role == "provider" || role == "seller") {
+        if (role == "partner") {
             val categoriesId = generateCategoriesId(categories)
             if (categoriesId.isNotEmpty()) {
                 components.add("cats:$categoriesId")

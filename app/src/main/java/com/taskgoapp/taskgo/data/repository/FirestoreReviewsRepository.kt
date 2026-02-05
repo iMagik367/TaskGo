@@ -29,7 +29,7 @@ class FirestoreReviewsRepository @Inject constructor(
         val typeString = when (type) {
             ReviewType.PRODUCT -> "PRODUCT"
             ReviewType.SERVICE -> "SERVICE"
-            ReviewType.PROVIDER -> "PROVIDER"
+            ReviewType.PARTNER -> "PARTNER"
         }
         
         val listenerRegistration = reviewsCollection
@@ -63,11 +63,41 @@ class FirestoreReviewsRepository @Inject constructor(
     
     override suspend fun createReview(review: Review): Result<String> {
         return try {
-            val reviewFirestore = review.toFirestore()
+            // CRÍTICO: Buscar locationId do produto/serviço para armazenar no review
+            // Isso permite atualização eficiente de rating sem buscar em todas as localizações
+            var locationId: String? = null
+            
+            if (review.type == ReviewType.PRODUCT || review.type == ReviewType.SERVICE) {
+                // Buscar produto/serviço para obter locationId
+                val collectionName = if (review.type == ReviewType.PRODUCT) "products" else "services"
+                val locationsSnapshot = firestore.collection("locations").limit(100).get().await()
+                
+                for (locationDoc in locationsSnapshot.documents) {
+                    try {
+                        val productOrServiceDoc = locationDoc.reference
+                            .collection(collectionName)
+                            .document(review.targetId)
+                            .get()
+                            .await()
+                        
+                        if (productOrServiceDoc.exists()) {
+                            val data = productOrServiceDoc.data
+                            locationId = (data?.get("locationId") as? String) ?: locationDoc.id
+                            android.util.Log.d("FirestoreReviewsRepo", 
+                                "✅ locationId obtido do ${collectionName}: $locationId")
+                            break
+                        }
+                    } catch (e: Exception) {
+                        // Continuar tentando outras localizações
+                    }
+                }
+            }
+            
+            val reviewFirestore = review.toFirestore().copy(locationId = locationId)
             val docRef = reviewsCollection.add(reviewFirestore).await()
             
-            // Atualizar média de avaliações do target
-            updateTargetRating(review.targetId, review.type)
+            // Atualizar média de avaliações do target (agora com locationId disponível)
+            updateTargetRating(review.targetId, review.type, locationId)
             
             Result.Success(docRef.id)
         } catch (e: Exception) {
@@ -90,10 +120,14 @@ class FirestoreReviewsRepository @Inject constructor(
             
             reviewsCollection.document(reviewId).update(updates).await()
             
-            // Recuperar review para atualizar média
-            val review = getReview(reviewId)
+            // Recuperar review para atualizar média (com locationId se disponível)
+            val reviewDoc = reviewsCollection.document(reviewId).get().await()
+            val reviewData = reviewDoc.data
+            val review = reviewDoc.toObject(ReviewFirestore::class.java)?.copy(id = reviewDoc.id)?.toModel()
+            val locationId = reviewData?.get("locationId") as? String
+            
             review?.let {
-                updateTargetRating(it.targetId, it.type)
+                updateTargetRating(it.targetId, it.type, locationId)
             }
             
             Result.Success(Unit)
@@ -104,12 +138,17 @@ class FirestoreReviewsRepository @Inject constructor(
     
     override suspend fun deleteReview(reviewId: String): Result<Unit> {
         return try {
-            val review = getReview(reviewId)
+            // Recuperar review ANTES de deletar para obter locationId
+            val reviewDoc = reviewsCollection.document(reviewId).get().await()
+            val reviewData = reviewDoc.data
+            val review = reviewDoc.toObject(ReviewFirestore::class.java)?.copy(id = reviewDoc.id)?.toModel()
+            val locationId = reviewData?.get("locationId") as? String
+            
             reviewsCollection.document(reviewId).delete().await()
             
-            // Atualizar média de avaliações do target
+            // Atualizar média de avaliações do target (com locationId se disponível)
             review?.let {
-                updateTargetRating(it.targetId, it.type)
+                updateTargetRating(it.targetId, it.type, locationId)
             }
             
             Result.Success(Unit)
@@ -123,7 +162,7 @@ class FirestoreReviewsRepository @Inject constructor(
             val typeString = when (type) {
                 ReviewType.PRODUCT -> "PRODUCT"
                 ReviewType.SERVICE -> "SERVICE"
-                ReviewType.PROVIDER -> "PROVIDER"
+                ReviewType.PARTNER -> "PARTNER"
             }
             
             val snapshot = reviewsCollection
@@ -169,7 +208,7 @@ class FirestoreReviewsRepository @Inject constructor(
             val typeString = when (type) {
                 ReviewType.PRODUCT -> "PRODUCT"
                 ReviewType.SERVICE -> "SERVICE"
-                ReviewType.PROVIDER -> "PROVIDER"
+                ReviewType.PARTNER -> "PARTNER"
             }
             
             val snapshot = reviewsCollection
@@ -185,18 +224,67 @@ class FirestoreReviewsRepository @Inject constructor(
         }
     }
     
-    private suspend fun updateTargetRating(targetId: String, type: ReviewType) {
+    private suspend fun updateTargetRating(targetId: String, type: ReviewType, locationId: String? = null) {
         try {
             val summary = getReviewSummary(targetId, type)
-            val collectionName = when (type) {
-                ReviewType.PRODUCT -> "products"
-                ReviewType.SERVICE -> "services" // Corrigido: usar "services" em vez de "service_orders"
-                ReviewType.PROVIDER -> "users"
-            }
             
-            firestore.collection(collectionName).document(targetId)
-                .update("rating", summary.averageRating)
-                .await()
+            when (type) {
+                ReviewType.PARTNER -> {
+                    // Providers estão em users collection (não é regional)
+                    firestore.collection("users").document(targetId)
+                        .update("rating", summary.averageRating)
+                        .await()
+                }
+                ReviewType.PRODUCT, ReviewType.SERVICE -> {
+                    val collectionName = if (type == ReviewType.PRODUCT) "products" else "services"
+                    
+                    if (locationId != null && locationId.isNotBlank()) {
+                        // ✅ CORRIGIDO: Usar locationId diretamente (solução eficiente)
+                        val productOrServiceRef = firestore.collection("locations")
+                            .document(locationId)
+                            .collection(collectionName)
+                            .document(targetId)
+                        
+                        productOrServiceRef.update("rating", summary.averageRating).await()
+                        android.util.Log.d("FirestoreReviewsRepo", 
+                            "✅ Rating atualizado em locations/$locationId/$collectionName/$targetId")
+                    } else {
+                        // Fallback: buscar em todas as localizações (apenas se locationId não estiver disponível)
+                        android.util.Log.w("FirestoreReviewsRepo", 
+                            "⚠️ locationId não disponível, buscando em todas as localizações...")
+                        
+                        val locationsSnapshot = firestore.collection("locations").limit(100).get().await()
+                        var updated = false
+                        
+                        for (locationDoc in locationsSnapshot.documents) {
+                            try {
+                                val productOrServiceDoc = locationDoc.reference
+                                    .collection(collectionName)
+                                    .document(targetId)
+                                    .get()
+                                    .await()
+                                
+                                if (productOrServiceDoc.exists()) {
+                                    productOrServiceDoc.reference
+                                        .update("rating", summary.averageRating)
+                                        .await()
+                                    android.util.Log.d("FirestoreReviewsRepo", 
+                                        "✅ Rating atualizado em locations/${locationDoc.id}/$collectionName/$targetId")
+                                    updated = true
+                                    break
+                                }
+                            } catch (e: Exception) {
+                                // Continuar tentando outras localizações
+                            }
+                        }
+                        
+                        if (!updated) {
+                            android.util.Log.w("FirestoreReviewsRepo", 
+                                "⚠️ Não foi possível atualizar rating: produto/serviço não encontrado em nenhuma localização")
+                        }
+                    }
+                }
+            }
         } catch (e: Exception) {
             // Ignore errors - rating update is not critical
             android.util.Log.w("FirestoreReviewsRepo", "Erro ao atualizar rating: ${e.message}", e)
@@ -373,4 +461,3 @@ class FirestoreReviewsRepository @Inject constructor(
         }
     }
 }
-

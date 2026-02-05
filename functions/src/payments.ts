@@ -5,6 +5,7 @@ import Stripe from 'stripe';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
+import {ordersPath, getUserLocationId} from './utils/firestorePaths';
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -29,15 +30,18 @@ export const createPaymentIntent = functions.https.onCall(async (data, context) 
       );
     }
 
-    // Get order details
-    const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
+    // Get order details - buscar na coleção por localização
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    const locationOrdersCollection = ordersPath(db, locationId);
+    const orderDoc = await locationOrdersCollection.doc(orderId).get();
     if (!orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
 
     const order = orderDoc.data();
     
-    if (order?.clientId !== context.auth!.uid) {
+    if (order?.clientId !== userId) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Only the order client can create payment'
@@ -97,8 +101,8 @@ export const createPaymentIntent = functions.https.onCall(async (data, context) 
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+    // Update order status - na coleção por localização
+    await locationOrdersCollection.doc(orderId).update({
       status: 'payment_pending',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -153,7 +157,8 @@ export const confirmPayment = functions.https.onCall(async (data, context) => {
     }
 
     const paymentDoc = paymentsSnapshot.docs[0];
-    const orderId = paymentDoc.data().orderId;
+    const payment = paymentDoc.data();
+    const orderId = payment.orderId;
 
     // Update payment status
     await paymentDoc.ref.update({
@@ -163,8 +168,12 @@ export const confirmPayment = functions.https.onCall(async (data, context) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+    // Update order status - na coleção por localização
+    // Obter locationId do clientId do payment
+    const clientId = payment.clientId;
+    const locationId = await getUserLocationId(db, clientId);
+    const locationOrdersCollection = ordersPath(db, locationId);
+    await locationOrdersCollection.doc(orderId).update({
       status: 'paid',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -206,15 +215,18 @@ export const processGooglePayPayment = functions.https.onCall(async (data, conte
       );
     }
 
-    // Get order details
-    const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
+    // Get order details - buscar na coleção por localização
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    const locationOrdersCollection = ordersPath(db, locationId);
+    const orderDoc = await locationOrdersCollection.doc(orderId).get();
     if (!orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
 
     const order = orderDoc.data();
     
-    if (order?.clientId !== context.auth!.uid) {
+    if (order?.clientId !== userId) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Only the order client can process payment'
@@ -280,8 +292,8 @@ export const processGooglePayPayment = functions.https.onCall(async (data, conte
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+    // Update order status - na coleção por localização
+    await locationOrdersCollection.doc(orderId).update({
       status: paymentIntent.status === 'succeeded' ? 'paid' : 'payment_pending',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -317,14 +329,18 @@ export const requestRefund = functions.https.onCall(async (data, context) => {
       );
     }
 
-    const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
+    // Get order details - buscar na coleção por localização
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    const locationOrdersCollection = ordersPath(db, locationId);
+    const orderDoc = await locationOrdersCollection.doc(orderId).get();
     if (!orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
 
     const order = orderDoc.data();
     
-    if (order?.clientId !== context.auth!.uid) {
+    if (order?.clientId !== userId) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Only the order client can request refund'
@@ -344,8 +360,8 @@ export const requestRefund = functions.https.onCall(async (data, context) => {
       );
     }
 
-    // Update order to disputed
-    await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+    // Update order to disputed - na coleção por localização
+    await locationOrdersCollection.doc(orderId).update({
       status: 'disputed',
       disputeReason: reason,
       disputedAt: admin.firestore.FieldValue.serverTimestamp(),

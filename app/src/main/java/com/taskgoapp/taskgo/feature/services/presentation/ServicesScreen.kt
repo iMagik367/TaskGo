@@ -2,6 +2,7 @@ package com.taskgoapp.taskgo.feature.services.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
@@ -60,6 +61,7 @@ fun ServicesScreen(
     onNavigateToCart: () -> Unit = {},
     onNavigateToMessages: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToProviderProfile: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val viewModel: ServicesViewModel = hiltViewModel()
@@ -77,7 +79,7 @@ fun ServicesScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
-    val isProvider = accountType == AccountType.PARCEIRO || accountType == AccountType.PRESTADOR // Suporta legacy
+    val isProvider = accountType == AccountType.PARCEIRO
     val subtitleText = if (isProvider) {
         "Acompanhe as ordens de serviço solicitadas pelos clientes"
     } else {
@@ -165,7 +167,7 @@ fun ServicesScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // Botão "Criar Ordem de Serviço" (apenas para cliente e vendedor)
-            if (accountType == AccountType.CLIENTE || accountType == AccountType.VENDEDOR) { // VENDEDOR legacy
+            if (accountType == AccountType.CLIENTE) {
                 Button(
                     onClick = onNavigateToCreateWorkOrder,
                     modifier = Modifier
@@ -322,7 +324,8 @@ fun ServicesScreen(
                         items(filteredProviders) { provider ->
                             ProviderCard(
                                 provider = provider,
-                                onProviderClick = { onNavigateToServiceDetail(provider.uid) }
+                                onProviderClick = { onNavigateToServiceDetail(provider.uid) },
+                                onNavigateToProfile = onNavigateToProviderProfile
                             )
                         }
                     }
@@ -406,7 +409,8 @@ private fun ServiceOrderCardFirestore(
             .fillMaxWidth()
             .clickable { onServiceClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor)
+        colors = CardDefaults.cardColors(containerColor = TaskGoBackgroundWhite),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier
@@ -493,7 +497,11 @@ private fun ServiceOrderCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onServiceClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -548,7 +556,11 @@ private fun ProviderServiceCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onServiceClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column {
             if (service.images.isNotEmpty()) {
@@ -657,7 +669,11 @@ fun ServiceCategoryCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onCategoryClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier
@@ -715,13 +731,18 @@ fun ServiceCategoryCard(
 private fun ProviderCard(
     provider: UserFirestore,
     onProviderClick: () -> Unit,
+    onNavigateToProfile: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onProviderClick() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier
@@ -763,7 +784,10 @@ private fun ProviderCard(
                     text = provider.displayName ?: "Parceiro",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TaskGoTextDark
+                    color = TaskGoTextDark,
+                    modifier = Modifier.clickable(enabled = onNavigateToProfile != null) {
+                        onNavigateToProfile?.invoke(provider.uid)
+                    }
                 )
                 
                 // Categorias que o prestador oferece

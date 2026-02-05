@@ -1,5 +1,6 @@
 package com.taskgoapp.taskgo.core.maps
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -17,7 +18,7 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import android.location.Location
-import com.taskgoapp.taskgo.core.theme.TaskGoGreen
+import com.taskgoapp.taskgo.core.theme.*
 
 /**
  * Componente de mapa que exibe localização do usuário e lojas em tempo real
@@ -110,8 +111,9 @@ fun ProvidersMapView(
                 .align(androidx.compose.ui.Alignment.TopEnd)
                 .padding(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = Color.White.copy(alpha = 0.9f)
-            )
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
         ) {
             Column(
                 modifier = Modifier.padding(12.dp),

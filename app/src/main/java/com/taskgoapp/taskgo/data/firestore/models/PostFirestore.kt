@@ -10,6 +10,7 @@ data class PostFirestore(
     val userId: String = "",
     val userName: String = "",
     val userAvatarUrl: String? = null,
+    val userRole: String? = null, // Role do autor do post (partner, client, etc)
     val text: String = "",
     val mediaUrls: List<String> = emptyList(),
     val mediaTypes: List<String> = emptyList(), // "image" ou "video"

@@ -1,6 +1,9 @@
 package com.taskgoapp.taskgo.core.payment
 
 import com.taskgoapp.taskgo.core.model.PaymentType
+import com.taskgoapp.taskgo.core.model.Result
+import com.taskgoapp.taskgo.core.model.getOrThrow
+import com.taskgoapp.taskgo.core.model.getOrElse
 import com.taskgoapp.taskgo.core.tracking.TrackingCodeGenerator
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 import com.taskgoapp.taskgo.domain.usecase.CheckoutUseCase
@@ -32,14 +35,15 @@ class PaymentGateway @Inject constructor(
 
             // Se for PIX, criar pagamento PIX
             if (request.paymentType == PaymentType.PIX) {
-                val pixData = functionsService.createPixPayment(orderId).getOrElse { throw it }
+                val pixResult = functionsService.createPixPayment(orderId)
+                val pixData = pixResult.getOrElse { throw it }
                 val pixKey = pixData["pixKey"] as? String ?: ""
                 val qrCodeData = pixData["qrCodeData"] as? String ?: ""
                 
                 // Para PIX, o pagamento fica pendente até confirmação
                 // Não confirmamos automaticamente como nos cartões
                 
-                return Result.success(
+                return Result.Success(
                     PaymentGatewayResult(
                         orderId = orderId,
                         paymentIntentId = pixKey, // Usar chave PIX como ID
@@ -52,13 +56,14 @@ class PaymentGateway @Inject constructor(
 
             // Para produtos, usar createProductPaymentIntent (com split payment e comissão)
             // Para serviços, usar createPaymentIntent (pagamento de serviços)
-            val intentData = if (isProductOrder(orderId)) {
+            val intentResult = if (isProductOrder(orderId)) {
                 // Usar novo sistema de pagamento de produtos com Stripe Connect
-                functionsService.createProductPaymentIntent(orderId).getOrElse { throw it }
+                functionsService.createProductPaymentIntent(orderId)
             } else {
                 // Usar sistema de pagamento de serviços
-                functionsService.createPaymentIntent(orderId).getOrElse { throw it }
+                functionsService.createPaymentIntent(orderId)
             }
+            val intentData = intentResult.getOrElse { throw it }
             
             val paymentIntentId = intentData["paymentIntentId"] as? String
                 ?: intentData["id"] as? String
@@ -70,7 +75,7 @@ class PaymentGateway @Inject constructor(
             // O webhook do Stripe vai confirmar automaticamente quando o pagamento for bem-sucedido
             // Retornar o clientSecret para que o app possa apresentar o PaymentSheet
             
-            Result.success(
+            Result.Success(
                 PaymentGatewayResult(
                     orderId = orderId,
                     paymentIntentId = paymentIntentId,
@@ -80,7 +85,7 @@ class PaymentGateway @Inject constructor(
                 )
             )
         } catch (error: Exception) {
-            Result.failure(error)
+            Result.Error(error)
         }
     }
     

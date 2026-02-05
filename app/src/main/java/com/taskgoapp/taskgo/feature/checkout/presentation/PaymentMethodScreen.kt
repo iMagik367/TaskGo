@@ -3,6 +3,7 @@
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -116,6 +117,7 @@ fun PaymentMethodScreen(
                     containerColor = Color(0xFF000000) // Preto do Google Pay
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                border = BorderStroke(1.dp, TaskGoBorder),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
             ) {
                 Row(
@@ -152,12 +154,16 @@ fun PaymentMethodScreen(
         }
         
         options.forEach { item ->
-            Card(modifier = Modifier
+            Card(
+                modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical=6.dp)
                     .clickable { selected = item },
-                colors= CardDefaults.cardColors(
-                    containerColor = if(selected==item) TaskGoGreen.copy(alpha=0.1f) else Color.White)) {
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
+            ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
                         selected=selected==item, 

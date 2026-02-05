@@ -9,8 +9,7 @@ import com.taskgoapp.taskgo.domain.repository.ProductsRepository
 import com.taskgoapp.taskgo.domain.repository.CategoriesRepository
 import com.taskgoapp.taskgo.domain.repository.UserRepository
 import com.taskgoapp.taskgo.data.local.datastore.FilterPreferencesManager
-import com.taskgoapp.taskgo.core.location.LocationManager
-import com.taskgoapp.taskgo.core.location.calculateDistance
+// ✅ REMOVIDO: LocationManager e calculateDistance - não são mais usados
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -22,7 +21,7 @@ class ProductsViewModel @Inject constructor(
     private val productsRepository: ProductsRepository,
     private val categoriesRepository: CategoriesRepository,
     private val filterPreferencesManager: FilterPreferencesManager,
-    private val locationManager: LocationManager,
+    // ✅ REMOVIDO: locationManager - não é mais usado
     private val userRepository: UserRepository,
     private val firebaseAuth: FirebaseAuth
 ) : ViewModel() {
@@ -33,8 +32,8 @@ class ProductsViewModel @Inject constructor(
     private val _accountType = MutableStateFlow(AccountType.CLIENTE)
     val accountType: StateFlow<AccountType> = _accountType.asStateFlow()
     
-    private val _userLocation = MutableStateFlow<android.location.Location?>(null)
-    val userLocation: StateFlow<android.location.Location?> = _userLocation.asStateFlow()
+    // ✅ REMOVIDO: _userLocation - produtos já vêm filtrados por city/state do Firestore
+    // LEI MÁXIMA DO TASKGO: NUNCA usar GPS para filtrar produtos - todos os produtos do mesmo city/state devem aparecer
 
     val productCategories: StateFlow<List<String>> = categoriesRepository
         .observeProductCategories()
@@ -47,41 +46,35 @@ class ProductsViewModel @Inject constructor(
     val products: StateFlow<List<Product>> = combine(
         allProducts,
         filterState,
-        _accountType,
-        _userLocation
-    ) { products, filters, accountType, userLocation ->
+        _accountType
+    ) { products, filters, accountType ->
         val currentUserId = firebaseAuth.currentUser?.uid ?: ""
-        // Filtrar produtos baseado no tipo de conta
-        // Na tela principal de produtos (ProductsScreen), todos devem ver produtos de outros (para comprar)
-        // Apenas na tela de gerenciamento (ManageProductsScreen) deve mostrar apenas produtos próprios
+        
+        // REGRA DE NEGÓCIO:
+        // - PARCEIRO na loja: vê seus próprios produtos + produtos de outros parceiros do mesmo city_state
+        // - CLIENTE na loja: vê apenas produtos de parceiros do mesmo city_state
+        // - Meus Produtos (GerenciarProdutosViewModel): apenas produtos próprios (já implementado)
         val filteredByAccountType = when (accountType) {
-            AccountType.PARCEIRO, AccountType.VENDEDOR, AccountType.PRESTADOR -> {
-                // PARCEIRO/VENDEDOR: mostrar produtos de outros (para comprar na loja principal)
-                products.filter { it.sellerId != currentUserId && it.sellerId != null && it.sellerId.isNotBlank() }
+            AccountType.PARCEIRO -> {
+                // Parceiro vê todos os produtos (próprios + de outros parceiros)
+                products.filter { 
+                    it.sellerId != null && it.sellerId.isNotBlank() 
+                }
             }
             AccountType.CLIENTE -> {
-                // CLIENTE: mostrar apenas produtos de outros usuários (para comprar)
-                products.filter { it.sellerId != currentUserId && it.sellerId != null && it.sellerId.isNotBlank() }
+                // Cliente vê apenas produtos de parceiros (não próprios, pois cliente não vende)
+                products.filter { 
+                    it.sellerId != currentUserId && it.sellerId != null && it.sellerId.isNotBlank() 
+                }
             }
         }
-        applyFiltersSync(filteredByAccountType, filters, userLocation)
+        applyFiltersSync(filteredByAccountType, filters)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         loadSavedFilters()
         loadAccountType()
-        loadUserLocation()
-    }
-    
-    private fun loadUserLocation() {
-        viewModelScope.launch {
-            try {
-                val location = locationManager.getCurrentLocation()
-                _userLocation.value = location
-            } catch (e: Exception) {
-                android.util.Log.e("ProductsViewModel", "Erro ao obter localização: ${e.message}", e)
-            }
-        }
+        // ✅ REMOVIDO: loadUserLocation() - produtos já vêm filtrados por city/state do Firestore
     }
 
     private fun loadAccountType() {
@@ -125,8 +118,7 @@ class ProductsViewModel @Inject constructor(
 
     private fun applyFiltersSync(
         products: List<Product>, 
-        filters: FilterState,
-        userLocation: android.location.Location?
+        filters: FilterState
     ): List<Product> {
         var filtered = products.filter { it.active }
 
@@ -158,26 +150,9 @@ class ProductsViewModel @Inject constructor(
             }
         }
 
-        // Filtrar por localização quando houver localização do usuário.
-        // Sem localização, mantemos a lista filtrada (não esvaziamos a vitrine).
-        if (userLocation != null) {
-            filtered = filtered.filter { product ->
-                val prodLat = product.latitude
-                val prodLng = product.longitude
-                if (prodLat != null && prodLng != null) {
-                    val distance = calculateDistance(
-                        userLocation.latitude,
-                        userLocation.longitude,
-                        prodLat,
-                        prodLng
-                    )
-                    distance <= 100.0 // Raio de 100km
-                } else {
-                    // Produto sem localização não é exibido quando o usuário compartilha localização
-                    false
-                }
-            }
-        }
+        // ✅ REMOVIDO: Filtro de distância GPS
+        // LEI MÁXIMA DO TASKGO: Produtos já vêm filtrados por city/state do Firestore
+        // NUNCA usar GPS para filtrar produtos - todos os produtos do mesmo city/state devem aparecer
 
         // Ordenar
         filtered = when (filters.sortBy) {

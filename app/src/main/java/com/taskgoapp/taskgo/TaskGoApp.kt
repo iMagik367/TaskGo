@@ -116,26 +116,64 @@ class TaskGoApp : Application(), Configuration.Provider {
                     // Para builds de debug, usar DebugAppCheckProviderFactory
                     val debugToken = BuildConfig.FIREBASE_DEBUG_APP_CHECK_TOKEN
                     val debugTokenName = BuildConfig.FIREBASE_DEBUG_APP_CHECK_TOKEN_NAME
+                    
+                    Log.d(TAG, "=== CONFIGURANDO APP CHECK DEBUG ===")
+                    Log.d(TAG, "Token Name: $debugTokenName")
+                    Log.d(TAG, "Token (primeiros 8 chars): ${debugToken.take(8)}...")
+                    
                     if (debugToken.isNotBlank()) {
+                        // CRÍTICO: Configurar token ANTES de instalar o provider
                         val persistenceKey = FirebaseApp.getInstance().persistenceKey
                         val sharedPrefsName = "com.google.firebase.appcheck.debug.store.$persistenceKey"
                         val debugSecretKey = "com.google.firebase.appcheck.debug.DEBUG_SECRET"
 
-                        getSharedPreferences(sharedPrefsName, MODE_PRIVATE)
-                            .edit()
+                        val prefs = getSharedPreferences(sharedPrefsName, MODE_PRIVATE)
+                        prefs.edit()
                             .putString(debugSecretKey, debugToken)
                             .apply()
 
-                        Log.d(TAG, "✅ App Check DEBUG configurado com token: ${debugTokenName}")
+                        Log.d(TAG, "✅ Token de debug salvo em SharedPreferences")
+                        Log.d(TAG, "   SharedPrefs: $sharedPrefsName")
+                        Log.d(TAG, "   Key: $debugSecretKey")
+                    } else {
+                        Log.w(TAG, "⚠️ Token de debug vazio! Verifique BuildConfig.FIREBASE_DEBUG_APP_CHECK_TOKEN")
                     }
 
+                    // Instalar provider factory
                     appCheck.installAppCheckProviderFactory(
                         DebugAppCheckProviderFactory.getInstance()
                     )
+                    Log.d(TAG, "✅ DebugAppCheckProviderFactory instalado")
+                    
+                    // CRÍTICO: Obter token imediatamente para validar configuração
+                    applicationScope.launch {
+                        kotlinx.coroutines.delay(1000) // Aguardar 1 segundo para inicialização
+                        try {
+                            appCheck.getAppCheckToken(false).addOnSuccessListener { token ->
+                                Log.d(TAG, "✅ App Check DEBUG token obtido com sucesso!")
+                                Log.d(TAG, "Token (primeiros 20 chars): ${token.token.take(20)}...")
+                                Log.d(TAG, "Token expira em: ${token.expireTimeMillis - System.currentTimeMillis()}ms")
+                            }.addOnFailureListener { e ->
+                                Log.e(TAG, "❌ FALHA AO OBTER APP CHECK DEBUG TOKEN")
+                                Log.e(TAG, "Erro: ${e.message}")
+                                Log.e(TAG, "Tipo: ${e.javaClass.simpleName}")
+                                Log.e(TAG, "═══════════════════════════════════════════════════")
+                                Log.e(TAG, "VERIFIQUE:")
+                                Log.e(TAG, "1. Token de debug registrado no Firebase Console")
+                                Log.e(TAG, "2. Token correto em local.properties ou build.gradle.kts")
+                                Log.e(TAG, "3. App Check habilitado no Firebase Console")
+                                Log.e(TAG, "═══════════════════════════════════════════════════")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Erro ao obter token de debug: ${e.message}", e)
+                        }
+                    }
                 } else {
                     // Para builds de release, usar Play Integrity
                     Log.d(TAG, "=== CONFIGURANDO APP CHECK RELEASE ===")
                     Log.d(TAG, "Provider: PlayIntegrityAppCheckProviderFactory")
+                    Log.d(TAG, "Build Type: RELEASE")
+                    Log.d(TAG, "Application ID: ${applicationContext.packageName}")
                     
                     try {
                         appCheck.installAppCheckProviderFactory(
@@ -143,25 +181,31 @@ class TaskGoApp : Application(), Configuration.Provider {
                         )
                         Log.d(TAG, "✅ Play Integrity Provider instalado")
                         
-                        // Tentar obter token para verificar se está funcionando
+                        // CRÍTICO: Obter token imediatamente para validar configuração em RELEASE
                         applicationScope.launch {
-                            kotlinx.coroutines.delay(5000) // Aguardar 5 segundos para Play Integrity inicializar
+                            // Aguardar um pouco mais em release para Play Integrity inicializar
+                            kotlinx.coroutines.delay(3000)
                             try {
                                 appCheck.getAppCheckToken(false).addOnSuccessListener { token ->
-                                    Log.d(TAG, "✅ App Check token obtido com sucesso (Play Integrity)")
+                                    Log.d(TAG, "✅ App Check RELEASE token obtido com sucesso!")
                                     Log.d(TAG, "Token (primeiros 20 chars): ${token.token.take(20)}...")
                                     Log.d(TAG, "Token expira em: ${token.expireTimeMillis - System.currentTimeMillis()}ms")
+                                    Log.d(TAG, "✅ Play Integrity está funcionando corretamente")
                                 }.addOnFailureListener { e ->
-                                    Log.e(TAG, "❌ FALHA AO OBTER APP CHECK TOKEN")
+                                    Log.e(TAG, "❌ FALHA AO OBTER APP CHECK TOKEN (RELEASE)")
                                     Log.e(TAG, "Erro: ${e.message}")
                                     Log.e(TAG, "Tipo: ${e.javaClass.simpleName}")
+                                    Log.e(TAG, "Causa: ${e.cause?.message ?: "N/A"}")
                                     
                                     // Análise detalhada do erro
                                     val errorMessage = e.message ?: ""
+                                    val fullStackTrace = e.stackTraceToString()
+                                    
                                     when {
                                         errorMessage.contains("403", ignoreCase = true) ||
                                         errorMessage.contains("App attestation failed", ignoreCase = true) ||
-                                        errorMessage.contains("attestation", ignoreCase = true) -> {
+                                        errorMessage.contains("attestation", ignoreCase = true) ||
+                                        fullStackTrace.contains("403", ignoreCase = true) -> {
                                             Log.e(TAG, "═══════════════════════════════════════════════════")
                                             Log.e(TAG, "ERRO CRÍTICO: App Attestation Failed (403)")
                                             Log.e(TAG, "═══════════════════════════════════════════════════")
@@ -170,7 +214,7 @@ class TaskGoApp : Application(), Configuration.Provider {
                                             Log.e(TAG, "SOLUÇÃO:")
                                             Log.e(TAG, "1. Acesse Google Play Console → App Signing")
                                             Log.e(TAG, "2. Copie o SHA-256 do 'App signing certificate'")
-                                            Log.e(TAG, "3. Firebase Console → Configurações do Projeto → Android App")
+                                            Log.e(TAG, "3. Firebase Console → App Check → Apps → Android")
                                             Log.e(TAG, "4. Adicione o SHA-256 do App Signing Key")
                                             Log.e(TAG, "5. Aguarde 5-10 minutos para propagação")
                                             Log.e(TAG, "")
@@ -179,28 +223,41 @@ class TaskGoApp : Application(), Configuration.Provider {
                                             Log.e(TAG, "═══════════════════════════════════════════════════")
                                         }
                                         errorMessage.contains("API", ignoreCase = true) &&
-                                        errorMessage.contains("not", ignoreCase = true) -> {
+                                        (errorMessage.contains("not", ignoreCase = true) ||
+                                         errorMessage.contains("disabled", ignoreCase = true)) -> {
+                                            Log.e(TAG, "═══════════════════════════════════════════════════")
                                             Log.e(TAG, "CAUSA: Play Integrity API não habilitada")
-                                            Log.e(TAG, "SOLUÇÃO: Habilitar Play Integrity API no Google Cloud Console")
+                                            Log.e(TAG, "SOLUÇÃO:")
+                                            Log.e(TAG, "1. Acesse Google Cloud Console")
+                                            Log.e(TAG, "2. APIs e Serviços → Biblioteca")
+                                            Log.e(TAG, "3. Busque 'Play Integrity API'")
+                                            Log.e(TAG, "4. Habilite a API")
+                                            Log.e(TAG, "═══════════════════════════════════════════════════")
                                         }
                                         errorMessage.contains("network", ignoreCase = true) ||
-                                        errorMessage.contains("connection", ignoreCase = true) -> {
-                                            Log.e(TAG, "CAUSA: Problema de rede")
-                                            Log.e(TAG, "SOLUÇÃO: Verificar conectividade")
+                                        errorMessage.contains("connection", ignoreCase = true) ||
+                                        errorMessage.contains("timeout", ignoreCase = true) -> {
+                                            Log.e(TAG, "CAUSA: Problema de rede ou timeout")
+                                            Log.e(TAG, "SOLUÇÃO: Verificar conectividade e tentar novamente")
                                         }
                                         else -> {
-                                            Log.e(TAG, "CAUSA DESCONHECIDA - Verificar logs completos")
-                                            Log.e(TAG, "Stack trace:", e)
+                                            Log.e(TAG, "═══════════════════════════════════════════════════")
+                                            Log.e(TAG, "CAUSA DESCONHECIDA")
+                                            Log.e(TAG, "Verificar logs completos abaixo:")
+                                            Log.e(TAG, "═══════════════════════════════════════════════════")
+                                            Log.e(TAG, "Stack trace completo:", e)
                                         }
                                     }
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Erro ao verificar token: ${e.message}", e)
+                                Log.e(TAG, "Erro ao verificar token RELEASE: ${e.message}", e)
                             }
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ ERRO ao instalar Play Integrity Provider: ${e.message}", e)
-                        throw e
+                        Log.e(TAG, "Stack trace:", e)
+                        // Não lançar exceção - permitir que app continue mesmo se App Check falhar
+                        // O App Check pode falhar mas o app ainda deve funcionar
                     }
                     
                     Log.d(TAG, "✅ App Check RELEASE configurado com Play Integrity")

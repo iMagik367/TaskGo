@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.checkout.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -110,8 +111,9 @@ fun PixPaymentScreen(
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = TaskGoSurfaceGrayBg
-                            )
+                                containerColor = TaskGoBackgroundWhite
+                            ),
+                            border = BorderStroke(1.dp, TaskGoBorder)
                         ) {
                             Row(
                                 modifier = Modifier

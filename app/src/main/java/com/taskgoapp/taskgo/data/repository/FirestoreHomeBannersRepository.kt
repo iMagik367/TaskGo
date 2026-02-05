@@ -48,7 +48,7 @@ class FirestoreHomeBannersRepository @Inject constructor(
 
             val audienceEnum = when (audience?.uppercase()) {
                 "CLIENTE", "CLIENT", "CLIENTES" -> HomeBanner.Audience.CLIENTE
-                "PRESTADOR", "PROVIDER", "PRESTADORES" -> HomeBanner.Audience.PRESTADOR
+                "PARCEIRO", "PARTNER", "PARCEIROS" -> HomeBanner.Audience.PARCEIRO
                 else -> HomeBanner.Audience.TODOS
             }
 

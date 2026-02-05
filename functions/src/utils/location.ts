@@ -8,9 +8,54 @@ import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 
 /**
+ * Valida se city e state são válidos
+ * CRÍTICO: Garante que city e state sejam sempre corretos antes de salvar
+ */
+export function validateCityAndState(
+  city: string,
+  state: string,
+): {valid: boolean; city?: string; state?: string; error?: string} {
+  // Estados válidos do Brasil (siglas de 2 caracteres)
+  const VALID_BRAZILIAN_STATES = new Set([
+    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+  ]);
+
+  // Valores inválidos/genéricos
+  const INVALID_VALUES = new Set([
+    'unknown', 'desconhecido', 'null', 'undefined', 'n/a', 'na',
+    'cidade', 'city', 'local', 'location', 'endereço', 'address',
+  ]);
+
+  // Normalizar city
+  const normalizedCity = city?.trim() || '';
+  if (!normalizedCity || normalizedCity.length < 2) {
+    return {valid: false, error: `City inválido: '${city}'`};
+  }
+
+  if (INVALID_VALUES.has(normalizedCity.toLowerCase())) {
+    return {valid: false, error: `City é um valor genérico/inválido: '${normalizedCity}'`};
+  }
+
+  // Normalizar state (deve ser sigla de 2 caracteres)
+  const normalizedState = state?.trim().toUpperCase() || '';
+  if (!normalizedState || normalizedState.length !== 2) {
+    return {valid: false, error: `State não tem 2 caracteres: '${state}'`};
+  }
+
+  if (!VALID_BRAZILIAN_STATES.has(normalizedState)) {
+    return {valid: false, error: `State não é uma sigla válida do Brasil: '${normalizedState}'`};
+  }
+
+  return {valid: true, city: normalizedCity, state: normalizedState};
+}
+
+/**
  * Normaliza cidade e estado para criar ID válido para coleção
  * Remove espaços, caracteres especiais e converte para lowercase
  * Exemplo: "Osasco" + "SP" -> "osasco_sp"
+ * CRÍTICO: Valida city e state antes de normalizar
  */
 export function normalizeLocationId(city: string, state: string): string {
   const normalize = (str: string): string => {
@@ -24,34 +69,38 @@ export function normalizeLocationId(city: string, state: string): string {
       .replace(/^_|_$/g, ''); // Remove underscores no início e fim
   };
 
-  const normalizedCity = normalize(city || '');
-  const normalizedState = normalize(state || '');
+  // CRÍTICO: Validar city e state antes de normalizar
+  const validation = validateCityAndState(city, state);
+  if (!validation.valid) {
+    const errorMsg = `Localização inválida: city='${city}', state='${state}'. ` +
+      `${validation.error || 'Não é possível salvar dados sem localização válida.'}`;
+    functions.logger.error('📍 normalizeLocationId: Validação falhou', {
+      city,
+      state,
+      error: validation.error,
+    });
+    // CRÍTICO: Lançar exceção em vez de retornar 'unknown' - NUNCA salvar sem localização válida
+    throw new Error(errorMsg);
+  }
+
+  const validatedCity = validation.city!;
+  const validatedState = validation.state!;
+
+  const normalizedCity = normalize(validatedCity);
+  const normalizedState = normalize(validatedState);
 
   // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de normalização
   functions.logger.info('📍 LOCATION TRACE', {
     function: 'normalizeLocationId',
     rawCity: city || '',
     rawState: state || '',
+    validatedCity,
+    validatedState,
     normalizedCity,
     normalizedState,
-    locationId: !normalizedCity && !normalizedState ? 'unknown' : 
-                !normalizedCity ? normalizedState :
-                !normalizedState ? normalizedCity :
-                `${normalizedCity}_${normalizedState}`,
+    locationId: `${normalizedCity}_${normalizedState}`,
     timestamp: new Date().toISOString(),
   });
-
-  if (!normalizedCity && !normalizedState) {
-    return 'unknown';
-  }
-
-  if (!normalizedCity) {
-    return normalizedState;
-  }
-
-  if (!normalizedState) {
-    return normalizedCity;
-  }
 
   return `${normalizedCity}_${normalizedState}`;
 }
@@ -111,69 +160,105 @@ export async function getUserLocation(
   userId: string,
 ): Promise<{city: string; state: string}> {
   try {
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
+    // LEI MÁXIMA DO TASKGO: Buscar primeiro em users global (legacy), depois em locations/{locationId}/users
+    // Estratégia híbrida para compatibilidade com dados antigos
+    
+    // 1. Tentar buscar na coleção global "users" (legacy/migração)
+    const globalUserDoc = await db.collection('users').doc(userId).get();
+    let userData = globalUserDoc.exists ? globalUserDoc.data() : null;
+    let city = userData?.city || '';
+    let state = userData?.state || '';
+    
+    // 2. Se encontrou city/state na coleção global, tentar buscar em locations/{locationId}/users também
+    if (city && state) {
+      try {
+        const locationId = normalizeLocationId(city, state);
+        const locationUserDoc = await db.collection('locations').doc(locationId)
+          .collection('users').doc(userId).get();
+        
+        if (locationUserDoc.exists) {
+          const locationUserData = locationUserDoc.data();
+          const locationCity = locationUserData?.city || '';
+          const locationState = locationUserData?.state || '';
+          
+          if (locationCity && locationState) {
+            // Usar dados de locations/{locationId}/users (mais atualizado)
+            city = locationCity;
+            state = locationState;
+            userData = locationUserData;
+            functions.logger.info('📍 getUserLocation: Usando dados de locations/{locationId}/users', {
+              userId,
+              locationId,
+              city,
+              state
+            });
+          }
+        }
+      } catch (e) {
+        functions.logger.warn(
+            '📍 getUserLocation: Erro ao buscar em locations, usando users global',
+            {userId, error: e}
+        );
+      }
+    }
+    
+    if (!globalUserDoc.exists && !city && !state) {
       functions.logger.warn('📍 getUserLocation: User document not found', {userId});
       return {city: '', state: ''};
     }
-
-    const userData = userDoc.data();
-    
-    // CRÍTICO: Buscar state diretamente do perfil do usuário (campo adicionado na versão 88)
-    // Primeiro tentar campos diretos do usuário (prioridade)
-    const city = userData?.city || '';
-    const state = userData?.state || '';
     
     // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de localização do usuário
+    // Lei 1: Localização vem EXCLUSIVAMENTE de users/{userId}.city e users/{userId}.state na raiz
     functions.logger.info('📍 LOCATION TRACE', {
       function: 'getUserLocation',
       userId,
       rawCity: city,
       rawState: state,
-      hasAddress: !!userData?.address,
-      addressCity: userData?.address?.city || userData?.address?.cityName || '',
-      addressState: userData?.address?.state || userData?.address?.stateName || '',
+      source: 'users/{userId} root fields (city, state)',
       timestamp: new Date().toISOString(),
     });
     
+    // CRÍTICO: Lei 1 - A localização é determinada EXCLUSIVAMENTE pelos campos city e state na raiz
+    // NÃO existe fallback para address. Se city ou state não existirem na raiz, retornar vazio.
     if (city && state) {
-      const locationId = normalizeLocationId(city, state);
-      functions.logger.info('📍 getUserLocation: Using direct fields', {
-        userId,
-        city,
-        state,
-        locationId,
-      });
-      return {city, state};
-    }
-    
-    // Fallback: tentar obter de address se campos diretos não estiverem disponíveis
-    const address = userData?.address;
-    if (address) {
-      const fallbackCity = address.city || address.cityName || city || '';
-      const fallbackState = address.state || address.stateName || state || '';
-      const locationId = normalizeLocationId(fallbackCity, fallbackState);
-      functions.logger.info('📍 getUserLocation: Using address fallback', {
-        userId,
-        city: fallbackCity,
-        state: fallbackState,
-        locationId,
-      });
-      return {
-        city: fallbackCity,
-        state: fallbackState,
-      };
+      // CRÍTICO: Validar city e state antes de retornar
+      const validation = validateCityAndState(city, state);
+      if (validation.valid) {
+        const locationId = normalizeLocationId(validation.city!, validation.state!);
+        functions.logger.info('📍 getUserLocation: Using direct fields (validated)', {
+          userId,
+          city: validation.city,
+          state: validation.state,
+          locationId,
+        });
+        return {city: validation.city!, state: validation.state!};
+      } else {
+        functions.logger.error('📍 getUserLocation: City/State inválidos nos campos diretos', {
+          userId,
+          city,
+          state,
+          error: validation.error,
+        });
+        // Lei 1: Se validação falhar, retornar vazio (não fazer fallback)
+        return {city: '', state: ''};
+      }
     }
 
-    // Retornar o que tiver (mesmo que vazio)
-    functions.logger.warn('📍 getUserLocation: No location data found', {
+    // Lei 1: Se city ou state não existirem na raiz, retornar vazio
+    // NÃO fazer fallback para address - isso viola a Lei 1 do modelo canônico
+    functions.logger.error('📍 getUserLocation: Localização não encontrada na raiz do documento users/{userId}', {
       userId,
+      hasCity: !!city,
+      hasState: !!state,
       city: city || '',
       state: state || '',
+      message: 'Localização DEVE estar em users/{userId}.city e ' +
+        'users/{userId}.state na raiz do documento. ' +
+        'Fallback para address é PROIBIDO.',
     });
     return {
-      city: city || '',
-      state: state || '',
+      city: '',
+      state: '',
     };
   } catch (error) {
     functions.logger.error('📍 getUserLocation: Error', {userId, error});

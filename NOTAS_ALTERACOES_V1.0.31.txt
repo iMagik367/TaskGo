@@ -1,3 +1,0 @@
-Feed redesenhado estilo Facebook, visualizador de imagens aprimorado, 3 abas em Meus Serviços. Campo preço removido para prestadores, botões do topbar em todas as telas, vídeo corrigido. Isolamento de dados com coleções separadas por usuários.
-
-

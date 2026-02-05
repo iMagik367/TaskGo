@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.orders.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -52,7 +53,14 @@ fun DetalhesPedidoScreen(
             Text(status, color = cor, style = FigmaSectionTitle)
         }
         Spacer(modifier = Modifier.height(14.dp))
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Card(
+            modifier = Modifier.fillMaxWidth(), 
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
+        ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text("Produtos", style = FigmaProductDescription, color = TaskGoTextGrayLight)
                 produtos.forEach { (nome, valor) ->
@@ -68,7 +76,14 @@ fun DetalhesPedidoScreen(
             }
         }
         Spacer(modifier = Modifier.height(18.dp))
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Card(
+            modifier = Modifier.fillMaxWidth(), 
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
+        ) {
             Column(Modifier.padding(14.dp)) {
                 Text("Endereço de entrega:", color = TaskGoTextGrayLight, style = FigmaProductDescription)
                 Text("[Endereço de entrega]", color = TaskGoTextBlack, style = FigmaProductName)

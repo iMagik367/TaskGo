@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import {validateAppCheck} from './security/appCheck';
 import {getFirestore} from './utils/firestore';
+import {ordersPath, getUserLocationId} from './utils/firestorePaths';
 
 /**
  * Triggered when a new user is created in Firebase Auth
@@ -9,96 +10,20 @@ import {getFirestore} from './utils/firestore';
  * IMPORTANTE: Usa merge para não sobrescrever campos já definidos pelo app (como role)
  */
 export const onUserCreate = functions.auth.user().onCreate(async (user) => {
-  const db = getFirestore();
-  
   try {
-    const userRef = db.collection('users').doc(user.uid);
+    // CRÍTICO: Usuários devem ser salvos APENAS em locations/{locationId}/users/{userId}
+    // A Cloud Function é chamada quando o usuário é criado no Firebase Auth
+    // Nesse momento, o usuário ainda não tem city/state (será preenchido no cadastro)
+    // O app criará o documento em locations quando o usuário completar o cadastro com city/state
+    // Portanto, esta função não precisa criar nada - apenas retornar
     
-    // Verificar se o documento já existe (pode ter sido criado pelo app antes da função executar)
-    const userDoc = await userRef.get();
+    // Verificar se o app já criou o documento (pode ter acontecido se o cadastro foi muito rápido)
+    // Buscar em todas as locations conhecidas seria ineficiente, então apenas retornamos
+    // O app garantirá que o documento seja criado em locations quando tiver city/state
     
-    if (userDoc.exists) {
-      // Documento já existe - fazer merge apenas dos campos básicos que podem estar faltando
-      // CRÍTICO: NÃO sobrescrever role, pendingAccountType ou outros campos já definidos pelo app
-      const existingData = userDoc.data();
-      const updateData: { [key: string]: unknown } = {
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      
-      // Só atualizar campos que não existem ou são null
-      if (!existingData?.email && user.email) {
-        updateData.email = user.email;
-      }
-      if (!existingData?.displayName && user.displayName) {
-        updateData.displayName = user.displayName;
-      }
-      if (!existingData?.photoURL && user.photoURL) {
-        updateData.photoURL = user.photoURL;
-      }
-      if (!existingData?.createdAt) {
-        updateData.createdAt = admin.firestore.FieldValue.serverTimestamp();
-      }
-      if (existingData?.profileComplete === undefined) {
-        updateData.profileComplete = false;
-      }
-      if (existingData?.verified === undefined) {
-        updateData.verified = false;
-      }
-      
-      // CRÍTICO: NÃO atualizar role ou pendingAccountType - deixar o que já foi definido pelo app
-      // Se o usuário já tem role definido (não é "client" padrão) ou pendingAccountType == false,
-      // significa que já passou pelo primeiro login e selecionou o tipo de conta
-      const hasDefinedRole = existingData?.role && existingData.role !== 'client';
-      const isAccountTypeDefined = existingData?.pendingAccountType === false;
-      
-      if (hasDefinedRole || isAccountTypeDefined) {
-        const roleInfo = existingData?.role || 'undefined';
-        const pendingInfo = existingData?.pendingAccountType;
-        functions.logger.info(
-          'User ' + user.uid + ' already has account type defined ' +
-          '(role: ' + roleInfo + ', pendingAccountType: ' + pendingInfo + '). ' +
-          'Skipping update to preserve user choice.'
-        );
-        return null;
-      }
-      
-      if (Object.keys(updateData).length > 1) { // Mais que apenas updatedAt
-        await userRef.update(updateData);
-        const rolePreserved = existingData?.role || 'undefined';
-        const pendingPreserved = existingData?.pendingAccountType;
-        functions.logger.info(
-          'User document merged for ' + user.uid + ', ' +
-          'role preserved: ' + rolePreserved + ', ' +
-          'pendingAccountType preserved: ' + pendingPreserved
-        );
-      }
-    } else {
-      // Documento não existe - criar com flag pendingAccountType para indicar que o app precisa mostrar dialog
-      // O app vai chamar setInitialUserRole para definir o role correto (incluindo Custom Claims)
-      const userData = {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        role: 'user', // Default role - será atualizado por setInitialUserRole quando o usuário selecionar tipo de conta
-        pendingAccountType: true, // Flag para indicar que o app precisa mostrar dialog de seleção
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        profileComplete: false,
-        verified: false,
-      };
-
-      await userRef.set(userData, { merge: true });
-      
-      // Definir Custom Claim padrão como "user" (será atualizado por setInitialUserRole se necessário)
-      await admin.auth().setCustomUserClaims(user.uid, {
-        role: 'user',
-      });
-      
-      functions.logger.info(
-        `User document created for ${user.uid} with pendingAccountType flag and default Custom Claim role=user`
-      );
-    }
+    const message = 'User ' + user.uid + ' created in Auth. ' +
+      'Document will be created in locations/{locationId}/users when user completes signup with city/state.';
+    functions.logger.info(message);
     
     return null;
   } catch (error) {
@@ -121,7 +46,10 @@ export const onUserDelete = functions.auth.user().onDelete(async (user) => {
     batch.delete(userRef);
 
     // Delete user's orders (soft delete by updating status)
-    const ordersSnapshot = await db.collection('orders')
+    // CRÍTICO: Buscar orders na coleção por localização
+    const locationId = await getUserLocationId(db, user.uid);
+    const locationOrdersCollection = ordersPath(db, locationId);
+    const ordersSnapshot = await locationOrdersCollection
       .where('clientId', '==', user.uid)
       .get();
     
@@ -143,9 +71,9 @@ export const onUserDelete = functions.auth.user().onDelete(async (user) => {
 });
 
 /**
- * Function to promote user to provider
+ * Function to promote user to partner
  */
-export const promoteToProvider = functions.https.onCall(async (data, context) => {
+export const promoteToPartner = functions.https.onCall(async (data, context) => {
   const db = getFirestore();
   
   try {
@@ -159,14 +87,14 @@ export const promoteToProvider = functions.https.onCall(async (data, context) =>
     }
 
     await db.collection('users').doc(context.auth.uid).update({
-      role: 'provider',
+      role: 'partner',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    functions.logger.info(`User ${context.auth.uid} promoted to provider`);
+    functions.logger.info(`User ${context.auth.uid} promoted to partner`);
     return {success: true};
   } catch (error) {
-    functions.logger.error('Error promoting user to provider:', error);
+    functions.logger.error('Error promoting user to partner:', error);
     if (error instanceof functions.https.HttpsError) {
       throw error;
     }
@@ -207,36 +135,80 @@ export const getUserEmailByDocument = functions.https.onCall(async (data, contex
     
     const db = getFirestore();
     
+    // CRÍTICO: Buscar primeiro na coleção global 'users' (legacy)
+    // Depois buscar em locations/{locationId}/users se necessário
+    // Por enquanto, manter busca apenas em 'users' global para compatibilidade
+    
     // Buscar por CPF
     if (cleanDocument.length === 11) {
+      // Tentar buscar na coleção global primeiro
       const cpfQuery = await db.collection('users')
         .where('cpf', '==', cleanDocument)
         .limit(1)
         .get();
       
       if (!cpfQuery.empty) {
-        const userData = cpfQuery.docs[0].data();
-        const role = userData?.role?.toLowerCase() || '';
+            const userData = cpfQuery.docs[0].data();
+            const role = userData?.role?.toLowerCase() || '';
+            
+            // Verificar se é parceiro
+            if (role !== 'partner') {
+              throw new functions.https.HttpsError(
+                'failed-precondition',
+                'Este CPF/CNPJ não está cadastrado como parceiro'
+              );
+            }
         
-        // Verificar se é parceiro
-        if (role !== 'partner' && role !== 'provider') {
-          throw new functions.https.HttpsError(
-            'failed-precondition',
-            'Este CPF/CNPJ não está cadastrado como parceiro'
-          );
-        }
-        
-        functions.logger.info(`Email found for CPF: ${cleanDocument}`);
+        functions.logger.info(`Email found for CPF in users collection: ${cleanDocument}`);
         return {
           email: userData.email,
           role: userData.role,
           uid: cpfQuery.docs[0].id
         };
       }
+      
+      // Se não encontrou na coleção global, buscar em locations/{locationId}/users
+      // LEI MÁXIMA DO TASKGO: Buscar em todas as locations quando necessário
+      functions.logger.info('CPF não encontrado em users global, buscando em locations/{locationId}/users...');
+      const locationsSnapshot = await db.collection('locations').limit(100).get();
+      
+      for (const locationDoc of locationsSnapshot.docs) {
+        try {
+          const locationUsersCollection = locationDoc.ref.collection('users');
+          const cpfLocationQuery = await locationUsersCollection
+            .where('cpf', '==', cleanDocument)
+            .limit(1)
+            .get();
+          
+          if (!cpfLocationQuery.empty) {
+            const userData = cpfLocationQuery.docs[0].data();
+            const role = userData?.role?.toLowerCase() || '';
+            
+            // Verificar se é parceiro
+            if (role !== 'partner') {
+              throw new functions.https.HttpsError(
+                'failed-precondition',
+                'Este CPF/CNPJ não está cadastrado como parceiro'
+              );
+            }
+            
+            functions.logger.info(`Email found for CPF in locations/${locationDoc.id}/users: ${cleanDocument}`);
+            return {
+              email: userData.email,
+              role: userData.role,
+              uid: cpfLocationQuery.docs[0].id
+            };
+          }
+        } catch (e) {
+          functions.logger.warn(`Erro ao buscar em locations/${locationDoc.id}/users: ${e}`);
+          // Continuar buscando em outras locations
+        }
+      }
     }
     
     // Buscar por CNPJ
     if (cleanDocument.length === 14) {
+      // Tentar buscar na coleção global primeiro
       const cnpjQuery = await db.collection('users')
         .where('cnpj', '==', cleanDocument)
         .limit(1)
@@ -246,20 +218,58 @@ export const getUserEmailByDocument = functions.https.onCall(async (data, contex
         const userData = cnpjQuery.docs[0].data();
         const role = userData?.role?.toLowerCase() || '';
         
-        // Verificar se é parceiro
-        if (role !== 'partner' && role !== 'provider') {
+        // Verificar se é parceiro (aceitar partner e provider para compatibilidade)
+        if (role !== 'partner') {
           throw new functions.https.HttpsError(
             'failed-precondition',
             'Este CPF/CNPJ não está cadastrado como parceiro'
           );
         }
         
-        functions.logger.info(`Email found for CNPJ: ${cleanDocument}`);
+        functions.logger.info(`Email found for CNPJ in users collection: ${cleanDocument}`);
         return {
           email: userData.email,
           role: userData.role,
           uid: cnpjQuery.docs[0].id
         };
+      }
+      
+      // Se não encontrou na coleção global, buscar em locations/{locationId}/users
+      // LEI MÁXIMA DO TASKGO: Buscar em todas as locations quando necessário
+      functions.logger.info('CNPJ não encontrado em users global, buscando em locations/{locationId}/users...');
+      const locationsSnapshot = await db.collection('locations').limit(100).get();
+      
+      for (const locationDoc of locationsSnapshot.docs) {
+        try {
+          const locationUsersCollection = locationDoc.ref.collection('users');
+          const cnpjLocationQuery = await locationUsersCollection
+            .where('cnpj', '==', cleanDocument)
+            .limit(1)
+            .get();
+          
+          if (!cnpjLocationQuery.empty) {
+            const userData = cnpjLocationQuery.docs[0].data();
+            const role = userData?.role?.toLowerCase() || '';
+            
+            // Verificar se é parceiro
+            if (role !== 'partner') {
+              throw new functions.https.HttpsError(
+                'failed-precondition',
+                'Este CPF/CNPJ não está cadastrado como parceiro'
+              );
+            }
+            
+            functions.logger.info(`Email found for CNPJ in locations/${locationDoc.id}/users: ${cleanDocument}`);
+            return {
+              email: userData.email,
+              role: userData.role,
+              uid: cnpjLocationQuery.docs[0].id
+            };
+          }
+        } catch (e) {
+          functions.logger.warn(`Erro ao buscar em locations/${locationDoc.id}/users: ${e}`);
+          // Continuar buscando em outras locations
+        }
       }
     }
     

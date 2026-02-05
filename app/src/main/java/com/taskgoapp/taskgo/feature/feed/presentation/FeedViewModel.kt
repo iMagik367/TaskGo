@@ -7,7 +7,6 @@ import com.taskgoapp.taskgo.core.model.Post
 import com.taskgoapp.taskgo.core.model.PostLocation
 import com.taskgoapp.taskgo.core.model.Result
 import com.taskgoapp.taskgo.core.model.AccountType
-import com.taskgoapp.taskgo.core.location.LocationManager
 import com.taskgoapp.taskgo.data.repository.FeedMediaRepository
 import com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
 import com.taskgoapp.taskgo.domain.usecase.*
@@ -39,21 +38,109 @@ class FeedViewModel @Inject constructor(
     private val unlikePostUseCase: UnlikePostUseCase,
     private val deletePostUseCase: DeletePostUseCase,
     private val feedMediaRepository: FeedMediaRepository,
-    private val locationManager: LocationManager,
     private val authRepository: FirebaseAuthRepository,
     private val userRepository: UserRepository,
     private val feedRepository: com.taskgoapp.taskgo.domain.repository.FeedRepository
 ) : ViewModel() {
     
+    private val _userPosts = MutableStateFlow<List<Post>>(emptyList())
+    val userPosts: StateFlow<List<Post>> = _userPosts.asStateFlow()
+    
     private val _uiState = MutableStateFlow(FeedUiState())
     val uiState: StateFlow<FeedUiState> = _uiState.asStateFlow()
+    
+    private val _accountType = MutableStateFlow<AccountType?>(null)
     
     val currentUserId: String?
         get() = authRepository.getCurrentUser()?.uid
     
     init {
-        loadUserLocation()
         loadCurrentUserProfile()
+        loadUserLocation()
+    }
+    
+    private fun startObservingFeed() {
+        viewModelScope.launch {
+            userRepository.observeCurrentUser()
+                .distinctUntilChanged { old, new -> 
+                    old?.city == new?.city && old?.state == new?.state 
+                }
+                .collect { user ->
+                    val userCity = user?.city?.takeIf { it.isNotBlank() }
+                    val userState = user?.state?.takeIf { it.isNotBlank() }
+
+                    if (userCity != null && userState != null) {
+                        _uiState.value = _uiState.value.copy(
+                            userCity = userCity,
+                            userState = userState
+                        )
+                        loadFeedOnce()
+                    }
+                }
+        }
+    }
+    
+    private fun loadFeedOnce() {
+        val userCity = _uiState.value.userCity
+        val userState = _uiState.value.userState
+
+        if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+            return
+        }
+
+        viewModelScope.launch {
+            android.util.Log.d("FeedViewModel", "🔵 loadFeedOnce: Iniciando carregamento do feed")
+            android.util.Log.d("FeedViewModel", "   userCity=$userCity, userState=$userState, accountType=${_accountType.value}")
+            
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            try {
+                android.util.Log.d("FeedViewModel", "🟢 Chamando getFeedPostsUseCase...")
+                val flow = getFeedPostsUseCase(
+                    0.0,
+                    0.0,
+                    _uiState.value.currentRadius
+                )
+                android.util.Log.d("FeedViewModel", "   Flow obtido, iniciando coleta com take(1)...")
+                
+                flow.take(1).collect { allPosts ->
+                    android.util.Log.d("FeedViewModel", "🟡 COLECT: Recebidos ${allPosts.size} posts do UseCase")
+                    
+                    // REGRA DE NEGÓCIO:
+                    // - CLIENTE: vê apenas posts de parceiros (não próprios, pois cliente não posta)
+                    // - PARCEIRO: vê todos os posts (próprios + de outros parceiros)
+                    val filteredPosts = when (_accountType.value) {
+                        AccountType.CLIENTE -> {
+                            android.util.Log.d("FeedViewModel", "   Filtro CLIENTE: mantendo todos os posts (filtro no repositório)")
+                            allPosts
+                        }
+                        AccountType.PARCEIRO -> {
+                            android.util.Log.d("FeedViewModel", "   Filtro PARCEIRO: mantendo todos os posts")
+                            allPosts
+                        }
+                        else -> {
+                            android.util.Log.w("FeedViewModel", "   Filtro DESCONHECIDO: accountType=${_accountType.value}, mantendo todos")
+                            allPosts
+                        }
+                    }
+                    
+                    android.util.Log.d("FeedViewModel", "✅ Atualizando UI: ${filteredPosts.size} posts após filtro")
+                    _uiState.value = _uiState.value.copy(
+                        posts = filteredPosts,
+                        isLoading = false
+                    )
+                    android.util.Log.d("FeedViewModel", "✅ UI atualizada com sucesso")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("FeedViewModel", "🔴 EXCEPTION em loadFeedOnce", e)
+                android.util.Log.e("FeedViewModel", "   Tipo: ${e.javaClass.simpleName}, Mensagem: ${e.message}")
+                e.printStackTrace()
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Erro ao carregar feed: ${e.message}"
+                )
+            }
+        }
     }
     
     /**
@@ -65,9 +152,8 @@ class FeedViewModel @Inject constructor(
                 userRepository.observeCurrentUser().collect { user ->
                     user?.let {
                         // Apenas parceiros podem postar (unificação de prestadores e vendedores)
-                        val canPost = it.accountType == AccountType.PARCEIRO || 
-                                     it.accountType == AccountType.PRESTADOR || 
-                                     it.accountType == AccountType.VENDEDOR
+                        val canPost = it.accountType == AccountType.PARCEIRO
+                        _accountType.value = it.accountType
                         _uiState.value = _uiState.value.copy(
                             currentUserAvatarUrl = it.avatarUri,
                             currentUserName = it.name,
@@ -81,107 +167,15 @@ class FeedViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Carrega a localização do usuário (GPS ou do perfil)
-     */
     fun loadUserLocation() {
-        viewModelScope.launch {
-            try {
-                // Tentar obter localização GPS primeiro
-                val location = locationManager.getCurrentLocation()
-                if (location != null) {
-                    val address = locationManager.getAddressFromLocation(
-                        location.latitude,
-                        location.longitude
-                    )
-                    _uiState.value = _uiState.value.copy(
-                        userLocation = location.latitude to location.longitude,
-                        userCity = address?.locality,
-                        userState = address?.adminArea
-                    )
-                    loadFeed()
-                } else {
-                    // Fallback: usar cidade do perfil
-                    loadLocationFromProfile()
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("FeedViewModel", "Erro ao obter localização: ${e.message}", e)
-                loadLocationFromProfile()
-            }
-        }
-    }
-    
-    /**
-     * Carrega localização do perfil do usuário
-     */
-    private fun loadLocationFromProfile() {
-        viewModelScope.launch {
-            try {
-                userRepository.observeCurrentUser().collect { user ->
-                    user?.let {
-                        // Tentar obter coordenadas da cidade do perfil usando geocoding
-                        val city = it.city
-                        
-                        if (city != null) {
-                            // Se não temos coordenadas GPS, vamos tentar usar geocoding
-                            // Por enquanto, vamos apenas definir a cidade
-                            // O feed pode ainda funcionar mas sem filtro por distância exata
-                            _uiState.value = _uiState.value.copy(
-                                userCity = city
-                            )
-                            // Não carregar feed aqui se não tivermos coordenadas
-                            // O usuário precisará permitir acesso à localização
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("FeedViewModel", "Erro ao carregar localização do perfil: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(error = "Erro ao carregar localização")
-            }
-        }
-    }
-    
-    /**
-     * Carrega o feed de posts
-     */
-    fun loadFeed() {
-        val location = _uiState.value.userLocation
-        if (location == null) {
-            _uiState.value = _uiState.value.copy(
-                error = "Localização não disponível. Por favor, permita o acesso à localização ou atualize sua cidade no perfil."
-            )
-            return
-        }
-        
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
-            try {
-                getFeedPostsUseCase(
-                    location.first,
-                    location.second,
-                    _uiState.value.currentRadius
-                ).collect { posts ->
-                    _uiState.value = _uiState.value.copy(
-                        posts = posts,
-                        isLoading = false
-                    )
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("FeedViewModel", "Erro ao carregar feed: ${e.message}", e)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Erro ao carregar feed: ${e.message}"
-                )
-            }
-        }
+        startObservingFeed()
     }
     
     /**
      * Atualiza o feed (pull to refresh)
      */
     fun refreshFeed() {
-        loadUserLocation()
+        loadFeedOnce()
     }
     
     /**
@@ -250,10 +244,24 @@ class FeedViewModel @Inject constructor(
                     emptyList()
                 }
                 
+                // CRÍTICO: Obter city e state do perfil do usuário (fonte de verdade)
+                val currentUser = userRepository.observeCurrentUser().first()
+                val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+                val userState = currentUser?.state?.takeIf { it.isNotBlank() }
+                
+                if (userCity.isNullOrBlank() || userState.isNullOrBlank()) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Localização não disponível. Aguarde a localização ser detectada e tente novamente."
+                    )
+                    android.util.Log.w("FeedViewModel", "⚠️ Tentativa de criar post sem localização válida: city=$userCity, state=$userState")
+                    return@launch
+                }
+                
                 // Criar localização do post
                 val postLocation = PostLocation(
-                    city = _uiState.value.userCity ?: "",
-                    state = "", // Estado não disponível no UserProfile, pode ser preenchido via geocoding se necessário
+                    city = userCity,
+                    state = userState,
                     latitude = location.first,
                     longitude = location.second
                 )
@@ -346,7 +354,7 @@ class FeedViewModel @Inject constructor(
      */
     fun updateRadius(newRadius: Double) {
         _uiState.value = _uiState.value.copy(currentRadius = newRadius)
-        loadFeed()
+        loadFeedOnce()
     }
     
     /**

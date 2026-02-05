@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.checkout.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -81,8 +82,9 @@ fun AddressBookScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = TaskGoSurface
-                        )
+                            containerColor = TaskGoBackgroundWhite
+                        ),
+                        border = BorderStroke(1.dp, TaskGoBorder)
                     ) {
                         Column(
                             modifier = Modifier
@@ -117,7 +119,11 @@ fun AddressBookScreen(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         selectedAddressId = address.id
-                    }
+                    },
+                    colors = CardDefaults.cardColors(
+                        containerColor = TaskGoBackgroundWhite
+                    ),
+                    border = BorderStroke(1.dp, TaskGoBorder)
                 ) {
                     Column(
                         modifier = Modifier

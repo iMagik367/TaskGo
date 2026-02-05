@@ -6,6 +6,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.*
@@ -27,7 +28,8 @@ import javax.inject.Singleton
 @Singleton
 class LGPDComplianceManager @Inject constructor(
     private val context: Context,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository
 ) {
     
     companion object {
@@ -169,32 +171,70 @@ class LGPDComplianceManager @Inject constructor(
             }
             
             // Dados de pedidos (service orders)
-            val serviceOrders = firestore.collection("orders")
+            // CRÍTICO: Buscar na coleção por localização
+            val user = userRepository.observeCurrentUser().first()
+            val city = user?.city?.takeIf { it.isNotBlank() } ?: ""
+            val state = user?.state?.takeIf { it.isNotBlank() } ?: ""
+            val locationId = com.taskgoapp.taskgo.core.firebase.LocationHelper.normalizeLocationId(city, state)
+            val locationOrdersCollection = firestore.collection("locations").document(locationId).collection("orders")
+            val serviceOrders = locationOrdersCollection
                 .whereEqualTo("clientId", userId)
                 .get()
                 .await()
             userData["service_orders"] = serviceOrders.documents.map { it.data }
             
             // Dados de pedidos de produtos
-            val productOrders = firestore.collection("purchase_orders")
-                .whereEqualTo("clientId", userId)
-                .get()
-                .await()
-            userData["product_orders"] = productOrders.documents.map { it.data }
+            // CRÍTICO: Buscar em todas as localizações (product orders podem estar em qualquer locationId)
+            val allProductOrders = mutableListOf<Map<String, Any>>()
+            val locationsSnapshot = firestore.collection("locations").limit(100).get().await()
+            for (locationDoc in locationsSnapshot.documents) {
+                try {
+                    val locationOrdersCollection = firestore.collection("locations")
+                        .document(locationDoc.id)
+                        .collection("orders")
+                    val productOrdersSnapshot = locationOrdersCollection
+                        .whereEqualTo("clientId", userId)
+                        .get()
+                        .await()
+                    allProductOrders.addAll(productOrdersSnapshot.documents.map { it.data ?: emptyMap() })
+                } catch (e: Exception) {
+                    Log.w(TAG, "Erro ao buscar product orders em ${locationDoc.id}: ${e.message}")
+                }
+            }
+            userData["product_orders"] = allProductOrders
             
-            // Dados de avaliações (como reviewer)
-            val reviewsAsReviewer = firestore.collection("reviews")
-                .whereEqualTo("reviewerId", userId)
-                .get()
-                .await()
-            userData["reviews_as_reviewer"] = reviewsAsReviewer.documents.map { it.data }
+            // Dados de avaliações (como reviewer) - buscar de todas as locations
+            val allReviewsAsReviewer = mutableListOf<Map<String, Any?>>()
+            val locationsSnapshot2 = firestore.collection("locations").limit(100).get().await()
+            for (locationDoc in locationsSnapshot2.documents) {
+                try {
+                    val reviewsCollection = locationDoc.reference.collection("reviews")
+                    val reviews = reviewsCollection
+                        .whereEqualTo("reviewerId", userId)
+                        .get()
+                        .await()
+                    allReviewsAsReviewer.addAll(reviews.documents.map { it.data ?: emptyMap() })
+                } catch (e: Exception) {
+                    Log.w(TAG, "Erro ao buscar reviews como reviewer em ${locationDoc.id}: ${e.message}")
+                }
+            }
+            userData["reviews_as_reviewer"] = allReviewsAsReviewer
             
-            // Dados de avaliações (como target)
-            val reviewsAsTarget = firestore.collection("reviews")
-                .whereEqualTo("targetId", userId)
-                .get()
-                .await()
-            userData["reviews_as_target"] = reviewsAsTarget.documents.map { it.data }
+            // Dados de avaliações (como target) - buscar de todas as locations
+            val allReviewsAsTarget = mutableListOf<Map<String, Any?>>()
+            for (locationDoc in locationsSnapshot.documents) {
+                try {
+                    val reviewsCollection = locationDoc.reference.collection("reviews")
+                    val reviews = reviewsCollection
+                        .whereEqualTo("targetId", userId)
+                        .get()
+                        .await()
+                    allReviewsAsTarget.addAll(reviews.documents.map { it.data ?: emptyMap() })
+                } catch (e: Exception) {
+                    Log.w(TAG, "Erro ao buscar reviews como target em ${locationDoc.id}: ${e.message}")
+                }
+            }
+            userData["reviews_as_target"] = allReviewsAsTarget
             
             // Dados de notificações
             val notifications = firestore.collection("notifications")

@@ -32,6 +32,7 @@ import android.util.Log
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
+import dagger.hilt.android.EntryPointAccessors
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.*
 import com.taskgoapp.taskgo.core.data.models.*
@@ -98,8 +99,36 @@ fun HomeScreen(
     val isLoading = variant == "loading" || uiState.isLoading
     val showDynamicBanner = variant == "banner"
     
+    // Context para permissões e GPS (apenas para coordenadas do mapa)
+    val context = LocalContext.current
+    
+    // GPS apenas para coordenadas do mapa (opcional) - NUNCA para city/state
+    var userLocationForMap by remember { mutableStateOf<AndroidLocation?>(null) }
+    LaunchedEffect(Unit) {
+        // Obter GPS apenas para coordenadas do mapa (não para city/state)
+        if (ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                val locationManager = LocationManager(context, com.taskgoapp.taskgo.data.local.datastore.PreferencesManager(context))
+                userLocationForMap = locationManager.getCurrentLocationGuaranteed()
+            } catch (e: Exception) {
+                Log.w("HomeScreen", "GPS não disponível para mapa, mas city/state do perfil estão OK: ${e.message}")
+                userLocationForMap = null
+            }
+        } else {
+            Log.w("HomeScreen", "Permissão de localização não concedida para mapa")
+            userLocationForMap = null
+        }
+    }
+    
     // Solicitar permissão de notificações quando entrar na home pela primeira vez
-    val context = androidx.compose.ui.platform.LocalContext.current
     val hasNotificationPermission = remember {
         com.taskgoapp.taskgo.core.permissions.PermissionHandler.hasNotificationPermission(context)
     }
@@ -118,31 +147,13 @@ fun HomeScreen(
     
     var selectedFilterType by remember { mutableStateOf<FilterType?>(FilterType.SERVICES) }
     
-    // Obter localização do usuário para filtrar produtos em destaque
-    val locationManager = remember { LocationManager(context) }
-    var userLocation by remember { mutableStateOf<android.location.Location?>(null) }
-    
-    // Carregar localização do usuário
-    LaunchedEffect(Unit) {
-        try {
-            if (ContextCompat.checkSelfPermission(
-                    context,
-                    android.Manifest.permission.ACCESS_FINE_LOCATION
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(
-                    context,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                userLocation = locationManager.getCurrentLocation()
-            }
-        } catch (e: Exception) {
-            Log.e("HomeScreen", "Erro ao obter localização: ${e.message}", e)
-        }
-    }
+    // ✅ REMOVIDO: LocationManager e GPS para filtrar produtos
+    // LEI MÁXIMA DO TASKGO: Produtos já vêm filtrados por city/state do Firestore
+    // NUNCA usar GPS para filtrar produtos - GPS apenas para coordenadas (mapa) quando necessário
+    // Os produtos já estão filtrados por city/state via LocationStateManager → locations/{locationId}/products
     
     // Filtrar produtos baseado nos filtros selecionados
-    val filteredProducts = remember(products, searchQuery, selectedProductFilter, userLocation) {
+    val filteredProducts = remember(products, searchQuery, selectedProductFilter) {
         products
             .filter { product ->
                 if (!product.active) return@filter false
@@ -189,31 +200,10 @@ fun HomeScreen(
                     else -> product.rating ?: 0.0
                 }
             }
-            .let { filtered ->
-                // Se o usuário tem localização, filtra raio 100km; senão, mantém lista filtrada
-                val productLat = userLocation?.latitude
-                val productLng = userLocation?.longitude
-                
-                if (productLat != null && productLng != null) {
-                    filtered.filter { product ->
-                        val prodLat = product.latitude
-                        val prodLng = product.longitude
-                        if (prodLat != null && prodLng != null) {
-                            val distance = calculateDistance(
-                                productLat,
-                                productLng,
-                                prodLat,
-                                prodLng
-                            )
-                            distance <= 100.0
-                        } else {
-                            false // Sem localização do produto, não exibe
-                        }
-                    }
-                } else {
-                    filtered // Sem localização do usuário, não esvazia a vitrine
-                }
-            }
+            // ✅ REMOVIDO: Filtro de distância GPS
+            // LEI MÁXIMA DO TASKGO: Produtos já vêm filtrados por city/state do Firestore
+            // NUNCA usar GPS para filtrar produtos - todos os produtos do mesmo city/state devem aparecer
+            // Os produtos já estão filtrados por city/state via LocationStateManager → locations/{locationId}/products
     }
 
     val resolveBannerAction: (String?) -> () -> Unit = { route ->
@@ -232,8 +222,7 @@ fun HomeScreen(
     
     val fallbackBanners = remember(accountType) {
         when (accountType) {
-            com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO,
-            com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR -> listOf(
+            com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO -> listOf(
                 HomeBannerContent(
                     id = "ordens_servico_destaque",
                     imageRes = R.drawable.banner_ordens_servico,
@@ -251,7 +240,6 @@ fun HomeScreen(
                     onClick = onNavigateToDiscountedProducts
                 )
             )
-            com.taskgoapp.taskgo.core.model.AccountType.VENDEDOR,
             com.taskgoapp.taskgo.core.model.AccountType.CLIENTE -> listOf(
                 HomeBannerContent(
                     id = "prestadores_locais",
@@ -277,10 +265,10 @@ fun HomeScreen(
         val matchesAccount: (com.taskgoapp.taskgo.core.model.HomeBanner) -> Boolean = { banner ->
             when (banner.audience) {
                 com.taskgoapp.taskgo.core.model.HomeBanner.Audience.TODOS -> true
-                com.taskgoapp.taskgo.core.model.HomeBanner.Audience.PRESTADOR ->
-                    accountType == com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR
+                com.taskgoapp.taskgo.core.model.HomeBanner.Audience.PARCEIRO ->
+                    accountType == com.taskgoapp.taskgo.core.model.AccountType.PARCEIRO
                 com.taskgoapp.taskgo.core.model.HomeBanner.Audience.CLIENTE ->
-                    accountType != com.taskgoapp.taskgo.core.model.AccountType.PRESTADOR
+                    accountType == com.taskgoapp.taskgo.core.model.AccountType.CLIENTE
             }
         }
         remoteBanners
@@ -548,7 +536,7 @@ fun HomeScreen(
                         fontWeight = FontWeight.Bold
                     )
                     ProvidersMapView(
-                        userLocation = userLocation,
+                        userLocation = userLocationForMap,
                         stores = stores,
                         onStoreClick = { storeId ->
                             // Navegar para perfil da loja
@@ -642,7 +630,11 @@ private fun HomeBannerCard(
             .fillMaxWidth()
             .clickable { banner.onClick() },
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Box(
             modifier = Modifier
@@ -696,9 +688,10 @@ fun BannerCard(
             .fillMaxWidth()
             .clickable { onBuyBanner() },
         colors = CardDefaults.cardColors(
-            containerColor = TaskGoGreen
+            containerColor = TaskGoBackgroundWhite
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier
@@ -785,8 +778,9 @@ fun EmptyProductsState(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = TaskGoSurfaceGray
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier
@@ -826,8 +820,9 @@ fun EmptyServicesState(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = TaskGoSurfaceGray
-        )
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier
@@ -876,7 +871,8 @@ fun ProductCard(
             containerColor = TaskGoBackgroundWhite
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier
@@ -1013,7 +1009,11 @@ private fun ServiceCard(
         modifier = modifier
             .clickable { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Column(
             modifier = Modifier

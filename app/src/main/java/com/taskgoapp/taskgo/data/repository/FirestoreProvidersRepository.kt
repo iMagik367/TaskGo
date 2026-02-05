@@ -3,19 +3,29 @@ package com.taskgoapp.taskgo.data.repository
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.taskgoapp.taskgo.core.firebase.LocationHelper
+import com.taskgoapp.taskgo.domain.repository.UserRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import android.util.Log
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Repositório para buscar prestadores de serviços com algoritmo de classificação por avaliações
+ * CRÍTICO: Busca prestadores de locations/{locationId}/users onde role == "partner" baseado no city/state do usuário atual
  */
-class FirestoreProvidersRepository(
-    private val firestore: FirebaseFirestore
+@Singleton
+class FirestoreProvidersRepository @Inject constructor(
+    private val firestore: FirebaseFirestore,
+    private val userRepository: UserRepository
 ) {
     private val usersCollection = firestore.collection("users")
-    private val reviewsCollection = firestore.collection("reviews")
+    // REMOVIDO: reviewsCollection global - reviews estão SEMPRE em locations/{locationId}/reviews
     
     /**
      * Busca prestadores em destaque ordenados por algoritmo de avaliações
+     * CRÍTICO: Busca em locations/{locationId}/users onde role == "partner" baseado no city/state do usuário atual
      * Algoritmo considera:
      * - Média de avaliações (peso 40%)
      * - Número de avaliações (peso 20%)
@@ -24,14 +34,35 @@ class FirestoreProvidersRepository(
      */
     suspend fun getFeaturedProviders(limit: Int = 10): List<ProviderWithScore> {
         return try {
-            // Buscar todos os prestadores
-            val providersSnapshot = usersCollection
-                .whereEqualTo("role", "provider")
+            val currentUser = userRepository.observeCurrentUser().first()
+            val city = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val state = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            if (city.isBlank() || state.isBlank()) {
+                Log.w("FirestoreProvidersRepo", "City/state do usuário atual estão vazios, não é possível buscar providers")
+                return emptyList()
+            }
+            
+            val locationId = LocationHelper.normalizeLocationId(city, state)
+            Log.d("FirestoreProvidersRepo", "📍 Buscando providers em destaque em locations/$locationId/users (city=$city, state=$state)")
+            
+            // CRÍTICO: Buscar em locations/{locationId}/users onde role == "partner"
+            val providers = mutableListOf<UserFirestore>()
+            
+            val providersSnapshot = firestore.collection("locations")
+                .document(locationId)
+                .collection("users")
+                .whereEqualTo("role", "partner")
                 .get()
                 .await()
             
-            val providers = providersSnapshot.documents.mapNotNull { doc ->
-                doc.toObject(UserFirestore::class.java)?.copy(uid = doc.id)
+            Log.d("FirestoreProvidersRepo", "Encontrados ${providersSnapshot.size()} providers em locations/$locationId/users")
+            
+            providersSnapshot.documents.forEach { doc ->
+                val provider = doc.toObject(UserFirestore::class.java)?.copy(uid = doc.id)
+                if (provider != null) {
+                    providers.add(provider)
+                }
             }
             
             // Calcular score para cada prestador
@@ -39,12 +70,17 @@ class FirestoreProvidersRepository(
                 calculateProviderScore(provider)
             }.filter { it.score > 0.0 } // Filtrar apenas prestadores com avaliações
             
+            Log.d("FirestoreProvidersRepo", "✅ Providers com score > 0: ${providersWithScore.size}")
+            
             // Ordenar por score (maior primeiro) e retornar top N
-            providersWithScore
+            val result = providersWithScore
                 .sortedByDescending { it.score }
                 .take(limit)
+            
+            Log.d("FirestoreProvidersRepo", "✅ Retornando ${result.size} providers em destaque")
+            result
         } catch (e: Exception) {
-            android.util.Log.e("FirestoreProvidersRepository", "Erro ao buscar prestadores: ${e.message}", e)
+            Log.e("FirestoreProvidersRepository", "Erro ao buscar prestadores: ${e.message}", e)
             emptyList()
         }
     }
@@ -54,7 +90,23 @@ class FirestoreProvidersRepository(
      */
     private suspend fun calculateProviderScore(provider: UserFirestore): ProviderWithScore {
         return try {
-            // Buscar todas as avaliações do prestador
+            // CRÍTICO: Buscar city/state do provider e usar locations/{locationId}/reviews
+            val providerCity = provider.city?.takeIf { it.isNotBlank() }
+            val providerState = provider.state?.takeIf { it.isNotBlank() }
+            
+            if (providerCity.isNullOrBlank() || providerState.isNullOrBlank()) {
+                Log.w("FirestoreProvidersRepo", "Provider ${provider.uid} não tem city/state definido")
+                return ProviderWithScore(provider, 0.0)
+            }
+            
+            // Buscar todas as avaliações do prestador em locations/{locationId}/reviews
+            val reviewsCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "reviews",
+                providerCity,
+                providerState
+            )
+            
             val reviewsSnapshot = reviewsCollection
                 .whereEqualTo("type", "PROVIDER")
                 .whereEqualTo("targetId", provider.uid)
@@ -125,33 +177,73 @@ class FirestoreProvidersRepository(
         limit: Int = 20
     ): List<ProviderWithScore> {
         return try {
-            var query: Query = usersCollection.whereEqualTo("role", "provider")
+            val providers = mutableListOf<UserFirestore>()
             
-            // Filtrar por localização se fornecida
-            // Nota: Firestore não suporta múltiplos whereEqualTo em campos diferentes
-            // Então vamos buscar todos e filtrar em memória
-            val snapshot = query.get().await()
+            // LEI MÁXIMA DO TASKGO: Buscar em locations/{locationId}/users quando temos city/state
+            if (city != null && state != null) {
+                try {
+                    val locationId = com.taskgoapp.taskgo.core.firebase.LocationHelper.normalizeLocationId(city, state)
+                    val locationQuery = firestore.collection("locations").document(locationId)
+                        .collection("users")
+                        .whereEqualTo("role", "partner")
+                        .get()
+                        .await()
+                    
+                    android.util.Log.d("FirestoreProvidersRepository", "Buscando em locations/$locationId/users: ${locationQuery.size()} documentos")
+                    
+                    locationQuery.documents.forEach { doc ->
+                        val provider = doc.toObject(UserFirestore::class.java)?.copy(uid = doc.id)
+                        if (provider != null) {
+                            // Verificar categoria se necessário
+                            val matchesCategory = if (category != null) {
+                                provider.preferredCategories?.any { 
+                                    it.equals(category, ignoreCase = true) 
+                                } == true
+                            } else {
+                                true
+                            }
+                            
+                            if (matchesCategory) {
+                                providers.add(provider)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("FirestoreProvidersRepository", "Erro ao buscar em locations: ${e.message}, tentando users global")
+                }
+            }
             
-            val providers = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(UserFirestore::class.java)?.copy(uid = doc.id)
-            }.filter { provider ->
-                var matches = true
+            // Fallback: Buscar em users global (legacy) se não encontrou em locations ou se não tem city/state
+            if (providers.isEmpty() || city == null || state == null) {
+                android.util.Log.d("FirestoreProvidersRepository", "Buscando em users global (legacy)...")
+                var query: Query = usersCollection.whereEqualTo("role", "partner")
+                val snapshot = query.get().await()
                 
-                if (city != null) {
-                    matches = matches && provider.address?.city?.equals(city, ignoreCase = true) == true
+                snapshot.documents.forEach { doc ->
+                    val provider = doc.toObject(UserFirestore::class.java)?.copy(uid = doc.id)
+                    if (provider != null) {
+                        var matches = true
+                        
+                        // Lei 1: Ler city/state APENAS da raiz do documento
+                        if (city != null) {
+                            matches = matches && provider.city?.equals(city, ignoreCase = true) == true
+                        }
+                        
+                        if (state != null) {
+                            matches = matches && provider.state?.equals(state, ignoreCase = true) == true
+                        }
+                        
+                        if (category != null) {
+                            matches = matches && provider.preferredCategories?.any { 
+                                it.equals(category, ignoreCase = true) 
+                            } == true
+                        }
+                        
+                        if (matches) {
+                            providers.add(provider)
+                        }
+                    }
                 }
-                
-                if (state != null) {
-                    matches = matches && provider.address?.state?.equals(state, ignoreCase = true) == true
-                }
-                
-                if (category != null) {
-                    matches = matches && provider.preferredCategories?.any { 
-                        it.equals(category, ignoreCase = true) 
-                    } == true
-                }
-                
-                matches
             }
             
             // Calcular scores e ordenar

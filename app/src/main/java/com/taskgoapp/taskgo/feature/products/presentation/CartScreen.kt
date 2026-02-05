@@ -1,6 +1,7 @@
 ﻿package com.taskgoapp.taskgo.feature.products.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -126,7 +127,13 @@ fun CartScreen(
             ) {
                 if (isSelectingAddress) {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = TaskGoBackgroundWhite
+                            ),
+                            border = BorderStroke(1.dp, TaskGoBorder)
+                        ) {
                             Column(Modifier.padding(18.dp)) {
                                 Text("Entregar em:", style = FigmaProductName, color = TaskGoTextBlack)
                                 Text("[Endereço de entrega]", style = FigmaProductDescription, color = TaskGoTextGray)
@@ -157,7 +164,11 @@ fun CartScreen(
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
                     Card(
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = TaskGoBackgroundWhite
+                        ),
+                        border = BorderStroke(1.dp, TaskGoBorder)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp)
@@ -282,7 +293,11 @@ private fun CartItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TaskGoBackgroundWhite
+        ),
+        border = BorderStroke(1.dp, TaskGoBorder)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),

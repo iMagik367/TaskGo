@@ -4,6 +4,7 @@ import * as functions from 'firebase-functions';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
+import {purchaseOrdersPath, getUserLocationId} from './utils/firestorePaths';
 import * as crypto from 'crypto';
 
 /**
@@ -24,8 +25,11 @@ export const createPixPayment = functions.https.onCall(async (data, context) => 
       );
     }
 
-    // Get order details
-    const orderDoc = await db.collection('purchase_orders').doc(orderId).get();
+    // CRÍTICO: Buscar order na coleção por localização
+    const userId = context.auth!.uid;
+    const locationId = await getUserLocationId(db, userId);
+    const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+    const orderDoc = await locationOrdersCollection.doc(orderId).get();
     if (!orderDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Order not found');
     }
@@ -78,8 +82,8 @@ export const createPixPayment = functions.https.onCall(async (data, context) => 
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection('purchase_orders').doc(orderId).update({
+    // Update order status - na coleção por localização
+    await locationOrdersCollection.doc(orderId).update({
       status: 'PAYMENT_PENDING',
       paymentId: paymentRef.id,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -232,8 +236,13 @@ export const verifyPixPayment = functions.https.onCall(async (data, context) => 
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Update order status
-      await db.collection('purchase_orders').doc(payment.orderId).update({
+      // CRÍTICO: Buscar order na coleção por localização
+      const clientId = payment.clientId;
+      const locationId = await getUserLocationId(db, clientId);
+      const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+      
+      // Update order status - na coleção por localização
+      await locationOrdersCollection.doc(payment.orderId).update({
         status: 'PENDING_PAYMENT',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
@@ -295,8 +304,13 @@ export const confirmPixPayment = functions.https.onCall(async (data, context) =>
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Update order status
-    await db.collection('purchase_orders').doc(payment.orderId).update({
+    // CRÍTICO: Buscar order na coleção por localização
+    const clientId = payment.clientId;
+    const locationId = await getUserLocationId(db, clientId);
+    const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+    
+    // Update order status - na coleção por localização
+    await locationOrdersCollection.doc(payment.orderId).update({
       status: 'PAID',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });

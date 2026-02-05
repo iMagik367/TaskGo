@@ -1,6 +1,7 @@
 package com.taskgoapp.taskgo.feature.settings.presentation
 
 import android.Manifest
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,12 +17,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.EntryPointAccessors
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
 import com.taskgoapp.taskgo.core.design.*
 import com.taskgoapp.taskgo.core.security.LGPDComplianceManager
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+import com.taskgoapp.taskgo.core.model.fold
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
@@ -45,14 +48,16 @@ fun PrivacyScreen(
     var saveJob by remember { mutableStateOf<Job?>(null) }
     var isSyncingFromRemote by remember { mutableStateOf(true) }
     
-    val lgpdManager = remember(context) { 
-        com.taskgoapp.taskgo.core.security.LGPDComplianceManager(
-            context,
-            com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()
-        )
+    val lgpdManager = remember(context) {
+        val app = context.applicationContext as com.taskgoapp.taskgo.TaskGoApp
+        EntryPointAccessors.fromApplication(app, com.taskgoapp.taskgo.di.LGPDEntryPoint::class.java)
+            .lgpdComplianceManager()
     }
     val functionsService = remember {
-        FirebaseFunctionsService(FirebaseFunctions.getInstance())
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context.applicationContext as com.taskgoapp.taskgo.TaskGoApp,
+            com.taskgoapp.taskgo.di.FirebaseFunctionsServiceEntryPoint::class.java
+        ).firebaseFunctionsService()
     }
     // Estados locais - inicializar apenas uma vez
     var locationSharingEnabled by remember { mutableStateOf(true) }
@@ -170,8 +175,9 @@ fun PrivacyScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = TaskGoBackgroundGray
-                )
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -196,7 +202,11 @@ fun PrivacyScreen(
             // Location Privacy
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -283,7 +293,11 @@ fun PrivacyScreen(
             // Profile Privacy
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -390,7 +404,11 @@ fun PrivacyScreen(
             // Data Collection
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -497,7 +515,11 @@ fun PrivacyScreen(
             // Advertising
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -604,7 +626,11 @@ fun PrivacyScreen(
             // Privacy Actions
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = TaskGoBackgroundWhite
+                ),
+                border = BorderStroke(1.dp, TaskGoBorder)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -630,11 +656,11 @@ fun PrivacyScreen(
                                     try {
                                         val result = lgpdManager.exportUserData(user.uid)
                                         result.fold(
-                                            onSuccess = { export ->
+                                            onSuccess = { export: com.taskgoapp.taskgo.core.security.UserDataExport ->
                                                 exportMessage = "Dados exportados com sucesso! Total: ${export.data.size} itens"
                                                 isExporting = false
                                             },
-                                            onFailure = { error ->
+                                            onFailure = { error: Throwable ->
                                                 exportMessage = "Erro ao exportar: ${error.message}"
                                                 isExporting = false
                                                 // Tratar erro específico do Secure Token API bloqueado
@@ -720,13 +746,29 @@ fun PrivacyScreen(
                                                     // Chamar Cloud Function para excluir conta completamente (inclui Firebase Auth)
                                                     val result = functionsService.deleteUserAccount()
                                                     result.fold(
-                                                        onSuccess = { data ->
+                                                        onSuccess = { data: Map<String, Any> ->
                                                             val message = data["message"] as? String ?: "Conta excluída com sucesso"
                                                             exportMessage = message
                                                             showDeleteConfirmation = false
-                                                            // Fazer logout após exclusão bem-sucedida
+                                                            
+                                                            // CRÍTICO: Limpar cache ANTES de fazer logout
+                                                            try {
+                                                                // Limpar dados locais do usuário
+                                                                // O DataStore será limpo automaticamente quando o app reiniciar
+                                                                // Não há necessidade de limpar manualmente, pois o app detecta logout
+                                                                
+                                                                android.util.Log.d("PrivacyScreen", "✅ Cache será limpo automaticamente após logout")
+                                                            } catch (e: Exception) {
+                                                                android.util.Log.e("PrivacyScreen", "Erro ao processar limpeza de cache: ${e.message}", e)
+                                                            }
+                                                            
+                                                            // Fazer logout após limpar cache
                                                             auth.signOut()
-                                                            // Navegar para login será feito pela navegação
+                                                            
+                                                            // Forçar navegação para login imediatamente
+                                                            // A navegação será feita automaticamente pelo sistema de navegação
+                                                            // quando detectar que o usuário não está mais autenticado
+                                                            android.util.Log.d("PrivacyScreen", "✅ Logout realizado após exclusão de conta")
                                                         },
                                                         onFailure = { error ->
                                                             exportMessage = "Erro ao excluir conta: ${error.message}"

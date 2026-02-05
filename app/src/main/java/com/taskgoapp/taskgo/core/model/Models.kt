@@ -3,25 +3,12 @@ package com.taskgoapp.taskgo.core.model
 // User Models
 enum class UserType {
     CLIENT,     // Cliente que contrata serviços
-    PROVIDER    // Prestador de serviços
+    PARTNER     // Parceiro - oferece serviços e produtos
 }
 
 enum class AccountType { 
-    /**
-     * @deprecated Use PARCEIRO instead. Mantido apenas para compatibilidade durante migração.
-     */
-    @Deprecated("Use PARCEIRO instead", ReplaceWith("PARCEIRO"))
-    PRESTADOR,
-    
-    /**
-     * @deprecated Use PARCEIRO instead. Mantido apenas para compatibilidade durante migração.
-     */
-    @Deprecated("Use PARCEIRO instead", ReplaceWith("PARCEIRO"))
-    VENDEDOR,
-    
-    PARCEIRO, // Unificação de PRESTADOR e VENDEDOR - pode oferecer serviços e produtos
-    
-    CLIENTE 
+    PARCEIRO,   // Parceiro - oferece serviços e produtos
+    CLIENTE     // Cliente - contrata serviços e compra produtos
 }
 
 data class UserProfile(
@@ -214,7 +201,7 @@ enum class NotificationType {
 enum class ReviewType {
     PRODUCT,      // Avaliação de produto
     SERVICE,      // Avaliação de serviço
-    PROVIDER      // Avaliação de prestador de serviço
+    PARTNER       // Avaliação de parceiro (serviço ou produto)
 }
 
 data class Review(

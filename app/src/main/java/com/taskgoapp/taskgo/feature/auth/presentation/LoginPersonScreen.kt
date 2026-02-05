@@ -3,6 +3,7 @@ package com.taskgoapp.taskgo.feature.auth.presentation
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -301,18 +302,23 @@ fun LoginPersonScreen(
             // Dialog de seleção de AccountType (para novo usuário Google)
             if (loginUiState.value.showAccountTypeDialog) {
                 AccountTypeSelectionDialog(
-                    onAccountTypeSelected = { accountType ->
-                        loginViewModel.createUserWithAccountType(accountType)
+                    onAccountTypeSelected = { data ->
+                        loginViewModel.createUserWithAccountType(data)
                     },
                     onDismiss = {
                         loginViewModel.cancelAccountTypeSelection()
-                    }
+                    },
+                    viewModel = loginViewModel
                 )
             }
             
-            // Navegação após sucesso ou quando 2FA é necessário
-            LaunchedEffect(loginUiState.value.isSuccess, loginUiState.value.requiresTwoFactor) {
-                if (loginUiState.value.requiresTwoFactor) {
+            // Navegação após sucesso, 2FA ou verificação de identidade
+            LaunchedEffect(loginUiState.value.isSuccess, loginUiState.value.requiresTwoFactor, loginUiState.value.requiresIdentityVerification) {
+                if (loginUiState.value.requiresIdentityVerification) {
+                    Log.d("LoginPersonScreen", "Verificação de identidade necessária, navegando...")
+                    kotlinx.coroutines.delay(300)
+                    onNavigateToIdentityVerification()
+                } else if (loginUiState.value.requiresTwoFactor) {
                     Log.d("LoginPersonScreen", "2FA necessário, navegando para verificação...")
                     kotlinx.coroutines.delay(300)
                     onNavigateToTwoFactor()

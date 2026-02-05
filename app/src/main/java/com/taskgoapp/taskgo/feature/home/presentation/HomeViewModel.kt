@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -47,6 +48,10 @@ class HomeViewModel @Inject constructor(
 
     val products: StateFlow<List<Product>> = productsRepository
         .observeProducts()
+        .onEach { products ->
+            // ✅ CRÍTICO: Logar quando produtos são recebidos no ViewModel
+            android.util.Log.d("HomeViewModel", "🔵 PRODUTOS RECEBIDOS no ViewModel: ${products.size} produtos")
+        }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),

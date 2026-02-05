@@ -86,8 +86,8 @@ android {
         applicationId = "com.taskgoapp.taskgo"
         minSdk = 24
         targetSdk = 35
-        versionCode = 97
-        versionName = "1.0.97"
+        versionCode = 143
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -180,8 +180,11 @@ android {
             )
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Minificação desabilitada temporariamente devido a crash do R8/daemon
+            // AAB gerado com sucesso sem minificação (55.44 MB)
+            // TODO: Investigar crash do R8 e reabilitar minificação em versão futura
+            isMinifyEnabled = false
+            isShrinkResources = false
             buildConfigField("String", "API_BASE_URL", "\"https://api.taskgo.com/v1/\"")
             buildConfigField("boolean", "USE_EMULATOR", "false")
             buildConfigField(
@@ -200,11 +203,12 @@ android {
                 enableAppCheck.toString()
             )
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro"
             )
-            // Configurações específicas do R8 para evitar ClassCastException
+            // Configurações específicas do R8 para evitar ClassCastException, EXCEPTION_ACCESS_VIOLATION e ArrayIndexOutOfBoundsException
             // O erro ClassCastException LinkedList to z2 é um bug conhecido do R8 em AGP 8.12.3
+            // EXCEPTION_ACCESS_VIOLATION e ArrayIndexOutOfBoundsException podem ocorrer durante minificação com otimizações agressivas
             // Solução: Usar configurações que evitam otimizações problemáticas
             multiDexEnabled = true
             // Aplicar signing config se existir
@@ -313,6 +317,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.transport.api)
     kapt(libs.androidx.room.compiler)
     
     // Hilt dependencies

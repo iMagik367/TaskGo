@@ -23,7 +23,8 @@ data class LocalProvidersUiState(
 class LocalProvidersViewModel @Inject constructor(
     private val providersRepository: FirestoreProvidersRepository,
     private val categoriesRepository: CategoriesRepository,
-    private val filterPreferencesManager: FilterPreferencesManager
+    private val filterPreferencesManager: FilterPreferencesManager,
+    private val userRepository: com.taskgoapp.taskgo.domain.repository.UserRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(LocalProvidersUiState())
@@ -140,8 +141,22 @@ class LocalProvidersViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val providers = providersRepository.getFeaturedProviders(limit = 50)
-                Log.d("LocalProvidersViewModel", "Prestadores em destaque carregados: ${providers.size}")
+                val currentUser = userRepository.observeCurrentUser().firstOrNull()
+                val userCity = currentUser?.city?.takeIf { it.isNotBlank() }
+                val userState = currentUser?.state?.takeIf { it.isNotBlank() }
+                
+                val providers = if (userCity != null && userState != null) {
+                    providersRepository.getProvidersByLocationAndCategory(
+                        city = userCity,
+                        state = userState,
+                        category = null,
+                        limit = 50
+                    )
+                } else {
+                    providersRepository.getFeaturedProviders(limit = 50)
+                }
+                
+                Log.d("LocalProvidersViewModel", "Prestadores carregados: ${providers.size}")
                 _allProviders.value = providers
                 _uiState.value = _uiState.value.copy(
                     featuredProviders = providers,

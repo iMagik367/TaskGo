@@ -28,7 +28,7 @@ export const createOnboardingLink = functions.https.onCall(async (data, context)
 
     const userData = userDoc.data();
     
-    if (userData?.role !== 'provider') {
+    if (userData?.role !== 'partner') {
       throw new functions.https.HttpsError(
         'failed-precondition',
         'Only providers can create Stripe Connect accounts'

@@ -5,13 +5,16 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.ListenerRegistration
 import com.taskgoapp.taskgo.core.firebase.LocationHelper
-import com.taskgoapp.taskgo.core.location.LocationStateManager
-import com.taskgoapp.taskgo.core.location.LocationState
+import com.taskgoapp.taskgo.domain.repository.UserRepository
+import com.taskgoapp.taskgo.core.model.Result
+import com.taskgoapp.taskgo.core.model.fold
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.channels.awaitClose
 import android.util.Log
 import javax.inject.Inject
@@ -23,11 +26,9 @@ class FirestoreServicesRepository @Inject constructor(
     private val realtimeRepository: com.taskgoapp.taskgo.data.realtime.RealtimeDatabaseRepository,
     private val authRepository: FirebaseAuthRepository,
     private val functionsService: com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService,
-    private val locationStateManager: LocationStateManager
+    private val userRepository: UserRepository
 ) {
-    // Coleção pública para queries (visualização de serviços por outros usuários)
-    // DEBUG ONLY - Mantida apenas para compatibilidade durante migração
-    private val publicServicesCollection = firestore.collection("services")
+    // REMOVIDO: Coleção global - serviços estão apenas em locations/{locationId}/services
     
     // Helper para obter subcoleção do usuário
     private fun getUserServicesCollection(userId: String) = 
@@ -35,37 +36,81 @@ class FirestoreServicesRepository @Inject constructor(
 
     /**
      * Observa todos os serviços de um prestador específico
-     * Agora usa subcoleção users/{providerId}/services para isolamento total
+     * CRÍTICO: Buscar de locations/{locationId}/services filtrando por providerId
+     * (serviços são salvos apenas em locations/{locationId}/services, não em users/{userId}/services)
      */
     fun observeProviderServices(providerId: String): Flow<List<ServiceFirestore>> = callbackFlow {
+        var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
-            val userServicesCollection = getUserServicesCollection(providerId)
-            val listenerRegistration = userServicesCollection
+            val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            if (userCity.isBlank() || userState.isBlank()) {
+                trySend(emptyList())
+                awaitClose { }
+                return@callbackFlow
+            }
+            
+            val collectionToUse = LocationHelper.getLocationCollection(
+                firestore,
+                "services",
+                userCity,
+                userState
+            )
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            
+            // Filtrar por providerId e ordenar por data de criação
+            listenerRegistration = collectionToUse
+                .whereEqualTo("providerId", providerId)
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         android.util.Log.e("FirestoreServicesRepo", "Erro ao observar serviços do prestador: ${error.message}", error)
-                        trySend(emptyList())
+                        try {
+                            trySend(emptyList())
+                        } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                            // Canal já foi fechado, ignorar
+                        } catch (e: Exception) {
+                            android.util.Log.w("FirestoreServicesRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                        }
                         return@addSnapshotListener
                     }
                     
-                    val services = snapshot?.documents?.mapNotNull { doc ->
-                        try {
-                            doc.toObject(ServiceFirestore::class.java)?.copy(id = doc.id)
-                        } catch (e: Exception) {
-                            android.util.Log.e("FirestoreServicesRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
-                            null
-                        }
-                    } ?: emptyList()
-                    
-                    trySend(services)
+                    try {
+                        val services = snapshot?.documents?.mapNotNull { doc ->
+                            try {
+                                doc.toObject(ServiceFirestore::class.java)?.copy(id = doc.id)
+                            } catch (e: Exception) {
+                                android.util.Log.e("FirestoreServicesRepo", "Erro ao converter documento ${doc.id}: ${e.message}", e)
+                                null
+                            }
+                        } ?: emptyList()
+                        
+                        Log.d("FirestoreServicesRepo", "✅ Serviços do prestador $providerId encontrados: ${services.size}")
+                        trySend(services)
+                    } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                        // Canal já foi fechado, ignorar
+                    } catch (e: Exception) {
+                        android.util.Log.w("FirestoreServicesRepo", "Erro ao enviar dados (canal pode estar fechado): ${e.message}")
+                    }
                 }
-            
-            awaitClose { listenerRegistration.remove() }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao configurar listener de serviços do prestador: ${e.message}", e)
-            trySend(emptyList())
-            close()
+            try {
+                trySend(emptyList())
+            } catch (ex: Exception) {
+                // Ignorar se não conseguir enviar
+            }
+        }
+        
+        awaitClose { 
+            try {
+                listenerRegistration?.remove()
+            } catch (e: Exception) {
+                android.util.Log.w("FirestoreServicesRepo", "Erro ao remover listener: ${e.message}")
+            }
         }
     }
 
@@ -74,34 +119,72 @@ class FirestoreServicesRepository @Inject constructor(
      * ✅ Agora usa coleção por localização locations/{locationId}/services
      * NOTA: Esta coleção é sincronizada quando serviços são criados/atualizados
      */
-    fun observeAllActiveServices(): Flow<List<ServiceFirestore>> = locationStateManager.locationState
-        .flatMapLatest { locationState ->
-            when (locationState) {
-                is LocationState.Loading -> {
-                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeAllActiveServices")
-                    flowOf(emptyList())
-                }
-                is LocationState.Error -> {
-                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeAllActiveServices")
-                    flowOf(emptyList())
-                }
-                is LocationState.Ready -> {
-                    // ✅ Localização pronta - fazer query Firestore
-                    val locationId = locationState.locationId
-                    
-                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
-                    if (locationId == "unknown" || locationId.isBlank()) {
-                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeAllActiveServices")
-                        flowOf(emptyList())
-                    } else {
-                        observeAllActiveServicesFromFirestore(locationState)
-                    }
-                }
+    fun observeAllActiveServices(): Flow<List<ServiceFirestore>> = callbackFlow {
+        var listenerRegistration: ListenerRegistration? = null
+        try {
+            val currentUser = authRepository.getCurrentUser()
+            val userId = currentUser?.uid
+            if (userId == null) {
+                trySend(emptyList())
+                awaitClose { }
+                return@callbackFlow
             }
+            
+            val userDoc = firestore.collection("users").document(userId).get().await()
+            val userData = userDoc.data
+            val userCity = userData?.get("city") as? String ?: ""
+            val userState = userData?.get("state") as? String ?: ""
+            
+            if (userCity.isBlank() || userState.isBlank()) {
+                trySend(emptyList())
+                awaitClose { }
+                return@callbackFlow
+            }
+            
+            val collectionToUse = LocationHelper.getLocationCollection(firestore, "services", userCity, userState)
+            
+            listenerRegistration = collectionToUse
+                .whereEqualTo("active", true)
+                .limit(50)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        trySend(emptyList())
+                        return@addSnapshotListener
+                    }
+                    
+                    val services = snapshot?.documents?.mapNotNull { doc ->
+                        try {
+                            doc.toObject(ServiceFirestore::class.java)?.copy(id = doc.id)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } ?: emptyList()
+                    
+                    trySend(services)
+                }
+        } catch (e: Exception) {
+            trySend(emptyList())
         }
+        
+        awaitClose { listenerRegistration?.remove() }
+    }
+    
+    private suspend fun getLocationForOperation(): Triple<String, String, String> {
+        val currentUser = userRepository.observeCurrentUser().first()
+        val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+        val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+        
+        if (userCity.isBlank() || userState.isBlank()) {
+            throw Exception("City e state são obrigatórios")
+        }
+        
+        val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+        return Triple(userCity, userState, locationId)
+    }
     
     private fun observeAllActiveServicesFromFirestore(
-        locationState: LocationState.Ready
+        userCity: String,
+        userState: String
     ): Flow<List<ServiceFirestore>> = callbackFlow {
         var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
@@ -109,16 +192,16 @@ class FirestoreServicesRepository @Inject constructor(
             val collectionToUse = LocationHelper.getLocationCollection(
                 firestore,
                 "services",
-                locationState.city,
-                locationState.state
+                userCity,
+                userState
             )
             
             Log.d("FirestoreServicesRepository", """
                 📍 Querying Firestore with location:
-                City: ${locationState.city}
-                State: ${locationState.state}
-                LocationId: ${locationState.locationId}
-                Firestore Path: locations/${locationState.locationId}/services
+                City: $userCity
+                State: $userState
+                LocationId: ${LocationHelper.normalizeLocationId(userCity, userState)}
+                Firestore Path: locations/${LocationHelper.normalizeLocationId(userCity, userState)}/services
             """.trimIndent())
             
             listenerRegistration = collectionToUse
@@ -177,53 +260,24 @@ class FirestoreServicesRepository @Inject constructor(
      * Observa todos os serviços ativos de uma categoria
      * ✅ Agora usa coleção por localização locations/{locationId}/services
      */
-    fun observeServicesByCategory(category: String): Flow<List<ServiceFirestore>> = locationStateManager.locationState
-        .flatMapLatest { locationState ->
-            when (locationState) {
-                is LocationState.Loading -> {
-                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeServicesByCategory")
-                    flowOf(emptyList())
-                }
-                is LocationState.Error -> {
-                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeServicesByCategory")
-                    flowOf(emptyList())
-                }
-                is LocationState.Ready -> {
-                    // ✅ Localização pronta - fazer query Firestore
-                    val locationId = locationState.locationId
-                    
-                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
-                    if (locationId == "unknown" || locationId.isBlank()) {
-                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeServicesByCategory")
-                        flowOf(emptyList())
-                    } else {
-                        observeServicesByCategoryFromFirestore(locationState, category)
-                    }
-                }
-            }
-        }
-    
-    private fun observeServicesByCategoryFromFirestore(
-        locationState: LocationState.Ready,
-        category: String
-    ): Flow<List<ServiceFirestore>> = callbackFlow {
+    fun observeServicesByCategory(category: String): Flow<List<ServiceFirestore>> = callbackFlow {
         try {
-            // ✅ Usar coleção por localização
+            val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            if (userCity.isBlank() || userState.isBlank()) {
+                trySend(emptyList())
+                awaitClose { }
+                return@callbackFlow
+            }
+            
             val collectionToUse = LocationHelper.getLocationCollection(
                 firestore,
                 "services",
-                locationState.city,
-                locationState.state
+                userCity,
+                userState
             )
-            
-            Log.d("FirestoreServicesRepository", """
-                📍 Querying Firestore with location:
-                City: ${locationState.city}
-                State: ${locationState.state}
-                LocationId: ${locationState.locationId}
-                Category: $category
-                Firestore Path: locations/${locationState.locationId}/services
-            """.trimIndent())
             
             val listenerRegistration = collectionToUse
                 .whereEqualTo("category", category)
@@ -262,16 +316,26 @@ class FirestoreServicesRepository @Inject constructor(
      */
     suspend fun getService(serviceId: String): ServiceFirestore? {
         return try {
-            // Primeiro tenta na coleção pública
-            val publicDoc = publicServicesCollection.document(serviceId).get().await()
-            if (publicDoc.exists()) {
-                return publicDoc.toObject(ServiceFirestore::class.java)?.copy(id = publicDoc.id)
+            val currentUser = userRepository.observeCurrentUser().first()
+            val userCity = currentUser?.city?.takeIf { it.isNotBlank() } ?: ""
+            val userState = currentUser?.state?.takeIf { it.isNotBlank() } ?: ""
+            
+            if (userCity.isBlank() || userState.isBlank()) {
+                return null
             }
             
-            // Se não encontrou na pública, tenta buscar na subcoleção do providerId se conhecido
-            // Para isso, seria necessário saber o providerId, mas como não temos, retornamos null
-            // Em uma implementação completa, poderia manter um índice providerId -> serviceId
-            null
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "services",
+                userCity,
+                userState
+            )
+            val serviceDoc = locationCollection.document(serviceId).get().await()
+            if (serviceDoc.exists()) {
+                serviceDoc.toObject(ServiceFirestore::class.java)?.copy(id = serviceDoc.id)
+            } else {
+                null
+            }
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao buscar serviço: ${e.message}", e)
             null
@@ -286,11 +350,11 @@ class FirestoreServicesRepository @Inject constructor(
     suspend fun createService(service: ServiceFirestore): Result<String> {
         return try {
             val currentUserId = authRepository.getCurrentUser()?.uid
-                ?: return Result.failure(Exception("Usuário não autenticado"))
+                ?: return Result.Error(Exception("Usuário não autenticado"))
             
             // Garantir que providerId corresponde ao usuário atual
             if (service.providerId != currentUserId) {
-                return Result.failure(Exception("providerId não corresponde ao usuário atual"))
+                return Result.Error(Exception("providerId não corresponde ao usuário atual"))
             }
             
             // Usar Cloud Function createService (backend como autoridade)
@@ -305,21 +369,24 @@ class FirestoreServicesRepository @Inject constructor(
             )
             
             result.fold(
-                onSuccess = { data ->
+                onSuccess = { data: Map<String, Any> ->
                     val serviceId = data["serviceId"] as? String
-                        ?: return Result.failure(Exception("Service ID não retornado pela Cloud Function"))
-                    
-                    android.util.Log.d("FirestoreServicesRepo", "Serviço criado com sucesso via Cloud Function: $serviceId")
-                    Result.success(serviceId)
+                    if (serviceId == null) {
+                        android.util.Log.e("FirestoreServicesRepo", "Service ID não retornado pela Cloud Function")
+                        Result.Error(Exception("Service ID não retornado pela Cloud Function"))
+                    } else {
+                        android.util.Log.d("FirestoreServicesRepo", "Serviço criado com sucesso via Cloud Function: $serviceId")
+                        Result.Success(serviceId)
+                    }
                 },
-                onFailure = { error ->
+                onFailure = { error: Throwable ->
                     android.util.Log.e("FirestoreServicesRepo", "Erro ao criar serviço via Cloud Function: ${error.message}", error)
-                    Result.failure(error)
+                    Result.Error(error)
                 }
             )
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao criar serviço: ${e.message}", e)
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 
@@ -330,11 +397,11 @@ class FirestoreServicesRepository @Inject constructor(
     suspend fun updateService(serviceId: String, service: ServiceFirestore): Result<Unit> {
         return try {
             val currentUserId = authRepository.getCurrentUser()?.uid
-                ?: return Result.failure(Exception("Usuário não autenticado"))
+                ?: return Result.Error(Exception("Usuário não autenticado"))
             
             // Garantir que providerId corresponde ao usuário atual
             if (service.providerId != currentUserId) {
-                return Result.failure(Exception("Não é possível atualizar serviço de outro usuário"))
+                return Result.Error(Exception("Não é possível atualizar serviço de outro usuário"))
             }
             
             // Usar Cloud Function updateService (backend como autoridade)
@@ -351,18 +418,18 @@ class FirestoreServicesRepository @Inject constructor(
             val result = functionsService.updateService(serviceId, updates)
             
             result.fold(
-                onSuccess = {
+                onSuccess = { _: Map<String, Any> ->
                     android.util.Log.d("FirestoreServicesRepo", "Serviço atualizado com sucesso via Cloud Function: $serviceId")
-                    Result.success(Unit)
+                    Result.Success(Unit)
                 },
-                onFailure = { error ->
+                onFailure = { error: Throwable ->
                     android.util.Log.e("FirestoreServicesRepo", "Erro ao atualizar serviço via Cloud Function: ${error.message}", error)
-                    Result.failure(error)
+                    Result.Error(error)
                 }
             )
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao atualizar serviço: ${e.message}", e)
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 
@@ -376,18 +443,18 @@ class FirestoreServicesRepository @Inject constructor(
             val result = functionsService.deleteService(serviceId)
             
             result.fold(
-                onSuccess = {
+                onSuccess = { _: Map<String, Any> ->
                     android.util.Log.d("FirestoreServicesRepo", "Serviço deletado com sucesso via Cloud Function: $serviceId")
-                    Result.success(Unit)
+                    Result.Success(Unit)
                 },
-                onFailure = { error ->
+                onFailure = { error: Throwable ->
                     android.util.Log.e("FirestoreServicesRepo", "Erro ao deletar serviço via Cloud Function: ${error.message}", error)
-                    Result.failure(error)
+                    Result.Error(error)
                 }
             )
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao deletar serviço: ${e.message}", e)
-            Result.failure(e)
+            Result.Error(e)
         }
     }
     
@@ -395,16 +462,16 @@ class FirestoreServicesRepository @Inject constructor(
     suspend fun deleteServiceOld(serviceId: String): Result<Unit> {
         return try {
             val currentUserId = authRepository.getCurrentUser()?.uid
-                ?: return Result.failure(Exception("Usuário não autenticado"))
+                ?: return Result.Error(Exception("Usuário não autenticado"))
             
             // Primeiro, buscar o serviço para verificar se pertence ao usuário
             val service = getService(serviceId)
             if (service == null) {
-                return Result.failure(Exception("Serviço não encontrado"))
+                return Result.Error(Exception("Serviço não encontrado"))
             }
             
             if (service.providerId != currentUserId) {
-                return Result.failure(Exception("Não é possível deletar serviço de outro usuário"))
+                return Result.Error(Exception("Não é possível deletar serviço de outro usuário"))
             }
             
             // Atualizar na subcoleção do usuário
@@ -414,20 +481,12 @@ class FirestoreServicesRepository @Inject constructor(
                 "updatedAt", FieldValue.serverTimestamp()
             ).await()
             
-            // Atualizar também na coleção pública
-            try {
-                publicServicesCollection.document(serviceId).update(
-                    "active", false,
-                    "updatedAt", FieldValue.serverTimestamp()
-                ).await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreServicesRepo", "Erro ao atualizar na coleção pública: ${e.message}")
-            }
+            // REMOVIDO: Atualização na coleção global - serviços estão apenas em locations/{locationId}/services
             
-            Result.success(Unit)
+            Result.Success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao deletar serviço: ${e.message}", e)
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 
@@ -438,33 +497,28 @@ class FirestoreServicesRepository @Inject constructor(
     suspend fun permanentlyDeleteService(serviceId: String): Result<Unit> {
         return try {
             val currentUserId = authRepository.getCurrentUser()?.uid
-                ?: return Result.failure(Exception("Usuário não autenticado"))
+                ?: return Result.Error(Exception("Usuário não autenticado"))
             
             // Primeiro, buscar o serviço para verificar se pertence ao usuário
             val service = getService(serviceId)
             if (service == null) {
-                return Result.failure(Exception("Serviço não encontrado"))
+                return Result.Error(Exception("Serviço não encontrado"))
             }
             
             if (service.providerId != currentUserId) {
-                return Result.failure(Exception("Não é possível deletar serviço de outro usuário"))
+                return Result.Error(Exception("Não é possível deletar serviço de outro usuário"))
             }
             
             // Deletar da subcoleção do usuário
             val userServicesCollection = getUserServicesCollection(service.providerId)
             userServicesCollection.document(serviceId).delete().await()
             
-            // Deletar também da coleção pública
-            try {
-                publicServicesCollection.document(serviceId).delete().await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreServicesRepo", "Erro ao deletar da coleção pública: ${e.message}")
-            }
+            // REMOVIDO: Deleção da coleção global - serviços estão apenas em locations/{locationId}/services
             
-            Result.success(Unit)
+            Result.Success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("FirestoreServicesRepo", "Erro ao deletar permanentemente serviço: ${e.message}", e)
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 }

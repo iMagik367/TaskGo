@@ -16,8 +16,40 @@ object LocationHelper {
      * Normaliza cidade e estado para criar ID válido para coleção
      * Remove espaços, caracteres especiais e converte para lowercase
      * Exemplo: "Osasco" + "SP" -> "osasco_sp"
+     * CRÍTICO: Valida city e state antes de normalizar (PADRONIZADO COM BACKEND)
      */
     fun normalizeLocationId(city: String, state: String): String {
+        // CRÍTICO: Validar city e state antes de normalizar (PADRONIZADO COM BACKEND)
+        val validatedCity = com.taskgoapp.taskgo.core.location.LocationValidator.validateAndNormalizeCity(city)
+        val validatedState = com.taskgoapp.taskgo.core.location.LocationValidator.validateAndNormalizeState(state)
+        
+        // Se validação retornar null, tentar normalizar os valores originais (pode ser que o validador seja muito restritivo)
+        val finalCity = validatedCity ?: city.trim()
+        val finalState = validatedState ?: state.trim().uppercase()
+        
+        // Validações básicas mínimas - mesmo se o validador rejeitar, tentar normalizar se tiver tamanho mínimo
+        if (finalCity.isBlank() || finalCity.length < 2) {
+            val errorMsg = """
+                ❌ normalizeLocationId: City inválido (muito curto ou vazio):
+                City: '$city' -> '$finalCity'
+                State: '$state' -> '$finalState'
+                CRÍTICO: Não é permitido salvar dados sem localização válida!
+            """.trimIndent()
+            Log.e(TAG, errorMsg)
+            throw IllegalStateException("Localização inválida: city='$city', state='$state'. City deve ter pelo menos 2 caracteres.")
+        }
+        
+        if (finalState.isBlank() || finalState.length != 2) {
+            val errorMsg = """
+                ❌ normalizeLocationId: State inválido (não tem 2 caracteres):
+                City: '$city' -> '$finalCity'
+                State: '$state' -> '$finalState'
+                CRÍTICO: Não é permitido salvar dados sem localização válida!
+            """.trimIndent()
+            Log.e(TAG, errorMsg)
+            throw IllegalStateException("Localização inválida: city='$city', state='$state'. State deve ter exatamente 2 caracteres.")
+        }
+        
         val normalize = { str: String ->
             java.text.Normalizer.normalize(str.lowercase().trim(), java.text.Normalizer.Form.NFD)
                 .replace(Regex("[\\u0300-\\u036F]"), "") // Remove acentos
@@ -26,18 +58,10 @@ object LocationHelper {
                 .replace(Regex("^_|_\$"), "") // Remove underscores no início e fim
         }
         
-        val normalizedCity = normalize(city)
-        val normalizedState = normalize(state)
+        val normalizedCity = normalize(finalCity)
+        val normalizedState = normalize(finalState)
         
-        val locationId = if (normalizedCity.isEmpty() && normalizedState.isEmpty()) {
-            "unknown"
-        } else if (normalizedCity.isEmpty()) {
-            normalizedState
-        } else if (normalizedState.isEmpty()) {
-            normalizedCity
-        } else {
-            "${normalizedCity}_${normalizedState}"
-        }
+        val locationId = "${normalizedCity}_${normalizedState}"
         
         // 📍 LOCATION TRACE OBRIGATÓRIO - Rastreamento de normalização (Frontend)
         Log.d("LocationTrace", """
@@ -45,6 +69,10 @@ object LocationHelper {
             Function: normalizeLocationId
             RawCity: $city
             RawState: $state
+            ValidatedCity: $validatedCity
+            ValidatedState: $validatedState
+            FinalCity: $finalCity
+            FinalState: $finalState
             NormalizedCity: $normalizedCity
             NormalizedState: $normalizedState
             LocationId: $locationId

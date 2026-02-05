@@ -36,9 +36,17 @@ service cloud.firestore {
     // ==========================================
     
     match /users/{userId} {
-      // Leitura: Apenas o próprio usuário, moderadores e admins
-      // BLOQUEIA queries de listagem que retornariam dados de outros usuários
-      allow read: if isOwner(userId) || isModeratorOrAdmin();
+      // Leitura: Permitir queries de listagem por role (partner, client, etc) para usuários autenticados
+      // E também permitir leitura individual do próprio usuário, moderadores e admins
+      allow read: if isAuthenticated()
+                  && (
+                    // Queries de listagem: permitir se o documento tem role válido (partner, client, etc)
+                    // Isso permite buscar parceiros
+                    (resource == null || resource.data.role is string)
+                    ||
+                    // Leitura individual: próprio usuário, moderadores e admins
+                    isOwner(userId) || isModeratorOrAdmin()
+                  );
       
       // Criação: Apenas o próprio usuário pode criar seu documento inicial
       allow create: if isOwner(userId) 
@@ -118,6 +126,23 @@ service cloud.firestore {
           // Escrita: BLOQUEADA - usar Cloud Functions
           allow write: if false;
         }
+      }
+      
+      // BANK_ACCOUNTS - Contas bancárias privadas do usuário
+      match /bank_accounts/{accountId} {
+        // Leitura: Apenas o dono
+        allow read: if isOwner(userId);
+        
+        // Escrita: Apenas o dono (com validações)
+        allow create: if isOwner(userId) 
+                      && request.resource.data.userId == userId
+                      && request.resource.data.keys().hasAll(['userId', 'bankName', 'bankCode', 'agency', 'account', 'accountType', 'accountHolderName', 'accountHolderDocument', 'accountHolderDocumentType', 'isDefault']);
+        
+        allow update: if isOwner(userId) 
+                      && resource.data.userId == userId;
+        
+        allow delete: if isOwner(userId) 
+                      && resource.data.userId == userId;
       }
       
       // NOTIFICATIONS - Notificações privadas
@@ -515,12 +540,12 @@ service cloud.firestore {
     // ==========================================
     
     match /product_categories/{categoryId} {
-      allow read: if isAuthenticated();
+      allow read: if true; // Público - todos podem ler categorias
       allow write: if isAdmin();
     }
     
     match /service_categories/{categoryId} {
-      allow read: if isAuthenticated();
+      allow read: if true; // Público - todos podem ler categorias
       allow write: if isAdmin();
     }
     
@@ -529,8 +554,7 @@ service cloud.firestore {
     // ==========================================
     
     match /homeBanners/{bannerId} {
-      allow read: if isAuthenticated() 
-                  && (resource == null || resource.data.active == true);
+      allow read: if true; // Público - todos podem ler banners ativos
       allow write: if isAdmin();
     }
     
@@ -561,11 +585,24 @@ service cloud.firestore {
     // ==========================================
     // LOCATIONS COLLECTIONS - Dados organizados por localização
     // CRÍTICO: Permitir leitura de produtos, stories, services, orders e feed por localização
+    // BLOQUEAR: unknown_unknown não é uma localização válida
     // ==========================================
     
+    // Helper para verificar se locationId é válido
+    function isValidLocationId(locationId) {
+      return locationId != null 
+             && locationId != '' 
+             && locationId != 'unknown' 
+             && locationId != 'unknown_unknown';
+    }
+    
     match /locations/{locationId}/products/{productId} {
+      // BLOQUEAR: locationId inválido
+      allow read, write: if !isValidLocationId(locationId);
+      
       // Leitura: Qualquer usuário autenticado pode ler produtos ativos
-      allow read: if isAuthenticated() 
+      allow read: if isValidLocationId(locationId)
+                  && isAuthenticated() 
                   && (resource == null || resource.data.active == true);
       
       // Escrita: BLOQUEADA - usar Cloud Functions
@@ -573,16 +610,24 @@ service cloud.firestore {
     }
     
     match /locations/{locationId}/stories/{storyId} {
+      // BLOQUEAR: locationId inválido
+      allow read, write: if !isValidLocationId(locationId);
+      
       // Leitura: Qualquer usuário autenticado
-      allow read: if isAuthenticated();
+      allow read: if isValidLocationId(locationId)
+                  && isAuthenticated();
       
       // Escrita: BLOQUEADA - usar Cloud Functions
       allow write: if false;
     }
     
     match /locations/{locationId}/services/{serviceId} {
+      // BLOQUEAR: locationId inválido
+      allow read, write: if !isValidLocationId(locationId);
+      
       // Leitura: Qualquer usuário autenticado pode ler serviços ativos
-      allow read: if isAuthenticated() 
+      allow read: if isValidLocationId(locationId)
+                  && isAuthenticated() 
                   && (resource == null || resource.data.active == true);
       
       // Escrita: BLOQUEADA - usar Cloud Functions
@@ -590,8 +635,12 @@ service cloud.firestore {
     }
     
     match /locations/{locationId}/orders/{orderId} {
+      // BLOQUEAR: locationId inválido
+      allow read, write: if !isValidLocationId(locationId);
+      
       // Leitura: Apenas cliente, prestador relacionado ou admins
-      allow read: if isAuthenticated() 
+      allow read: if isValidLocationId(locationId)
+                  && isAuthenticated() 
                   && (resource == null || 
                       resource.data.clientId == request.auth.uid 
                       || resource.data.providerId == request.auth.uid
@@ -601,16 +650,22 @@ service cloud.firestore {
       allow write: if false;
     }
     
-    match /locations/{locationId}/feed/{postId} {
+    match /locations/{locationId}/posts/{postId} {
+      // BLOQUEAR: locationId inválido
+      allow read, write: if !isValidLocationId(locationId);
+      
       // Leitura: Qualquer usuário autenticado (feed regional)
-      allow read: if isAuthenticated();
+      allow read: if isValidLocationId(locationId)
+                  && isAuthenticated();
       
       // Criação: Apenas o próprio usuário
-      allow create: if isAuthenticated() 
+      allow create: if isValidLocationId(locationId)
+                    && isAuthenticated() 
                     && request.resource.data.userId == request.auth.uid;
       
       // Atualização/Exclusão: Apenas o dono
-      allow update, delete: if isAuthenticated() 
+      allow update, delete: if isValidLocationId(locationId)
+                            && isAuthenticated() 
                             && resource.data.userId == request.auth.uid;
       
       // Subcoleções do post
@@ -634,6 +689,104 @@ service cloud.firestore {
         allow update, delete: if isAuthenticated() 
                               && resource.data.userId == request.auth.uid;
       }
+    }
+    
+    match /locations/{locationId}/users/{userId} {
+      // BLOQUEAR: locationId inválido
+      allow read, write: if !isValidLocationId(locationId);
+      
+      // Leitura: Permitir queries de listagem por role (partner, client, etc) para usuários autenticados
+      // E também permitir leitura individual do próprio usuário, moderadores e admins
+      allow read: if isValidLocationId(locationId)
+                  && isAuthenticated()
+                  && (
+                    // Queries de listagem: permitir se o documento tem role válido (partner, client, etc)
+                    // Isso permite buscar parceiros por localização
+                    (resource == null || resource.data.role is string)
+                    ||
+                    // Leitura individual: próprio usuário, moderadores e admins
+                    isOwner(userId) || isModeratorOrAdmin()
+                  );
+      
+      // Criação: Apenas o próprio usuário pode criar seu documento inicial
+      // PERMITIR role na criação inicial (primeira vez)
+      allow create: if isValidLocationId(locationId)
+                    && isOwner(userId) 
+                    && request.resource.data.uid == userId
+                    && request.resource.data.keys().hasAll(['uid', 'email'])
+                    && (
+                      // Permitir criar com role válido (partner ou client) OU sem role
+                      !('role' in request.resource.data) ||
+                      (request.resource.data.role is string && 
+                       (request.resource.data.role == 'partner' || request.resource.data.role == 'client'))
+                    );
+      
+      // Atualização: Permitir atualizar role apenas se o documento não tiver role ainda (primeira criação)
+      // OU se o usuário estiver atualizando outros campos (exceto role)
+      allow update: if isValidLocationId(locationId)
+                    && isOwner(userId)
+                    && (
+                      // Permitir atualizar role se o documento não tiver role ainda (primeira criação)
+                      (!('role' in resource.data) || resource.data.role == null || resource.data.role == '')
+                      ||
+                      // OU permitir atualizar outros campos (exceto role)
+                      (!('role' in request.resource.data.diff(resource.data).affectedKeys())
+                       && !('roleUpdatedAt' in request.resource.data.diff(resource.data).affectedKeys())
+                       && !('roleUpdatedBy' in request.resource.data.diff(resource.data).affectedKeys()))
+                    );
+      
+      // Admins podem atualizar qualquer campo
+      allow update: if isValidLocationId(locationId) && isAdmin();
+      
+      // Exclusão: Apenas admins (via Cloud Function)
+      allow delete: if isValidLocationId(locationId) && isAdmin();
+    }
+    
+    // ==========================================
+    // USERS COLLECTION (privada) - Dados privados por localização
+    // users/{locationId}/users/{userId}
+    // ==========================================
+    
+    match /users/{locationId}/users/{userId} {
+      // BLOQUEAR: locationId inválido
+      allow read, write: if !isValidLocationId(locationId);
+      
+      // Leitura: Apenas o próprio usuário, moderadores e admins
+      allow read: if isValidLocationId(locationId)
+                  && (isOwner(userId) || isModeratorOrAdmin());
+      
+      // Criação: Apenas o próprio usuário pode criar seu documento inicial
+      // PERMITIR role na criação inicial (primeira vez)
+      allow create: if isValidLocationId(locationId)
+                    && isOwner(userId) 
+                    && request.resource.data.uid == userId
+                    && request.resource.data.keys().hasAll(['uid', 'email'])
+                    && (
+                      // Permitir criar com role válido (partner ou client) OU sem role
+                      !('role' in request.resource.data) ||
+                      (request.resource.data.role is string && 
+                       (request.resource.data.role == 'partner' || request.resource.data.role == 'client'))
+                    );
+      
+      // Atualização: Permitir atualizar role apenas se o documento não tiver role ainda (primeira criação)
+      // OU se o usuário estiver atualizando outros campos (exceto role)
+      allow update: if isValidLocationId(locationId)
+                    && isOwner(userId)
+                    && (
+                      // Permitir atualizar role se o documento não tiver role ainda (primeira criação)
+                      (!('role' in resource.data) || resource.data.role == null || resource.data.role == '')
+                      ||
+                      // OU permitir atualizar outros campos (exceto role)
+                      (!('role' in request.resource.data.diff(resource.data).affectedKeys())
+                       && !('roleUpdatedAt' in request.resource.data.diff(resource.data).affectedKeys())
+                       && !('roleUpdatedBy' in request.resource.data.diff(resource.data).affectedKeys()))
+                    );
+      
+      // Admins podem atualizar qualquer campo
+      allow update: if isValidLocationId(locationId) && isAdmin();
+      
+      // Exclusão: Apenas admins (via Cloud Function)
+      allow delete: if isValidLocationId(locationId) && isAdmin();
     }
     
     // ==========================================

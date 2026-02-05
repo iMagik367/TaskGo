@@ -31,7 +31,7 @@ export const PAYMENT_STATUS = {
 
 export const USER_ROLES = {
   CLIENT: 'client',
-  PROVIDER: 'provider',
+  PARTNER: 'partner',
   ADMIN: 'admin',
 } as const;
 

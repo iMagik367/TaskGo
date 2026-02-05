@@ -9,7 +9,7 @@ data class UserFirestore(
     val displayName: String? = null,
     val photoURL: String? = null,
     val phone: String? = null,
-    val role: String = "client", // client, partner, admin (legacy: provider, seller - devem ser migrados)
+    val role: String, // SEMPRE será "partner" ou "client" - garantido pelo sistema
     val pendingAccountType: Boolean = false, // Flag para indicar que o app precisa mostrar dialog de seleção de tipo de conta
     val profileComplete: Boolean = false,
     val verified: Boolean = false,
@@ -46,6 +46,10 @@ data class UserFirestore(
     
     // Provider Preferences
     val preferredCategories: List<String>? = null, // Categories the provider prefers to receive orders for
+    
+    // Location Fields (Lei 1: Fonte única de verdade - na raiz do documento)
+    val city: String? = null, // Lei 1: Localização vem EXCLUSIVAMENTE de users/{userId}.city na raiz
+    val state: String? = null, // Lei 1: Localização vem EXCLUSIVAMENTE de users/{userId}.state na raiz
     
     // User Identifier (calculado automaticamente)
     val userIdentifier: String? = null, // ID único baseado em role, localização e categorias

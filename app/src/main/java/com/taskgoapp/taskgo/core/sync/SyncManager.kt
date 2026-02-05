@@ -10,8 +10,10 @@ import com.taskgoapp.taskgo.data.local.entity.SyncQueueEntity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
+import dagger.Lazy
 
 /**
  * Gerenciador de sincronização local -> Firebase
@@ -26,7 +28,8 @@ import javax.inject.Singleton
 class SyncManager @Inject constructor(
     private val syncQueueDao: SyncQueueDao,
     private val firestore: FirebaseFirestore,
-    private val gson: Gson
+    private val gson: Gson,
+    private val userRepository: Lazy<com.taskgoapp.taskgo.domain.repository.UserRepository>
 ) {
     private val TAG = "SyncManager"
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -178,7 +181,12 @@ class SyncManager @Inject constructor(
     private suspend fun syncProduct(sync: SyncQueueEntity): Boolean {
         return try {
             val productData = gson.fromJson(sync.data, Map::class.java) as Map<String, Any>
-            val collection = firestore.collection("products")
+            // CRÍTICO: Usar coleção por localização
+            val user = userRepository.get().observeCurrentUser().first()
+            val city = user?.city?.takeIf { it.isNotBlank() } ?: ""
+            val state = user?.state?.takeIf { it.isNotBlank() } ?: ""
+            val locationId = com.taskgoapp.taskgo.core.firebase.LocationHelper.normalizeLocationId(city, state)
+            val collection = firestore.collection("locations").document(locationId).collection("products")
             
             when (sync.operation) {
                 "create", "update" -> {
@@ -205,7 +213,12 @@ class SyncManager @Inject constructor(
     private suspend fun syncService(sync: SyncQueueEntity): Boolean {
         return try {
             val serviceData = gson.fromJson(sync.data, Map::class.java) as Map<String, Any>
-            val collection = firestore.collection("services")
+            // CRÍTICO: Usar coleção por localização
+            val user = userRepository.get().observeCurrentUser().first()
+            val city = user?.city?.takeIf { it.isNotBlank() } ?: ""
+            val state = user?.state?.takeIf { it.isNotBlank() } ?: ""
+            val locationId = com.taskgoapp.taskgo.core.firebase.LocationHelper.normalizeLocationId(city, state)
+            val collection = firestore.collection("locations").document(locationId).collection("services")
             
             when (sync.operation) {
                 "create", "update" -> {
@@ -232,11 +245,32 @@ class SyncManager @Inject constructor(
     private suspend fun syncUserProfile(sync: SyncQueueEntity): Boolean {
         return try {
             val userData = gson.fromJson(sync.data, Map::class.java) as Map<String, Any>
-            val collection = firestore.collection("users")
+            
+            // CRÍTICO: Salvar TANTO na coleção global users QUANTO em locations/{locationId}/users
+            // 1. Salvar na coleção global users
+            val globalCollection = firestore.collection("users")
             
             when (sync.operation) {
                 "create", "update" -> {
-                    collection.document(sync.entityId).set(userData, SetOptions.merge()).await()
+                    globalCollection.document(sync.entityId).set(userData, SetOptions.merge()).await()
+                    
+                    // 2. Se tiver city/state, também salvar em locations/{locationId}/users
+                    val city = (userData["city"] as? String)?.takeIf { it.isNotBlank() }
+                    val state = (userData["state"] as? String)?.takeIf { it.isNotBlank() }
+                    
+                    if (city != null && state != null) {
+                        try {
+                            val locationId = com.taskgoapp.taskgo.core.firebase.LocationHelper.normalizeLocationId(city, state)
+                            val locationCollection = firestore.collection("locations").document(locationId)
+                                .collection("users")
+                            locationCollection.document(sync.entityId).set(userData, SetOptions.merge()).await()
+                            Log.d(TAG, "✅ Perfil sincronizado também em locations/$locationId/users/${sync.entityId}")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Erro ao sincronizar perfil em locations: ${e.message}")
+                            // Continuar mesmo se falhar - pelo menos sincronizou na coleção global
+                        }
+                    }
+                    
                     true
                 }
                 else -> false
@@ -265,7 +299,36 @@ class SyncManager @Inject constructor(
     private suspend fun syncOrder(sync: SyncQueueEntity): Boolean {
         return try {
             val orderData = gson.fromJson(sync.data, Map::class.java) as Map<String, Any>
-            val collection = firestore.collection("purchase_orders")
+            
+            // CRÍTICO: Obter locationId do usuário para salvar na coleção regional
+            // Tentar obter do orderData primeiro, senão buscar do usuário
+            val locationId = (orderData["locationId"] as? String)?.takeIf { it.isNotBlank() }
+                ?: run {
+                    // Se não tiver locationId no orderData, buscar do usuário
+                    val userId = orderData["clientId"] as? String
+                    if (userId != null) {
+                        try {
+                            val userDoc = firestore.collection("users").document(userId).get().await()
+                            val city = userDoc.getString("city") ?: ""
+                            val state = userDoc.getString("state") ?: ""
+                            if (city.isNotBlank() && state.isNotBlank()) {
+                                com.taskgoapp.taskgo.core.firebase.LocationHelper.normalizeLocationId(city, state)
+                            } else {
+                                Log.e(TAG, "Usuário não tem localização válida para sincronizar order")
+                                return false
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Erro ao obter localização do usuário: ${e.message}", e)
+                            return false
+                        }
+                    } else {
+                        Log.e(TAG, "Order não tem clientId para obter localização")
+                        return false
+                    }
+                }
+            
+            // CRÍTICO: Salvar na coleção regional
+            val collection = firestore.collection("locations").document(locationId).collection("orders")
             
             when (sync.operation) {
                 "create", "update" -> {

@@ -11,11 +11,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import com.taskgoapp.taskgo.core.firebase.LocationHelper
-import com.taskgoapp.taskgo.core.location.LocationStateManager
-import com.taskgoapp.taskgo.core.location.LocationState
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import android.util.Log
+import com.taskgoapp.taskgo.domain.repository.UserRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,31 +21,11 @@ import javax.inject.Singleton
 class FirestoreOrderRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val authRepository: FirebaseAuthRepository,
-    private val locationStateManager: LocationStateManager
+    private val userRepository: UserRepository
 ) {
-    // Construtor secundário para compatibilidade com código que não usa injeção de dependência
-    constructor(
-        firestore: FirebaseFirestore,
-        authRepository: FirebaseAuthRepository
-    ) : this(
-        firestore,
-        authRepository,
-        // Criar LocationStateManager temporário - não será usado para queries neste contexto
-        LocationStateManager(
-            object : com.taskgoapp.taskgo.domain.repository.UserRepository {
-                override fun observeCurrentUser() = kotlinx.coroutines.flow.flowOf(null)
-                override suspend fun updateUser(user: com.taskgoapp.taskgo.core.model.UserProfile) {}
-                override suspend fun updateAvatar(avatarUri: String) {}
-            }
-        )
-    )
-    // Coleção pública para queries (prestadores precisam ver ordens pendentes)
-    // CRÍTICO: Agora usamos coleções por localização, mas mantemos esta para compatibilidade
-    private val publicOrdersCollection = firestore.collection("orders")
+    // REMOVIDO: Coleção global - orders estão apenas em locations/{locationId}/orders
     
-    // Helper para obter subcoleção do usuário
-    private fun getUserOrdersCollection(userId: String) = 
-        firestore.collection("users").document(userId).collection("orders")
+    // REMOVIDO: getUserOrdersCollection - orders estão apenas em locations/{locationId}/orders
 
     /**
      * Observa ordens de um usuário (cliente ou prestador)
@@ -56,11 +34,26 @@ class FirestoreOrderRepository @Inject constructor(
      */
     fun observeOrders(userId: String, role: String = "client"): Flow<List<OrderFirestore>> = callbackFlow {
         try {
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            
             if (role == "client" || role == "user") {
-                // CRÍTICO: Cliente deve observar a coleção pública 'orders' onde clientId == userId
-                // A Cloud Function createOrder salva na coleção pública, não na subcoleção
-                android.util.Log.d("FirestoreOrderRepo", "🔵 Observando ordens do cliente na coleção pública: userId=$userId, role=$role")
-                val listenerRegistration = publicOrdersCollection
+                // Cliente observa orders onde clientId == userId
+                android.util.Log.d("FirestoreOrderRepo", "📍 Observando ordens do cliente: locations/$locationId/orders")
+                val listenerRegistration = locationCollection
                     .whereEqualTo("clientId", userId)
                     .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                     .addSnapshotListener { snapshot, error ->
@@ -85,8 +78,9 @@ class FirestoreOrderRepository @Inject constructor(
                 
                 awaitClose { listenerRegistration.remove() }
             } else {
-                // Parceiro/Prestador: busca na coleção pública onde providerId == userId (tratar "partner", "provider" e "seller" da mesma forma)
-                val listenerRegistration = publicOrdersCollection
+                // Parceiro/Prestador: busca na coleção por localização onde providerId == userId
+                android.util.Log.d("FirestoreOrderRepo", "📍 Observando ordens do prestador: locations/$locationId/orders")
+                val listenerRegistration = locationCollection
                     .whereEqualTo("providerId", userId)
                     .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                     .addSnapshotListener { snapshot, error ->
@@ -124,11 +118,25 @@ class FirestoreOrderRepository @Inject constructor(
      */
     fun observeOrdersByStatus(userId: String, role: String, status: String): Flow<List<OrderFirestore>> = callbackFlow {
         try {
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            
             if (role == "client" || role == "user") {
-                // CRÍTICO: Cliente deve observar a coleção pública 'orders' onde clientId == userId
-                // A Cloud Function createOrder salva na coleção pública, não na subcoleção
-                android.util.Log.d("FirestoreOrderRepo", "🔵 Observando ordens do cliente por status na coleção pública: userId=$userId, status=$status")
-                val listenerRegistration = publicOrdersCollection
+                android.util.Log.d("FirestoreOrderRepo", "📍 Observando ordens do cliente por status: locations/$locationId/orders")
+                val listenerRegistration = locationCollection
                     .whereEqualTo("clientId", userId)
                     .whereEqualTo("status", status)
                     .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
@@ -154,8 +162,9 @@ class FirestoreOrderRepository @Inject constructor(
                 
                 awaitClose { listenerRegistration.remove() }
             } else {
-                // Parceiro/Prestador: busca na coleção pública (tratar "partner" e "provider" da mesma forma)
-                val listenerRegistration = publicOrdersCollection
+                // Parceiro/Prestador: busca na coleção por localização
+                android.util.Log.d("FirestoreOrderRepo", "📍 Observando ordens do prestador por status: locations/$locationId/orders")
+                val listenerRegistration = locationCollection
                     .whereEqualTo("providerId", userId)
                     .whereEqualTo("status", status)
                     .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
@@ -193,7 +202,22 @@ class FirestoreOrderRepository @Inject constructor(
      */
     suspend fun getOrder(orderId: String): OrderFirestore? {
         return try {
-            val document = publicOrdersCollection.document(orderId).get().await()
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            val document = locationCollection.document(orderId).get().await()
             if (document.exists()) {
                 document.toObject(OrderFirestore::class.java)?.copy(id = document.id)
             } else {
@@ -217,24 +241,24 @@ class FirestoreOrderRepository @Inject constructor(
                 return Result.Error(Exception("Ordem não encontrada"))
             }
             
-            // Atualizar na coleção pública (sempre)
-            publicOrdersCollection.document(orderId).update(
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: return Result.Error(Exception("Usuário não autenticado"))
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui city no cadastro. Complete seu perfil."))
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui state no cadastro. Complete seu perfil."))
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            locationCollection.document(orderId).update(
                 "status", status,
                 "updatedAt", FieldValue.serverTimestamp()
             ).await()
-            
-            // Atualizar também na subcoleção do cliente se existir
-            if (order.clientId.isNotBlank()) {
-                try {
-                    val userOrdersCollection = getUserOrdersCollection(order.clientId)
-                    userOrdersCollection.document(orderId).update(
-                        "status", status,
-                        "updatedAt", FieldValue.serverTimestamp()
-                    ).await()
-                } catch (e: Exception) {
-                    android.util.Log.w("FirestoreOrderRepo", "Erro ao atualizar na subcoleção do cliente: ${e.message}")
-                }
-            }
             
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -255,28 +279,26 @@ class FirestoreOrderRepository @Inject constructor(
                 return Result.Error(Exception("Ordem não encontrada"))
             }
             
-            // Atualizar na coleção pública
-            publicOrdersCollection.document(orderId).update(
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: return Result.Error(Exception("Usuário não autenticado"))
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui city no cadastro. Complete seu perfil."))
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui state no cadastro. Complete seu perfil."))
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            locationCollection.document(orderId).update(
                 "status", "proposed",
                 "proposalDetails", proposal,
                 "proposedAt", FieldValue.serverTimestamp(),
                 "updatedAt", FieldValue.serverTimestamp()
             ).await()
-            
-            // Atualizar também na subcoleção do cliente
-            if (order.clientId.isNotBlank()) {
-                try {
-                    val userOrdersCollection = getUserOrdersCollection(order.clientId)
-                    userOrdersCollection.document(orderId).update(
-                        "status", "proposed",
-                        "proposalDetails", proposal,
-                        "proposedAt", FieldValue.serverTimestamp(),
-                        "updatedAt", FieldValue.serverTimestamp()
-                    ).await()
-                } catch (e: Exception) {
-                    android.util.Log.w("FirestoreOrderRepo", "Erro ao atualizar na subcoleção do cliente: ${e.message}")
-                }
-            }
             
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -287,62 +309,44 @@ class FirestoreOrderRepository @Inject constructor(
     
     /**
      * Observa ordens de serviço disponíveis na região do usuário
-     * ✅ Agora usa LocationStateManager e coleção por localização locations/{locationId}/orders
+     * ✅ Agora usa city/state do perfil do usuário e coleção por localização locations/{locationId}/orders
      */
     fun observeLocalServiceOrders(
         category: String? = null
-    ): Flow<List<OrderFirestore>> = locationStateManager.locationState
-        .flatMapLatest { locationState ->
-            when (locationState) {
-                is LocationState.Loading -> {
-                    Log.w("BLOCKED_QUERY", "Firestore query blocked: location not ready (Loading) - observeLocalServiceOrders")
-                    flowOf(emptyList())
-                }
-                is LocationState.Error -> {
-                    Log.e("BLOCKED_QUERY", "Firestore query blocked: location error - ${locationState.reason} - observeLocalServiceOrders")
-                    flowOf(emptyList())
-                }
-                is LocationState.Ready -> {
-                    // ✅ Localização pronta - fazer query Firestore
-                    val locationId = locationState.locationId
-                    
-                    // 🚨 PROTEÇÃO: Nunca permitir "unknown" como locationId válido
-                    if (locationId == "unknown" || locationId.isBlank()) {
-                        Log.e("FATAL_LOCATION", "Attempted Firestore query with invalid locationId: $locationId - observeLocalServiceOrders")
-                        flowOf(emptyList())
-                    } else {
-                        observeLocalServiceOrdersFromFirestore(locationState, category)
-                    }
-                }
-            }
-        }
-    
-    private fun observeLocalServiceOrdersFromFirestore(
-        locationState: LocationState.Ready,
-        category: String?
     ): Flow<List<OrderFirestore>> = callbackFlow {
         var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
         try {
-            // ✅ Usar coleção por localização
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
             val locationOrdersCollection = LocationHelper.getLocationCollection(
                 firestore,
                 "orders",
-                locationState.city,
-                locationState.state
+                userCity,
+                userState
             )
             
             Log.d("FirestoreOrderRepo", """
                 📍 Querying Firestore with location:
-                City: ${locationState.city}
-                State: ${locationState.state}
-                LocationId: ${locationState.locationId}
+                City: $userCity
+                State: $userState
+                LocationId: $locationId
                 Category: $category
-                Firestore Path: locations/${locationState.locationId}/orders
+                Firestore Path: locations/$locationId/orders
             """.trimIndent())
                 
+                // CRÍTICO: Mostrar apenas ordens disponíveis (status = pending, providerId == null, deleted = false)
+                // Ordens com providerId já foram aceitas por algum prestador
                 var query = locationOrdersCollection
                     .whereEqualTo("status", "pending")
                     .whereEqualTo("deleted", false)
+                    .whereEqualTo("providerId", null) // Apenas ordens disponíveis (não aceitas)
                 
                 // Filtrar por categoria se fornecida
                 if (category != null && category.isNotBlank()) {
@@ -374,7 +378,7 @@ class FirestoreOrderRepository @Inject constructor(
                                 }
                             } ?: emptyList()
                             
-                            Log.d("FirestoreOrderRepo", "📦 ${orders.size} ordens encontradas na localização ${locationState.city}, ${locationState.state}")
+                            Log.d("FirestoreOrderRepo", "📦 ${orders.size} ordens encontradas na localização $userCity, $userState")
                             trySend(orders)
                         } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
                             // Canal já foi fechado, ignorar
@@ -406,10 +410,27 @@ class FirestoreOrderRepository @Inject constructor(
      */
     fun observeOrdersByCategory(category: String): Flow<List<OrderFirestore>> = callbackFlow {
         try {
-            val listenerRegistration = publicOrdersCollection
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: throw Exception("Usuário não autenticado")
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui city no cadastro. Complete seu perfil.")
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Usuário não possui state no cadastro. Complete seu perfil.")
+            
+            val locationId = LocationHelper.normalizeLocationId(userCity, userState)
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            // CRÍTICO: Mostrar apenas ordens disponíveis (status = pending, providerId == null, deleted = false)
+            val listenerRegistration = locationCollection
                 .whereEqualTo("category", category)
                 .whereEqualTo("status", "pending")
                 .whereEqualTo("deleted", false)
+                .whereEqualTo("providerId", null) // Apenas ordens disponíveis (não aceitas)
                 .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
@@ -452,19 +473,11 @@ class FirestoreOrderRepository @Inject constructor(
                 return Result.Error(Exception("clientId não corresponde ao usuário atual"))
             }
             
-            // Criar na subcoleção do cliente
-            val userOrdersCollection = getUserOrdersCollection(order.clientId)
-            val docRef = userOrdersCollection.add(order).await()
-            val orderId = docRef.id
-            
-            // Criar também na coleção pública (para prestadores verem)
-            try {
-                publicOrdersCollection.document(orderId).set(order).await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreOrderRepo", "Erro ao salvar na coleção pública: ${e.message}")
-            }
-            
-            Result.Success(orderId)
+            // REMOVIDO: createOrder não deve ser chamado diretamente
+            // Orders devem ser criadas via Cloud Function createOrder que salva em locations/{locationId}/orders
+            // Este método está aqui apenas para compatibilidade, mas não deve ser usado
+            android.util.Log.w("FirestoreOrderRepo", "⚠️ createOrder não deve ser usado diretamente. Use Cloud Function createOrder.")
+            return Result.Error(Exception("Use Cloud Function createOrder para criar orders"))
         } catch (e: Exception) {
             android.util.Log.e("FirestoreOrderRepo", "Erro ao criar ordem: ${e.message}", e)
             Result.Error(e)
@@ -486,40 +499,53 @@ class FirestoreOrderRepository @Inject constructor(
                 return Result.Error(Exception("Ordem não encontrada"))
             }
             
-            // Validar que o usuário atual é o provider da ordem
-            if (order.providerId != currentUserId) {
-                return Result.Error(Exception("Apenas o prestador da ordem pode aceitar o serviço"))
-            }
-            
-            // Verificar se já foi aceito pelo provider
-            if (order.acceptedByProvider) {
-                return Result.Success(Unit) // Já foi aceito, nada a fazer
-            }
-            
             // Preparar dados de atualização
             val updateData = hashMapOf<String, Any>(
-                "acceptedByProvider" to true,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             
-            // Se ambos já aceitaram (cliente já aceitou), mudar status para in_progress
-            if (order.acceptedByClient) {
-                updateData["status"] = "in_progress"
+            // Se a ordem não tem providerId (ordem aberta), definir providerId = currentUserId
+            if (order.providerId.isNullOrBlank()) {
+                updateData["providerId"] = currentUserId
+                updateData["status"] = "accepted" // Mudar status para accepted quando parceiro aceita
+                updateData["acceptedByProvider"] = true
                 updateData["acceptedAt"] = FieldValue.serverTimestamp()
-            }
-            
-            // Atualizar na coleção pública
-            publicOrdersCollection.document(orderId).update(updateData).await()
-            
-            // Atualizar também na subcoleção do cliente
-            if (order.clientId.isNotBlank()) {
-                try {
-                    val userOrdersCollection = getUserOrdersCollection(order.clientId)
-                    userOrdersCollection.document(orderId).update(updateData).await()
-                } catch (e: Exception) {
-                    android.util.Log.w("FirestoreOrderRepo", "Erro ao atualizar na subcoleção do cliente: ${e.message}")
+            } else {
+                // Ordem já tem providerId - validar que é o provider correto
+                if (order.providerId != currentUserId) {
+                    return Result.Error(Exception("Apenas o prestador da ordem pode aceitar o serviço"))
+                }
+                
+                // Verificar se já foi aceito pelo provider
+                if (order.acceptedByProvider) {
+                    return Result.Success(Unit) // Já foi aceito, nada a fazer
+                }
+                
+                // Marcar como aceito pelo provider
+                updateData["acceptedByProvider"] = true
+                
+                // Se ambos já aceitaram (cliente já aceitou), mudar status para in_progress
+                if (order.acceptedByClient) {
+                    updateData["status"] = "in_progress"
+                    updateData["acceptedAt"] = FieldValue.serverTimestamp()
                 }
             }
+            
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: return Result.Error(Exception("Usuário não autenticado"))
+            
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui city no cadastro. Complete seu perfil."))
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui state no cadastro. Complete seu perfil."))
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            locationCollection.document(orderId).update(updateData).await()
             
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -565,16 +591,21 @@ class FirestoreOrderRepository @Inject constructor(
                 updateData["acceptedAt"] = FieldValue.serverTimestamp()
             }
             
-            // Atualizar na coleção pública
-            publicOrdersCollection.document(orderId).update(updateData).await()
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: return Result.Error(Exception("Usuário não autenticado"))
             
-            // Atualizar também na subcoleção do cliente
-            try {
-                val userOrdersCollection = getUserOrdersCollection(order.clientId)
-                userOrdersCollection.document(orderId).update(updateData).await()
-            } catch (e: Exception) {
-                android.util.Log.w("FirestoreOrderRepo", "Erro ao atualizar na subcoleção do cliente: ${e.message}")
-            }
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui city no cadastro. Complete seu perfil."))
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui state no cadastro. Complete seu perfil."))
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            locationCollection.document(orderId).update(updateData).await()
             
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -618,18 +649,21 @@ class FirestoreOrderRepository @Inject constructor(
                 updateData["cancelledRefundAmount"] = refundAmount
             }
             
-            // Atualizar na coleção pública
-            publicOrdersCollection.document(orderId).update(updateData).await()
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: return Result.Error(Exception("Usuário não autenticado"))
             
-            // Atualizar também na subcoleção do cliente
-            if (order.clientId.isNotBlank()) {
-                try {
-                    val userOrdersCollection = getUserOrdersCollection(order.clientId)
-                    userOrdersCollection.document(orderId).update(updateData).await()
-                } catch (e: Exception) {
-                    android.util.Log.w("FirestoreOrderRepo", "Erro ao atualizar na subcoleção do cliente: ${e.message}")
-                }
-            }
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui city no cadastro. Complete seu perfil."))
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui state no cadastro. Complete seu perfil."))
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            locationCollection.document(orderId).update(updateData).await()
             
             Result.Success(Unit)
         } catch (e: Exception) {
@@ -676,18 +710,21 @@ class FirestoreOrderRepository @Inject constructor(
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             
-            // Atualizar na coleção pública
-            publicOrdersCollection.document(orderId).update(updateData).await()
+            val currentUser = userRepository.observeCurrentUser().first()
+                ?: return Result.Error(Exception("Usuário não autenticado"))
             
-            // Atualizar também na subcoleção do cliente
-            if (order.clientId.isNotBlank()) {
-                try {
-                    val userOrdersCollection = getUserOrdersCollection(order.clientId)
-                    userOrdersCollection.document(orderId).update(updateData).await()
-                } catch (e: Exception) {
-                    android.util.Log.w("FirestoreOrderRepo", "Erro ao atualizar na subcoleção do cliente: ${e.message}")
-                }
-            }
+            val userCity = currentUser.city?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui city no cadastro. Complete seu perfil."))
+            val userState = currentUser.state?.takeIf { it.isNotBlank() }
+                ?: return Result.Error(Exception("Usuário não possui state no cadastro. Complete seu perfil."))
+            
+            val locationCollection = LocationHelper.getLocationCollection(
+                firestore,
+                "orders",
+                userCity,
+                userState
+            )
+            locationCollection.document(orderId).update(updateData).await()
             
             Result.Success(Unit)
         } catch (e: Exception) {

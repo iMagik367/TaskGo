@@ -2,6 +2,8 @@ package com.taskgoapp.taskgo.domain.usecase
 
 import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
 import com.taskgoapp.taskgo.data.repository.FirestoreOrderRepository
+import com.taskgoapp.taskgo.core.model.Result
+import com.taskgoapp.taskgo.core.model.map
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,9 +24,9 @@ class ProposalUseCase @Inject constructor(
                 status = "accepted",
                 proposalDetails = null
             )
-            result.map { Unit }
+            result.map { _: Map<String, Any> -> Unit }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.Error(e)
         }
     }
     
@@ -39,9 +41,9 @@ class ProposalUseCase @Inject constructor(
                 status = "cancelled",
                 proposalDetails = null
             )
-            result.map { Unit }
+            result.map { _: Map<String, Any> -> Unit }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.Error(e)
         }
     }
 }

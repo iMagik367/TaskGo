@@ -207,13 +207,19 @@ object TextFormatters {
             clean.length <= 2 -> clean
             clean.length <= 4 -> {
                 val day = clean.substring(0, 2)
-                val month = clean.substring(2)
+                val month = clean.substring(2, minOf(4, clean.length))
                 "$day/$month"
+            }
+            clean.length <= 6 -> {
+                val day = clean.substring(0, 2)
+                val month = clean.substring(2, 4)
+                val year = clean.substring(4, minOf(6, clean.length))
+                "$day/$month/$year"
             }
             else -> {
                 val day = clean.substring(0, 2)
                 val month = clean.substring(2, 4)
-                val year = clean.substring(4, 8)
+                val year = clean.substring(4, minOf(8, clean.length))
                 "$day/$month/$year"
             }
         }

@@ -3,6 +3,7 @@ import {getFirestore} from './utils/firestore';
 import * as functions from 'firebase-functions';
 import Stripe from 'stripe';
 import {COLLECTIONS, PAYMENT_STATUS} from './utils/constants';
+import {purchaseOrdersPath} from './utils/firestorePaths';
 
 // Initialize Stripe lazily
 function getStripe(): Stripe {
@@ -30,19 +31,35 @@ export const checkAndRefundUnshippedOrders = functions.pubsub
     try {
       functions.logger.info('Checking for unshipped orders to refund...');
 
+      // CRÍTICO: Buscar orders em todas as localizações (não há coleção global)
       // Find all orders that:
       // 1. Status is PAID
       // 2. Paid more than 30 minutes ago
       // 3. Don't have a confirmed shipment
-      const paidOrdersSnapshot = await db.collection('purchase_orders')
-        .where('status', '==', 'PAID')
-        .get();
-
+      const locationsSnapshot = await db.collection('locations').limit(100).get();
+      
       let refundedCount = 0;
       let errorCount = 0;
+      const allPaidOrders: Array<{orderDoc: admin.firestore.DocumentSnapshot; locationId: string}> = [];
 
-      for (const orderDoc of paidOrdersSnapshot.docs) {
+      // Coletar todos os orders PAID de todas as localizações
+      for (const locationDoc of locationsSnapshot.docs) {
+        const locationId = locationDoc.id;
+        const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+        const paidOrdersSnapshot = await locationOrdersCollection
+          .where('status', '==', 'PAID')
+          .get();
+        
+        for (const orderDoc of paidOrdersSnapshot.docs) {
+          allPaidOrders.push({orderDoc, locationId});
+        }
+      }
+
+      for (const {orderDoc, locationId} of allPaidOrders) {
         const order = orderDoc.data();
+        if (!order) {
+          continue; // Skip if no data
+        }
         const orderId = orderDoc.id;
 
         // Check if order has paidAt timestamp
@@ -120,7 +137,9 @@ export const checkAndRefundUnshippedOrders = functions.pubsub
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-          await db.collection('purchase_orders').doc(orderId).update({
+          // CRÍTICO: Update order na coleção por localização
+          const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+          await locationOrdersCollection.doc(orderId).update({
             status: 'CANCELLED',
             refunded: true,
             refundReason: 'Automatic refund: Seller did not confirm shipment within 30 minutes',
@@ -192,8 +211,9 @@ export const checkAndRefundUnshippedOrders = functions.pubsub
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-          // Update order status
-          await db.collection('purchase_orders').doc(orderId).update({
+          // CRÍTICO: Update order na coleção por localização
+          const locationOrdersCollection = purchaseOrdersPath(db, locationId);
+          await locationOrdersCollection.doc(orderId).update({
             status: 'CANCELLED',
             refunded: true,
             refundReason: 'Automatic refund: Seller did not confirm shipment within 30 minutes',

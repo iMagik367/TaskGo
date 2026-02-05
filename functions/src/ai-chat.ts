@@ -7,6 +7,7 @@ import Filter from 'bad-words';
 import {assertAuthenticated, handleError} from './utils/errors';
 import {validateAppCheck} from './security/appCheck';
 import {getFirestore} from './utils/firestore';
+// Removido: getUserLocation e normalizeLocationId não são mais necessários para conversations (dados privados)
 
 // Helper functions para inicializar os provedores de IA
 // As secrets são carregadas dinamicamente em cada chamada da função
@@ -57,17 +58,27 @@ Be concise, friendly, and professional. Respond in Portuguese (Brazil) unless th
 
 /**
  * Get conversation history from Firestore
+ * CRÍTICO: Dados privados - busca em users/{userId}/conversations/{conversationId}/messages (não em locations)
  */
 async function getConversationHistoryFromFirestore(
   db: admin.firestore.Firestore,
-  conversationId: string
+  conversationId: string,
+  userId: string
 ): Promise<Array<{role: string; content: string}>> {
   try {
-    const messagesSnapshot = await db.collection('conversations')
+    // Dados privados: usar users/{userId}/conversations (não locations)
+    const messagesSnapshot = await db.collection('users')
+      .doc(userId)
+      .collection('conversations')
       .doc(conversationId)
       .collection('messages')
       .orderBy('timestamp', 'asc')
       .get();
+
+    functions.logger.info(
+      `📍 Buscando histórico de conversa: users/${userId}/conversations/${conversationId}/messages ` +
+      `(${messagesSnapshot.docs.length} mensagens)`
+    );
 
     return messagesSnapshot.docs.map(doc => {
       const data = doc.data();
@@ -254,10 +265,13 @@ export const aiChatProxy = functions.runWith({
       );
     }
 
+    // CRÍTICO: Dados privados - salvar em users/{userId}/conversations (não em locations)
+    const userId = context.auth!.uid;
+    
     // Load conversation history if conversationId provided
     let conversationHistory: Array<{role: string; content: string}> = [];
     if (conversationId) {
-      conversationHistory = await getConversationHistoryFromFirestore(db, conversationId);
+      conversationHistory = await getConversationHistoryFromFirestore(db, conversationId, userId);
       
       // Add user message to history for API call
       conversationHistory.push({
@@ -265,19 +279,23 @@ export const aiChatProxy = functions.runWith({
         content: message,
       });
 
-      // Verificar se a conversa existe, se não, criar
-      const conversationRef = db.collection('conversations').doc(conversationId);
+      // CRÍTICO: Dados privados - salvar conversa em users/{userId}/conversations/{conversationId}
+      const conversationRef = db.collection('users')
+        .doc(userId)
+        .collection('conversations')
+        .doc(conversationId);
       const conversationDoc = await conversationRef.get();
       
       if (!conversationDoc.exists) {
         // Criar documento da conversa se não existir
         await conversationRef.set({
-          userId: context.auth!.uid,
+          userId: userId,
           type: 'ai',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           lastMessage: message,
         });
+        functions.logger.info('📍 Conversa criada em users/' + userId + '/conversations/' + conversationId);
       } else {
         // Atualizar apenas updatedAt se a conversa já existe
         await conversationRef.update({
@@ -287,7 +305,7 @@ export const aiChatProxy = functions.runWith({
       }
 
       // Save user message to Firestore
-      await db.collection('conversations').doc(conversationId).collection('messages').add({
+      await conversationRef.collection('messages').add({
         role: 'user',
         content: message,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -391,20 +409,25 @@ export const aiChatProxy = functions.runWith({
     }
 
     // Save AI response to conversation history
+    // CRÍTICO: Dados privados - salvar em users/{userId}/conversations/{conversationId} (não em locations)
     if (conversationId) {
-      const conversationRef = db.collection('conversations').doc(conversationId);
+      const conversationRef = db.collection('users')
+        .doc(userId)
+        .collection('conversations')
+        .doc(conversationId);
       
       // Garantir que o documento existe antes de atualizar
       const conversationDoc = await conversationRef.get();
       if (!conversationDoc.exists) {
         // Criar conversa se não existir
         await conversationRef.set({
-          userId: context.auth!.uid,
+          userId: userId,
           type: 'ai',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           lastMessage: responseMessage,
         });
+        functions.logger.info('📍 Conversa criada em users/' + userId + '/conversations/' + conversationId);
       } else {
         // Atualizar apenas se existir
         await conversationRef.update({
@@ -466,14 +489,21 @@ export const getConversationHistory = functions.runWith({
       );
     }
 
+    // CRÍTICO: Dados privados - buscar em users/{userId}/conversations (não em locations)
+    const userId = context.auth!.uid;
+    
     // Verify user owns this conversation
-    const conversationDoc = await db.collection('conversations').doc(conversationId).get();
+    const conversationDoc = await db.collection('users')
+      .doc(userId)
+      .collection('conversations')
+      .doc(conversationId)
+      .get();
     
     if (!conversationDoc.exists) {
       throw new functions.https.HttpsError('not-found', 'Conversation not found');
     }
 
-    if (conversationDoc.data()?.userId !== context.auth!.uid) {
+    if (conversationDoc.data()?.userId !== userId) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Access denied to this conversation'
@@ -481,8 +511,7 @@ export const getConversationHistory = functions.runWith({
     }
 
     // Get messages
-    const messagesSnapshot = await db.collection('conversations')
-      .doc(conversationId)
+    const messagesSnapshot = await conversationDoc.ref
       .collection('messages')
       .orderBy('timestamp', 'asc')
       .get();
@@ -510,14 +539,21 @@ export const createConversation = functions.runWith({
     assertAuthenticated(context);
     
     const db = getFirestore();
+    
+    // CRÍTICO: Dados privados - salvar em users/{userId}/conversations (não em locations)
+    const userId = context.auth!.uid;
 
-    const conversationRef = await db.collection('conversations').add({
-      userId: context.auth!.uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    const conversationRef = await db.collection('users')
+      .doc(userId)
+      .collection('conversations')
+      .add({
+        userId: userId,
+        type: 'ai',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
-    functions.logger.info(`Conversation created: ${conversationRef.id}`);
+    functions.logger.info(`📍 Conversa criada em users/${userId}/conversations/${conversationRef.id}`);
     
     return {conversationId: conversationRef.id};
   } catch (error) {
@@ -537,12 +573,21 @@ export const listConversations = functions.runWith({
     assertAuthenticated(context);
     
     const db = getFirestore();
+    
+    // CRÍTICO: Dados privados - buscar em users/{userId}/conversations (não em locations)
+    const userId = context.auth!.uid;
 
-    const conversationsSnapshot = await db.collection('conversations')
-      .where('userId', '==', context.auth!.uid)
+    const conversationsSnapshot = await db.collection('users')
+      .doc(userId)
+      .collection('conversations')
       .orderBy('updatedAt', 'desc')
       .limit(50)
       .get();
+    
+    functions.logger.info(
+      `📍 Listando conversas de users/${userId}/conversations ` +
+      `(${conversationsSnapshot.docs.length} encontradas)`
+    );
 
     const conversations = conversationsSnapshot.docs.map(doc => ({
       id: doc.id,

@@ -5,7 +5,7 @@ import {getFirestore} from './utils/firestore';
 import {getUserLocation, normalizeLocationId, getLocationCollection} from './utils/location';
 
 const db = getFirestore();
-const rtdb = admin.database();
+// const rtdb = admin.database(); // REMOVIDO: Realtime Database não está configurado
 const storage = admin.storage();
 
 /**
@@ -96,69 +96,11 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
     // Deletar perfil do usuário
     batch.delete(userRef);
 
-    // Deletar produtos do usuário (coleção pública)
-    const productsSnapshot = await db.collection('products')
-      .where('sellerId', '==', userId)
-      .get();
-    productsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
+    // REMOVIDO: Deletar produtos do usuário da coleção global
+    // Produtos agora estão em locations/{locationId}/products e serão deletados na seção 1.3 abaixo
 
-    // Deletar serviços do usuário (coleção pública)
-    const servicesSnapshot = await db.collection('services')
-      .where('providerId', '==', userId)
-      .get();
-    servicesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    // Deletar pedidos relacionados (coleção pública)
-    const ordersSnapshot = await db.collection('orders')
-      .where('clientId', '==', userId)
-      .get();
-    ordersSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    const providerOrdersSnapshot = await db.collection('orders')
-      .where('providerId', '==', userId)
-      .get();
-    providerOrdersSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    // Deletar pedidos de compra (coleção pública)
-    const purchaseOrdersSnapshot = await db.collection('purchase_orders')
-      .where('clientId', '==', userId)
-      .get();
-    purchaseOrdersSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    const sellerOrdersSnapshot = await db.collection('purchase_orders')
-      .where('sellerId', '==', userId)
-      .get();
-    sellerOrdersSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    // Deletar avaliações (coleção pública)
-    const reviewsSnapshot = await db.collection('reviews')
-      .where('clientId', '==', userId)
-      .get();
-    reviewsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    // Deletar notificações (coleção pública)
-    const notificationsSnapshot = await db.collection('notifications')
-      .where('userId', '==', userId)
-      .get();
-    notificationsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    // Deletar conversas (coleção pública)
-    const conversationsSnapshot = await db.collection('conversations')
-      .where('userId', '==', userId)
-      .get();
-    conversationsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    // Deletar posts do usuário (coleção pública)
-    const postsSnapshot = await db.collection('posts')
-      .where('userId', '==', userId)
-      .get();
-    postsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
-
-    // Deletar stories do usuário (coleção pública)
-    const storiesSnapshot = await db.collection('stories')
-      .where('userId', '==', userId)
-      .get();
-    storiesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => batch.delete(doc.ref));
+    // REMOVIDO: Queries em coleções globais - dados agora estão em locations/{locationId}/{collection}
+    // A deleção de dados públicos será feita na seção 1.3 abaixo usando location-based collections
 
     // Executar batch delete
     await batch.commit();
@@ -245,18 +187,12 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
 
     // 1.4. Deletar visualizações e analytics de stories
     try {
-      // Buscar todas as stories do usuário primeiro
-      // (já deletadas acima, mas precisamos dos IDs)
-      const allStoriesSnapshot = await db.collection('stories')
-        .where('userId', '==', userId)
-        .get();
-      
+      // REMOVIDO: Buscar stories da coleção global
+      // Stories agora estão apenas em locations/{locationId}/stories
+      // Buscar storyIds das stories deletadas na seção 1.3 (já temos os IDs)
       const storyIds: string[] = [];
-      allStoriesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
-        storyIds.push(doc.id);
-      });
       
-      // Também buscar stories em coleções por localização (usar localização obtida anteriormente)
+      // Buscar stories em coleções por localização (usar localização obtida anteriormente)
       if (userLocation && userLocation.city && userLocation.state) {
         const locationStoriesRef = getLocationCollection(db, 'stories', userLocation.city, userLocation.state);
         const locationStoriesSnapshot = await locationStoriesRef
@@ -351,23 +287,8 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
     }
 
     // 2. Deletar dados do Realtime Database
-    const rtdbRef = rtdb.ref(`users/${userId}`);
-    await rtdbRef.remove();
-    
-    const presenceRef = rtdb.ref(`presence/${userId}`);
-    await presenceRef.remove();
-    
-    const typingRef = rtdb.ref('typing').orderByChild(userId);
-    const typingSnapshot = await typingRef.once('value');
-    if (typingSnapshot.exists()) {
-      const typingUpdates: { [key: string]: null } = {};
-      typingSnapshot.forEach(child => {
-        typingUpdates[`typing/${child.key}/${userId}`] = null;
-      });
-      await rtdb.ref().update(typingUpdates);
-    }
-    
-    functions.logger.info(`Dados do Realtime Database deletados para usuário: ${userId}`);
+    // REMOVIDO: Realtime Database não está configurado
+    functions.logger.info('Realtime Database não configurado - pulando exclusão');
 
     // 3. Deletar arquivos do Storage
     const bucket = storage.bucket();
@@ -421,8 +342,8 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
   } catch (error: unknown) {
     // Erro já tratado acima
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    const userId = context.auth?.uid || 'unknown';
-    functions.logger.error(`Erro ao deletar conta do usuário ${userId}:`, error);
+    const userId = context.auth?.uid || '';
+    functions.logger.error(`Erro ao deletar conta do usuário ${userId || 'não autenticado'}:`, error);
     throw new functions.https.HttpsError(
       'internal',
       `Erro ao deletar conta: ${errorMessage}`

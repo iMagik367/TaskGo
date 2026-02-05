@@ -1,5 +1,6 @@
 ﻿package com.taskgoapp.taskgo.feature.services.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -36,7 +37,13 @@ fun DetalhesPropostaScreen(
     ) {
         Text(statusLabel, style = FigmaSectionTitle, color = statusColor)
         Spacer(Modifier.height(14.dp))
-        Card(Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = TaskGoBackgroundWhite
+            ),
+            border = BorderStroke(1.dp, TaskGoBorder)
+        ) {
             Column(Modifier.padding(14.dp)) {
                 Text("Serviço: [Dados do serviço]", color=TaskGoTextBlack)
                 Text("Valor: [Valor da proposta]", color=TaskGoTextBlack)

@@ -2,12 +2,21 @@ import { UUID } from '../types';
 
 export interface User {
   id: UUID;
-  firebase_uid: string;
+  firebase_uid?: string; // Opcional agora (pode ser NULL para novos usuários)
   email: string;
   role: 'client' | 'partner' | 'admin';
   display_name?: string;
   phone?: string;
   photo_url?: string;
+  
+  // Autenticação
+  password_hash?: string;
+  email_verified: boolean;
+  email_verified_at?: Date;
+  google_id?: string;
+  last_login?: Date;
+  failed_login_attempts: number;
+  locked_until?: Date;
   
   // Localização atual (dinâmica via GPS)
   current_latitude?: number;

@@ -3,7 +3,7 @@ package com.taskgoapp.taskgo.feature.auth.presentation
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
+import com.taskgoapp.taskgo.data.repository.AuthRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
 import com.taskgoapp.taskgo.core.model.AccountType
@@ -30,7 +30,7 @@ data class LoginUiState(
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val authRepository: FirebaseAuthRepository,
+    private val authRepository: AuthRepository,
     private val firestoreUserRepository: FirestoreUserRepository,
     private val initialDataSyncManager: com.taskgoapp.taskgo.core.sync.InitialDataSyncManager,
     private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager,
@@ -166,104 +166,51 @@ class LoginViewModel @Inject constructor(
                     return@launch
                 }
                 
-                val result = authRepository.signInWithEmail(email.trim(), password)
+                val result = authRepository.login(email.trim(), password)
                 result.fold(
-                    onSuccess = { firebaseUser: com.google.firebase.auth.FirebaseUser ->
-                        Log.d("LoginViewModel", "Login bem-sucedido: ${firebaseUser.uid}")
+                    onSuccess = { authResponse ->
+                        Log.d("LoginViewModel", "Login bem-sucedido: ${authResponse.user.id}")
                         
                         // Salvar email para biometria
                         preferencesManager.saveEmailForBiometric(email.trim())
                         
-                        // Verificar e criar usuário no Firestore se necessário
-                        // Já estamos dentro de viewModelScope.launch, então fazer diretamente
-                        try {
-                            var userFirestore: com.taskgoapp.taskgo.data.firestore.models.UserFirestore? = null
-                            
-                            val existingUser = firestoreUserRepository.getUser(firebaseUser.uid)
-                            if (existingUser == null) {
-                                // CRÍTICO: NÃO criar usuário com role padrão aqui
-                                // O role DEVE ser definido APENAS quando o usuário escolhe o tipo de conta
-                                // Se o usuário não existe, mostrar dialog de seleção de tipo de conta
-                                Log.d("LoginViewModel", "Usuário não existe no Firestore - mostrando dialog de seleção de tipo de conta")
-                                pendingFirebaseUser = firebaseUser
+                        // Verificar se requer 2FA
+                        if (authResponse.user.twoFactorEnabled && !_uiState.value.requiresTwoFactor) {
+                            _uiState.value = LoginUiState(
+                                isLoading = false,
+                                errorMessage = null,
+                                isSuccess = false,
+                                requiresTwoFactor = true
+                            )
+                            return@launch
+                        }
+                        
+                        // Login bem-sucedido
+                        _uiState.value = LoginUiState(
+                            isLoading = false,
+                            errorMessage = null,
+                            isSuccess = true,
+                            requiresTwoFactor = false
+                        )
+                    },
+                    onFailure = { exception ->
+                        Log.e("LoginViewModel", "Erro ao fazer login: ${exception.message}", exception)
+                        
+                        val errorMsg = when {
+                            exception.message?.contains("2FA_REQUIRED", ignoreCase = true) == true -> {
                                 _uiState.value = LoginUiState(
                                     isLoading = false,
                                     errorMessage = null,
                                     isSuccess = false,
-                                    requiresTwoFactor = false,
-                                    showAccountTypeDialog = true
+                                    requiresTwoFactor = true
                                 )
                                 return@launch
-                            } else {
-                                Log.d("LoginViewModel", "Usuário já existe no Firestore: ${existingUser.displayName}, Role: ${existingUser.role}, 2FA: ${existingUser.twoFactorEnabled}")
-                                
-                                // Verificar se é parceiro tentando fazer login via email
-                                val existingUserRole = existingUser.role?.lowercase() ?: ""
-                                if (existingUserRole == "partner") {
-                                    // Parceiros devem usar CPF/CNPJ para login
-                                    authRepository.signOut()
-                                    _uiState.value = LoginUiState(
-                                        isLoading = false,
-                                        errorMessage = "Parceiros devem fazer login com CPF/CNPJ na tela de login de parceiro.",
-                                        isSuccess = false,
-                                        requiresTwoFactor = false
-                                    )
-                                } else {
-                                    userFirestore = existingUser
-                                    checkTwoFactorAndNavigate(userFirestore, firebaseUser)
-                                }
                             }
-                        } catch (e: Exception) {
-                            Log.e("LoginViewModel", "Erro ao verificar/criar usuário no Firestore: ${e.message}", e)
-                            // Em caso de erro, permitir login mas sem 2FA
-                            checkTwoFactorAndNavigate(null, firebaseUser)
-                        }
-                    },
-                    onFailure = { exception ->
-                        Log.e("LoginViewModel", "Erro ao fazer login: ${exception.message}", exception)
-                        Log.e("LoginViewModel", "Tipo de exceção: ${exception.javaClass.name}")
-                        Log.e("LoginViewModel", "Stack trace completo:", exception)
-                        
-                        val errorMsg = when {
-                            // Erros específicos do Firebase Auth primeiro
-                            exception is com.google.firebase.auth.FirebaseAuthException -> {
-                                Log.e("LoginViewModel", "Código de erro Firebase: ${exception.errorCode}")
-                                when (exception.errorCode) {
-                                    "ERROR_WRONG_PASSWORD" -> "Senha incorreta"
-                                    "ERROR_USER_NOT_FOUND" -> "Usuário não encontrado"
-                                    "ERROR_INVALID_EMAIL" -> "Email inválido"
-                                    "ERROR_USER_DISABLED" -> "Esta conta foi desabilitada"
-                                    "ERROR_TOO_MANY_REQUESTS" -> "Muitas tentativas. Tente novamente mais tarde"
-                                    "ERROR_OPERATION_NOT_ALLOWED" -> "Operação não permitida"
-                                    "ERROR_NETWORK_REQUEST_FAILED" -> "Erro de conexão. Verifique sua internet"
-                                    else -> {
-                                        // Mostrar mensagem real do Firebase quando possível
-                                        val firebaseMsg = exception.message
-                                        if (firebaseMsg != null && firebaseMsg.isNotBlank()) {
-                                            firebaseMsg
-                                        } else {
-                                            "Erro ao fazer login (${exception.errorCode})"
-                                        }
-                                    }
-                                }
-                            }
-                            // Erros de rede específicos
-                            exception is com.google.firebase.FirebaseNetworkException -> "Erro de conexão com o Firebase. Verifique sua internet"
-                            exception is java.net.UnknownHostException -> "Erro de conexão. Verifique sua internet"
-                            exception is java.net.ConnectException -> "Erro de conexão. Verifique sua internet"
-                            exception is java.net.SocketTimeoutException -> "Tempo de conexão esgotado. Verifique sua internet"
-                            // Verificar mensagem de erro apenas se não for exceção específica
-                            exception.message?.contains("wrong-password", ignoreCase = true) == true -> "Senha incorreta"
-                            exception.message?.contains("user-not-found", ignoreCase = true) == true -> "Usuário não encontrado"
-                            exception.message?.contains("invalid-email", ignoreCase = true) == true -> "Email inválido"
+                            exception.message?.contains("Credenciais inválidas", ignoreCase = true) == true -> "Email ou senha incorretos"
+                            exception.message?.contains("Conta temporariamente bloqueada", ignoreCase = true) == true -> "Conta temporariamente bloqueada. Tente novamente mais tarde."
                             exception.message?.contains("network", ignoreCase = true) == true -> "Erro de conexão. Verifique sua internet"
                             exception.message?.contains("timeout", ignoreCase = true) == true -> "Tempo de conexão esgotado. Verifique sua internet"
-                            // Último recurso: mostrar mensagem real do erro
-                            else -> {
-                                val message = exception.message ?: "Falha ao fazer login"
-                                Log.e("LoginViewModel", "Mensagem de erro não tratada: $message")
-                                message
-                            }
+                            else -> exception.message ?: "Erro ao fazer login. Tente novamente."
                         }
                         _uiState.value = LoginUiState(isLoading = false, errorMessage = errorMsg, isSuccess = false, requiresTwoFactor = false)
                     }

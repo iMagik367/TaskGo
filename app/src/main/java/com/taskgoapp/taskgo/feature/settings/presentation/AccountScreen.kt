@@ -26,12 +26,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.compose.hiltViewModel as hiltViewModelCompose
+import javax.inject.Inject
 import com.taskgoapp.taskgo.R
 import com.taskgoapp.taskgo.core.design.*
 import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.feature.profile.presentation.ProfileViewModel
 import com.taskgoapp.taskgo.data.repository.FirestoreAccountChangeRepository
-import com.google.firebase.auth.FirebaseAuth
+import com.taskgoapp.taskgo.core.auth.TokenManager
 import com.taskgoapp.taskgo.core.theme.*
 import com.taskgoapp.taskgo.core.validation.CepService
 import com.taskgoapp.taskgo.core.validation.DocumentValidator
@@ -56,7 +58,16 @@ fun AccountScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val accountChangeRepository = remember { FirestoreAccountChangeRepository(com.taskgoapp.taskgo.core.firebase.FirestoreHelper.getInstance()) }
-    val firebaseAuth = remember { FirebaseAuth.getInstance() }
+    val tokenManager = remember { TokenManager(context) }
+    val authRepository = remember { 
+        val retrofit = com.taskgoapp.taskgo.di.NetworkModule.provideRetrofit(
+            com.taskgoapp.taskgo.di.NetworkModule.provideOkHttp(
+                com.taskgoapp.taskgo.di.NetworkModule.provideAuthInterceptor(tokenManager)
+            )
+        )
+        val authApiService = com.taskgoapp.taskgo.di.NetworkModule.provideAuthApiService(retrofit)
+        com.taskgoapp.taskgo.data.repository.AuthRepository(authApiService, context)
+    }
     
     // Estados para diálogo de solicitação de mudança
     var showChangeAccountDialog by remember { mutableStateOf(false) }
@@ -592,7 +603,9 @@ fun AccountScreen(
                 Button(
                     onClick = {
                         // Fazer logout
-                        firebaseAuth.signOut()
+                        scope.launch {
+                            authRepository.logout()
+                        }
                         // Limpar cache local ao fazer logout
                         scope.launch(Dispatchers.IO) {
                             try {
@@ -764,7 +777,7 @@ fun AccountScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val userId = firebaseAuth.currentUser?.uid
+                        val userId = tokenManager.getCurrentUserId()
                         if (userId != null && selectedNewAccountType != null) {
                             isSubmittingRequest = true
                             requestErrorMessage = null

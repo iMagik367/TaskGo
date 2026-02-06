@@ -1,6 +1,8 @@
 package com.taskgoapp.taskgo.di
 
 import com.taskgoapp.taskgo.BuildConfig
+import com.taskgoapp.taskgo.core.auth.TokenManager
+import com.taskgoapp.taskgo.data.api.AuthApiService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,36 +22,45 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideAuthTokenProvider(@ApplicationContext context: Context): AuthTokenProvider = object: AuthTokenProvider {
-        override fun getToken(): String? {
-            val prefs = context.getSharedPreferences("taskgo_prefs", Context.MODE_PRIVATE)
-            return prefs.getString("auth_token", null)
-        }
+    fun provideTokenManager(@ApplicationContext context: Context): TokenManager {
+        return TokenManager(context)
     }
 
     @Provides
     @Singleton
-    fun provideAuthInterceptor(tokenProvider: AuthTokenProvider): Interceptor {
+    fun provideAuthInterceptor(tokenManager: TokenManager): Interceptor {
         return Interceptor { chain ->
-            val token = tokenProvider.getToken().orEmpty()
-            val req = if (token.isNotBlank()) {
-                chain.request().newBuilder()
+            val request = chain.request()
+            
+            // Adicionar token se disponível e não expirado
+            val token = tokenManager.getAccessToken()
+            val newRequest = if (token != null && !tokenManager.isTokenExpired()) {
+                request.newBuilder()
                     .addHeader("Authorization", "Bearer $token")
                     .build()
-            } else chain.request()
-            chain.proceed(req)
+            } else {
+                request
+            }
+
+            chain.proceed(newRequest)
         }
     }
 
     @Provides
     @Singleton
     fun provideOkHttp(authInterceptor: Interceptor): OkHttpClient {
-        val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }
+        val logging = HttpLoggingInterceptor().apply {
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
+        }
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(logging)
             .build()
-        }
+    }
 
     @Provides
     @Singleton
@@ -59,6 +70,21 @@ object NetworkModule {
             .addConverterFactory(GsonConverterFactory.create())
             .client(client)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideAuthApiService(retrofit: Retrofit): AuthApiService {
+        return retrofit.create(AuthApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAuthRepository(
+        authApiService: AuthApiService,
+        @ApplicationContext context: Context
+    ): com.taskgoapp.taskgo.data.repository.AuthRepository {
+        return com.taskgoapp.taskgo.data.repository.AuthRepository(authApiService, context)
     }
 }
 

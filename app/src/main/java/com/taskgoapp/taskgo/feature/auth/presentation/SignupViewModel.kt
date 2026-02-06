@@ -7,7 +7,7 @@ import com.taskgoapp.taskgo.core.model.UserType
 import com.taskgoapp.taskgo.core.model.AccountType
 import com.taskgoapp.taskgo.core.data.models.ServiceCategory
 import com.taskgoapp.taskgo.data.firestore.models.UserFirestore
-import com.taskgoapp.taskgo.data.repository.FirebaseAuthRepository
+import com.taskgoapp.taskgo.data.repository.AuthRepository
 import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
 import com.taskgoapp.taskgo.core.model.fold
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,7 +28,7 @@ data class SignupUiState(
 
 @HiltViewModel
 class SignupViewModel @Inject constructor(
-    private val authRepository: FirebaseAuthRepository,
+    private val authRepository: AuthRepository,
     private val firestoreUserRepository: FirestoreUserRepository,
     private val preferencesManager: com.taskgoapp.taskgo.data.local.datastore.PreferencesManager,
     private val categoriesRepository: com.taskgoapp.taskgo.domain.repository.CategoriesRepository,

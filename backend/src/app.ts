@@ -5,6 +5,7 @@ import { WebSocketServer } from './websocket/server';
 import { pool } from './database/connection';
 
 // Importar rotas
+import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import locationRoutes from './routes/location';
 import productRoutes from './routes/products';
@@ -39,6 +40,7 @@ app.get('/health', (req, res) => {
 });
 
 // Rotas
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/products', productRoutes);

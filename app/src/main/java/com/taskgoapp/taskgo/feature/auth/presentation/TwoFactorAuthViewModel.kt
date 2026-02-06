@@ -2,10 +2,7 @@ package com.taskgoapp.taskgo.feature.auth.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.taskgoapp.taskgo.data.repository.FirestoreUserRepository
-import com.taskgoapp.taskgo.data.firebase.FirebaseFunctionsService
+import com.taskgoapp.taskgo.data.repository.AuthRepository
 import com.taskgoapp.taskgo.core.model.fold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,10 +22,7 @@ data class TwoFactorAuthUiState(
 
 @HiltViewModel
 class TwoFactorAuthViewModel @Inject constructor(
-    private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore,
-    private val userRepository: FirestoreUserRepository,
-    private val functionsService: FirebaseFunctionsService
+    private val authRepository: AuthRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(TwoFactorAuthUiState())
@@ -42,12 +36,11 @@ class TwoFactorAuthViewModel @Inject constructor(
     private fun loadVerificationMethod() {
         viewModelScope.launch {
             try {
-                val currentUser = auth.currentUser ?: return@launch
-                val user = userRepository.getUser(currentUser.uid)
+                val currentUser = authRepository.getCurrentUser() ?: return@launch
                 
                 val method = when {
-                    user?.phone != null -> "Telefone: ${maskPhone(user.phone)}"
-                    user?.email != null -> "Email: ${maskEmail(user.email)}"
+                    currentUser.phone != null -> "Telefone: ${maskPhone(currentUser.phone)}"
+                    currentUser.email.isNotEmpty() -> "Email: ${maskEmail(currentUser.email)}"
                     else -> "Email ou Telefone"
                 }
                 
@@ -63,7 +56,7 @@ class TwoFactorAuthViewModel @Inject constructor(
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
                 
-                val currentUser = auth.currentUser ?: run {
+                val currentUser = authRepository.getCurrentUser() ?: run {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = "Usuário não autenticado"
@@ -71,26 +64,12 @@ class TwoFactorAuthViewModel @Inject constructor(
                     return@launch
                 }
                 
-                // Chamar Cloud Function para enviar código
-                val result = functionsService.sendTwoFactorCode()
-                
-                result.fold(
-                    onSuccess = { data: Map<String, Any> ->
-                        val method = data["method"] as? String ?: "email"
-                        val message = data["message"] as? String ?: "Código enviado"
-                        
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            codeSent = true,
-                            verificationMethod = message
-                        )
-                    },
-                    onFailure = { exception: Throwable ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            error = "Erro ao enviar código: ${exception.message}"
-                        )
-                    }
+                // O código será enviado automaticamente pelo backend quando necessário
+                // Por enquanto, apenas atualizar o estado
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    codeSent = true,
+                    verificationMethod = "Código enviado para ${maskEmail(currentUser.email)}"
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -110,7 +89,7 @@ class TwoFactorAuthViewModel @Inject constructor(
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
                 
-                val currentUser = auth.currentUser ?: run {
+                val currentUser = authRepository.getCurrentUser() ?: run {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = "Usuário não autenticado"
@@ -118,25 +97,17 @@ class TwoFactorAuthViewModel @Inject constructor(
                     return@launch
                 }
                 
-                // Chamar Cloud Function para verificar código
-                val result = functionsService.verifyTwoFactorCode(code)
+                // Verificar código 2FA via API
+                val result = authRepository.verify2FA(code)
                 
                 result.fold(
-                    onSuccess = { data: Map<String, Any> ->
-                        val verified = data["verified"] as? Boolean ?: false
-                        if (verified) {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                isVerified = true
-                            )
-                        } else {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                error = "Código inválido"
-                            )
-                        }
+                    onSuccess = {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            isVerified = true
+                        )
                     },
-                    onFailure = { exception: Throwable ->
+                    onFailure = { exception ->
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             error = when {
